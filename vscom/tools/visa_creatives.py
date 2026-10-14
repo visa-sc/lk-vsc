@@ -1,0 +1,171 @@
+"""Креативы Meta: визы в США и Великобританию (14.10.2026).
+
+Фото — то же, что в шапке страниц visa-sc.ru/usa и /britain (паспорт в руках),
+чтобы объявление и страница выглядели одним целым. Сверху флаг страны и плашка,
+снизу текст на тёмно-синем затемнении. Формулировки — только те, что есть на
+страницах: «на срок до 10 лет», «виза или вернём затраты», бесплатная консультация.
+Лента 1:1 и сторис/Reels 9:16, по папке на кампанию в vscom/ads.
+"""
+import os
+from PIL import Image, ImageDraw, ImageFont
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ADS = os.path.join(HERE, "..", "ads")
+SRC = os.path.join(ADS, "_src_hero_passport.webp")
+F = "/System/Library/Fonts/Supplemental/"
+W = 1080
+NAVY = (10, 22, 54)
+GOLD = "#F5C518"
+PASSPORT_X = 0.60     # центр паспорта по ширине исходника
+
+
+def font(bold, size):
+    return ImageFont.truetype(F + ("Arial Bold.ttf" if bold else "Arial.ttf"), size)
+
+
+def wrap(d, text, fnt, maxw):
+    lines, cur = [], ""
+    for w in text.split():
+        t = (cur + " " + w).strip()
+        if d.textlength(t, font=fnt) <= maxw:
+            cur = t
+        else:
+            lines.append(cur); cur = w
+    lines.append(cur)
+    return lines
+
+
+def photo(h, scale_h=None):
+    """Кадр W×h; scale_h > h — фото крупнее и срезано сверху, паспорт выше в кадре."""
+    sh = scale_h or h
+    src = Image.open(SRC).convert("RGB")
+    k = sh / src.height
+    src = src.resize((int(src.width * k), sh), Image.LANCZOS)
+    left = max(0, min(src.width - W, int(src.width * PASSPORT_X) - W // 2))
+    return src.crop((left, sh - h, left + W, sh))
+
+
+def shade(im, y0, y1, a_max=245):
+    w, h = im.size
+    ov = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    od = ImageDraw.Draw(ov)
+    for yy in range(h):
+        a = 0 if yy < y0 else int(min(1, (yy - y0) / max(1, y1 - y0)) * a_max)
+        od.line([(0, yy), (w, yy)], fill=NAVY + (a,))
+    return Image.alpha_composite(im.convert("RGBA"), ov).convert("RGB")
+
+
+def pill(d, x, y, text, size, bg, fg, pad=30, right=False):
+    f = font(True, size)
+    tw = d.textlength(text, font=f)
+    if right:
+        x = x - tw - 2 * pad
+    d.rounded_rectangle([x, y, x + tw + 2 * pad, y + size + 2 * (pad // 2) + 8], (size + pad) // 2, fill=bg)
+    d.text((x + pad, y + pad // 2 + 2), text, font=f, fill=fg)
+    return y + size + 2 * (pad // 2) + 8
+
+
+def flag_us(im, x, y, w):
+    h = int(w * 10 / 19)
+    fl = Image.new("RGB", (w, h), "white")
+    d = ImageDraw.Draw(fl)
+    sh = h / 13
+    for i in range(0, 13, 2):
+        d.rectangle([0, round(i * sh), w, round((i + 1) * sh) - 1], fill="#B22234")
+    cw, ch = int(w * 0.4), round(7 * sh)
+    d.rectangle([0, 0, cw, ch], fill="#3C3B6E")
+    r = max(2, int(w / 95))
+    for row in range(9):
+        cols = 6 if row % 2 == 0 else 5
+        for c in range(cols):
+            cx = cw / 12 * (2 * c + 1 + (row % 2))
+            cy = ch / 10 * (row + 1)
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], fill="white")
+    paste_flag(im, fl, x, y)
+
+
+def flag_gb(im, x, y, w):
+    h = w // 2
+    fl = Image.new("RGB", (w, h), "#012169")
+    d = ImageDraw.Draw(fl)
+    for a, b in [((0, 0), (w, h)), ((0, h), (w, 0))]:
+        d.line([a, b], fill="white", width=w // 10)
+        d.line([a, b], fill="#C8102E", width=w // 30)
+    d.rectangle([w * 0.42, 0, w * 0.58, h], fill="white")
+    d.rectangle([0, h * 0.35, w, h * 0.65], fill="white")
+    d.rectangle([w * 0.46, 0, w * 0.54, h], fill="#C8102E")
+    d.rectangle([0, h * 0.41, w, h * 0.59], fill="#C8102E")
+    paste_flag(im, fl, x, y)
+
+
+def paste_flag(im, fl, x, y):
+    # скруглённые углы и тонкая белая рамка — флаг читается на тёмном фото
+    m = Image.new("L", fl.size, 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, fl.width - 1, fl.height - 1], 12, fill=255)
+    ImageDraw.Draw(im).rounded_rectangle([x - 4, y - 4, x + fl.width + 3, y + fl.height + 3], 15, fill="white")
+    im.paste(fl, (x, y), m)
+
+
+C = {
+    "usa": {
+        "dir": "Виза в США (VSC USA RU)", "flag": flag_us, "tag": "ВИЗА В США",
+        "head": ["Виза в США", "на срок до 10 лет"],
+        "bullets": ["Документы и запись на подачу", "Виза или вернём все затраты"],
+    },
+    "uk": {
+        "dir": "Виза в Великобританию (VSC UK RU)", "flag": flag_gb, "tag": "ВИЗА В ВЕЛИКОБРИТАНИЮ",
+        "head": ["Виза в Великобританию", "на срок до 10 лет"],
+        "bullets": ["Документы и запись на подачу", "Виза или вернём все затраты"],
+    },
+}
+CTA = "Бесплатная консультация"
+
+
+def text(d, c, y, hs=72, bs=42):
+    fh = font(True, hs)
+    for ln in c["head"]:
+        assert d.textlength(ln, font=fh) <= W - 160, ln
+        d.text((80, y), ln, font=fh, fill="white"); y += int(hs * 1.17)
+    y += 24
+    for b in c["bullets"]:
+        d.ellipse([84, y + 13, 106, y + 35], fill=GOLD)
+        d.text((124, y), b, font=font(False, bs), fill="#EEF2FA"); y += int(bs * 1.5)
+    return y
+
+
+def save(im, c, story):
+    d = os.path.join(ADS, c["dir"])
+    os.makedirs(d, exist_ok=True)
+    im.save(os.path.join(d, "сторис и Reels 9x16.jpg" if story else "лента 1x1.jpg"), quality=92)
+
+
+def feed(c):
+    im = shade(photo(W, 1750), 470, 700)
+    c["flag"](im, 80, 80, 170)
+    d = ImageDraw.Draw(im)
+    pill(d, W - 70, 80, c["tag"], 36, NAVY, GOLD, right=True)
+    h = text(ImageDraw.Draw(Image.new("RGB", (W, W))), c, 0)
+    text(d, c, 880 - h)
+    pill(d, 80, 920, CTA, 42, GOLD, "#1A1A1A", pad=40)
+    save(im, c, False)
+
+
+def story(c):
+    # Сверху ~250 px закрывает имя аккаунта, снизу ~340 px — кнопка: важное между ними.
+    H = 1920
+    im = Image.new("RGB", (W, H), NAVY)
+    im.paste(photo(1060), (0, 0))
+    im = shade(im, 600, 1040, 255)
+    c["flag"](im, 80, 280, 220)
+    d = ImageDraw.Draw(im)
+    y = pill(d, 80, 940, c["tag"], 40, GOLD, "#1A1A1A") + 36
+    y = text(d, c, y, 72, 50)
+    pill(d, 80, y + 40, CTA, 48, GOLD, "#1A1A1A", pad=44)
+    assert y + 40 + 110 <= 1580, (c["tag"], y)
+    save(im, c, True)
+
+
+for c in C.values():
+    feed(c)
+    story(c)
+print("ok", [c["dir"] for c in C.values()])

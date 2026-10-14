@@ -185,8 +185,18 @@ const MA = {
   selects: [[572046, 1091296], [571454, 1091282], [572064, 1091330]],   // Не Wazzup, Не звонок, Новое обращение
   contactSource: [571754, 1090890]                                        // «Источник» контакта = Основной
 };
+// Что за страница под Meta: ВНЖ (spain-fb), виза США (usa-fb), Великобритания (uk-fb) — 14.10.2026.
+const META_PAGES = {
+  "spain-fb": { deal: "Заявка на ВНЖ Испании", page: "ВНЖ Испании: все преимущества жизни в Европе", url: "https://spain.visa-sc.com/fb", what: "ВНЖ Испании" },
+  "usa-fb":   { deal: "Заявка на визу в США", page: "Виза в США от 3 дней, на срок до 10 лет", url: "https://visa-sc.com/usa/fb", what: "виза в США" },
+  "uk-fb":    { deal: "Заявка на визу в Великобританию", page: "Виза в Великобританию от 3 рабочих дней", url: "https://visa-sc.com/britain/fb", what: "виза в Великобританию" }
+};
+function metaPageOf(lead) {
+  const f = String(lead.form || "");
+  return META_PAGES[Object.keys(META_PAGES).find((k) => f === k || f.startsWith(k + "-"))] || null;
+}
 function isMetaVnj(lead) {
-  return /^spain-fb/.test(lead.form || "");
+  return !!metaPageOf(lead);
 }
 function metaNetwork(lead) {
   const u = lead.utm || {};
@@ -198,6 +208,7 @@ async function pushMetaVnjToAmo(lead, deps) {
   const { amoPost, findMatchingContacts, amoBaseUrl } = deps;
   const baseUrl = amoBaseUrl();
   const net = metaNetwork(lead);
+  const mp = metaPageOf(lead);
   const txt = (id, v) => (v ? { field_id: id, values: [{ value: String(v).slice(0, 250) }] } : null);
   const u = lead.utm || {};
 
@@ -218,9 +229,9 @@ async function pushMetaVnjToAmo(lead, deps) {
   }
 
   const fields = [
-    txt(MA.f.page, "ВНЖ Испании: все преимущества жизни в Европе"),
-    txt(MA.f.url, (lead.page || "https://spain.visa-sc.com/fb").split("?")[0]),
-    txt(MA.f.form, "ВНЖ Испании (" + net + ")"),
+    txt(MA.f.page, mp.page),
+    txt(MA.f.url, (lead.page || mp.url).split("?")[0]),
+    txt(MA.f.form, mp.what + " (" + net + ")"),
     { field_id: MA.f.created, values: [{ value: Math.floor(Date.parse(lead.at) / 1000) }] },
     txt(MA.f.ip, lead.ip),
     txt(MA.f.utm_source, u.utm_source), txt(MA.f.utm_medium, u.utm_medium),
@@ -228,7 +239,7 @@ async function pushMetaVnjToAmo(lead, deps) {
   ].concat(MA.selects.map(([id, e]) => ({ field_id: id, values: [{ enum_id: e }] }))).filter(Boolean);
 
   const lr = await amoPost(`${baseUrl}/api/v4/leads`, [{
-    name: "Заявка на ВНЖ Испании (" + net + ")",
+    name: mp.deal + " (" + net + ")",
     pipeline_id: MA.pipeline, status_id: MA.status, responsible_user_id: MA.responsible,
     custom_fields_values: fields,
     _embedded: { contacts: [{ id: contactId }], tags: [{ name: net }] }
@@ -237,7 +248,7 @@ async function pushMetaVnjToAmo(lead, deps) {
   if (!leadId) throw new Error("не удалось создать сделку");
   try {
     await amoPost(`${baseUrl}/api/v4/leads/${leadId}/notes`, [{ note_type: "common", params: {
-      text: "Заявка с рекламы " + net + " — spain.visa-sc.com/fb (ВНЖ Испании).\n" +
+      text: "Заявка с рекламы " + net + " — " + mp.url.replace("https://", "") + " (" + mp.what + ").\n" +
         leadRows(lead).map(([k, v]) => `${k}: ${v}`).join("\n") } }]);
   } catch (e) {
     console.error("VSCOM meta amo note:", e.message);
@@ -331,6 +342,8 @@ const MAIL_TITLES = {
   "spain-ga": ["Заявка с spain.visa-sc.com/ga (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
   "spain":    ["Заявка с spain.visa-sc.com (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
   "spain-fb": ["Заявка с spain.visa-sc.com/fb (ВНЖ Испании, реклама Facebook/Instagram)", "spain.visa-sc.com/fb: заявка из Meta"],
+  "usa-fb":   ["Заявка с visa-sc.com/usa/fb (виза в США, реклама Facebook/Instagram)", "visa-sc.com/usa/fb: заявка из Meta"],
+  "uk-fb":    ["Заявка с visa-sc.com/britain/fb (виза в Великобританию, реклама Facebook/Instagram)", "visa-sc.com/britain/fb: заявка из Meta"],
   "ga":       ["Заявка с visa-sc.com/ga (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"],
   "card-ga":  ["Заявка с visa-sc.com/virtual_card (виртуальные карты)", "visa-sc.com/virtual_card: заявка"],
   // Бразильские страницы ETA: пишут по-португальски, отвечать тоже по-португальски.

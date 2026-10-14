@@ -34,6 +34,13 @@
  *   источник нового контакта «Основной»; «MSK» и прочее потом ставят автоматизации amo).
  *   Поле ip_location (город по IP) Flexbe заполнял, мы — нет (как и у Питера).
  *   Выключатель Москвы: AMO_PUSH_OFF=1 у процесса msk-amo.
+ *
+ * Реклама Meta (14.10.2026): копия visa-sc.ru открывается и на visa-sc.com (nginx →
+ * mskcopy). Такие заявки везёт процесс pm2 «fb-amo»: AMO_PUSH_SITE_ENV как у Москвы,
+ * AMO_PUSH_HOSTS=visa-sc.com,www.visa-sc.com (свои хосты вместо LIVE_HOSTS сайта),
+ * AMO_PUSH_SITE=visa-sc.com, AMO_PUSH_META=1 — сделка «Заявка на ВНЖ Испании /
+ * визу в США / визу в Великобританию (Facebook|Instagram)», тег Facebook или
+ * Instagram по utm_source (ig/instagram → Instagram), источник контакта «Основной».
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
 
@@ -56,7 +63,18 @@ const SITE = process.env.AMO_PUSH_SITE || "spb.visa-sc.ru";
 const AMO_TOKEN = process.env.AMO_ACCESS_TOKEN;
 const SUB = String(process.env.AMO_SUBDOMAIN || "").replace(/^https?:\/\//, "").replace(/\..*/, "");
 const AMO = `https://${SUB}.amocrm.ru`;
-const LIVE_HOSTS = (process.env.SPBCOPY_LIVE_HOSTS || "spb.visa-sc.ru,www.spb.visa-sc.ru").split(",").map((h) => h.trim());
+const LIVE_HOSTS = (process.env.AMO_PUSH_HOSTS || process.env.SPBCOPY_LIVE_HOSTS || "spb.visa-sc.ru,www.spb.visa-sc.ru").split(",").map((h) => h.trim());
+const META = process.env.AMO_PUSH_META === "1";
+// Режим Meta: какая страница → как назвать сделку
+const META_DEALS = [
+  { re: /^\/spain_vnzh/, name: "Заявка на ВНЖ Испании" },
+  { re: /^\/(usa|amerika)\b/, name: "Заявка на визу в США" },
+  { re: /^\/(britain|angliya)\b/, name: "Заявка на визу в Великобританию" }
+];
+function metaNet(lead) {
+  const s = String((lead.utm && lead.utm.utm_source) || "").toLowerCase();
+  return /^(ig|instagram)$/.test(s) ? "Instagram" : "Facebook";
+}
 
 const args = process.argv.slice(2);
 const DRY = args.includes("--dry");
@@ -193,14 +211,22 @@ async function buildLead(lead) {
     if (q) fields.push(txt(q.id, f.value));
     else unmapped.push(`${f.name}: ${f.value}`);
   }
+  let dealName = `Новая заявка № ${lead.id} (${lead.form || "Заявка"})`;
+  let tags = TAGS;
+  if (META) {
+    const net = metaNet(lead);
+    const d = META_DEALS.find((x) => x.re.test(lead.pagePath || ""));
+    dealName = (d ? d.name : "Заявка с visa-sc.com" + (lead.pagePath || "")) + " (" + net + ")";
+    tags = [net];
+  }
   return {
     body: {
-      name: `Новая заявка № ${lead.id} (${lead.form || "Заявка"})`,
+      name: dealName,
       pipeline_id: PIPELINE_ID,
       status_id: STATUS_ID,
       responsible_user_id: RESPONSIBLE_ID,
       custom_fields_values: fields.filter(Boolean),
-      _embedded: { tags: TAGS.map((name) => ({ name })) }
+      _embedded: { tags: tags.map((name) => ({ name })) }
     },
     unmapped
   };
