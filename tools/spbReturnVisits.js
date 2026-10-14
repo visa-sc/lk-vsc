@@ -34,6 +34,11 @@
  * Следующие покупки этого клиента в SMS не идут. Всё — в stat/sms.json, его читает аналитика
  * сайта (строка «SMS» в «Каналах трафика»).
  *
+ * Москва (заготовка 14.10.2026, включить после переноса visa-sc.ru): тот же скрипт с
+ * RETURN_PREFIX=MSK_RETURN SITE_NAME=visa-sc.ru SPBCOPY_STAT=/var/www/mskcopy/stat
+ * SPBCOPY_LEADS=/var/www/mskcopy/leads.json — настройки MSK_RETURN_SMS / _SMS_TEXT / _TASKS.
+ * Лимит «раз в 30 дней» общий для обоих сайтов (читаем sms.json обоих).
+ *
  * Запуск: node tools/spbReturnVisits.js [--live]   cron: каждые 10 минут (тест).
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
@@ -46,18 +51,21 @@ const LEADS = process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json";
 const OUT = path.join(STAT, "return-visits.json");
 const DB_PATH = process.env.AMOCOPY_DB || "/var/www/voyo/.amocopy-db/crm.db";
 const SQLITE = process.env.SQLITE_MODULE || "/var/www/voyo/crm-svc/node_modules/better-sqlite3";
-const LIVE = process.argv.includes("--live") && process.env.SPB_RETURN_TASKS === "1";
+const PFX = process.env.RETURN_PREFIX || "SPB_RETURN";            // SPB_RETURN | MSK_RETURN
+const LIVE = process.argv.includes("--live") && process.env[PFX + "_TASKS"] === "1";
 const SESSION_GAP = 30 * 60e3; // пауза, после которой визит считается законченным
 const QUIET = 30 * 60e3; // ждём после визита: вдруг позвонит или оставит заявку
 const PER_CONTACT = 24 * 3600e3; // не чаще одной задачи на контакт в сутки
-const SITE = "spb.visa-sc.ru";
+const SITE = process.env.SITE_NAME || "spb.visa-sc.ru";
 const RESPONSIBLE = Number(process.env.SPB_RETURN_RESPONSIBLE || 1605012); // Ксения Маслова
 const MAX_RUN = 5, MAX_DAY = 30;
 const SMS_OUT = path.join(STAT, "sms.json");
-const SMS_TEXT = String(process.env.SPB_RETURN_SMS_TEXT || "").trim();
-const SMS_ON = process.argv.includes("--live") && process.env.SPB_RETURN_SMS === "1" && !!SMS_TEXT;
-const SMS_EVERY = Number(process.env.SPB_RETURN_SMS_DAYS || 30) * 86400e3;
-const SMS_MAX_RUN = 20, SMS_MAX_DAY = Number(process.env.SPB_RETURN_SMS_MAX_DAY || 100);
+const SMS_TEXT = String(process.env[PFX + "_SMS_TEXT"] || "").trim();
+const SMS_ON = process.argv.includes("--live") && process.env[PFX + "_SMS"] === "1" && !!SMS_TEXT;
+const SMS_EVERY = Number(process.env[PFX + "_SMS_DAYS"] || 30) * 86400e3;
+const SMS_MAX_RUN = 20, SMS_MAX_DAY = Number(process.env[PFX + "_SMS_MAX_DAY"] || 100);
+// журналы SMS обоих сайтов — чтобы один человек не получил две SMS (Питер и Москва) за 30 дней
+const SMS_ALL = ["/var/www/spbcopy/stat/sms.json", "/var/www/mskcopy/stat/sms.json"];
 const SMS_ATTR = 30 * 86400e3; // окно, в котором первая сделка после SMS засчитывается SMS
 const mskHour = (ms) => new Date(ms + 3 * 3600e3).getUTCHours();
 
@@ -192,7 +200,13 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
   const smsStore = readJson(SMS_OUT, { sends: [] });
   const sends = smsStore.sends || [];
   const lastSms = new Map();
-  for (const x of sends) if (x.status === "отправлено") lastSms.set(x.contactId, Math.max(lastSms.get(x.contactId) || 0, x.at));
+  for (const f of new Set(SMS_ALL.concat([SMS_OUT])))
+    for (const x of (f === SMS_OUT ? sends : (readJson(f, { sends: [] }).sends || [])))
+      lastSms.set(x.contactId, Math.max(lastSms.get(x.contactId) || 0, x.at));
+  const saveSms = () => {
+    fs.writeFileSync(SMS_OUT + ".tmp", JSON.stringify(Object.assign({}, readJson(SMS_OUT, {}), { sends })));
+    fs.renameSync(SMS_OUT + ".tmp", SMS_OUT);
+  };
   const qPhones = db.prepare("SELECT phones FROM contacts WHERE id = ?");
   const mobileOf = (contactId) => {
     const ph = String((qPhones.get(contactId) || {}).phones || "").split(/[,;\s]+/).map(digits).filter((x) => x.length === 10);
@@ -201,13 +215,14 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
   };
   const smsRu = SMS_ON ? require("/var/www/voyo/sms.js") : null;
   const axiosS = SMS_ON ? require("axios") : null;
-  const sentDay = sends.filter((x) => x.status === "отправлено" && now - x.at < 86400e3).length;
+  const sentDay = sends.filter((x) => now - x.at < 86400e3).length;
   let smsRun = 0;
   const hourNow = mskHour(now), dayTime = hourNow >= 9 && hourNow < 21;
   for (const it of items) {
     if (it.sms && it.sms.final) continue;
     if (!/^задача|^уже /.test(it.decision)) continue;            // связался сам или контакта нет — не пишем
-    if (now - it.end > 14 * 3600e3) { if (!it.sms) it.sms = { status: "не отправлено: визит давно", final: true }; else it.sms.final = true; continue; }
+    const he = mskHour(it.end), maxAge = (he >= 20 || he < 9) ? 14 * 3600e3 : 3 * 3600e3;
+    if (now - it.end > maxAge) { if (!it.sms) it.sms = { status: "не отправлено: визит давно", final: true }; else it.sms.final = true; continue; }
     const { phones, mobile } = mobileOf(it.contactId);
     const mark = (status, extra) => { it.sms = Object.assign({ status, at: now }, extra || {}); };
     if (!mobile) { mark("нет мобильного номера", { final: true }); continue; }
@@ -216,7 +231,7 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
     if (prevSms && now - prevSms < SMS_EVERY) { mark("уже была SMS за " + Math.round(SMS_EVERY / 86400e3) + " дней", { final: true }); continue; }
     const why = contactedWhy(it.contactId, phones, it.vid, it.start - 10 * 60e3, now);
     if (why.length) { mark("не нужна: " + why.join(", "), { final: true }); continue; }
-    if (!SMS_ON) { mark(SMS_TEXT ? "выключено (SPB_RETURN_SMS)" : "нет текста — ушла бы", { phone: masked }); continue; }
+    if (!SMS_ON) { mark(SMS_TEXT ? "выключено (" + PFX + "_SMS)" : "нет текста — ушла бы", { phone: masked }); continue; }
     if (!dayTime) { mark("ждёт 09:00 МСК", { phone: masked }); continue; }
     if (smsRun >= SMS_MAX_RUN || sentDay + smsRun >= SMS_MAX_DAY) { mark("ждёт: лимит", { phone: masked }); continue; }
     let cost = null;
@@ -231,6 +246,7 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
       lastSms.set(it.contactId, now);
       mark("отправлено", { phone: masked, smsId, cost, final: true });
       sends.push({ key: it.key, contactId: it.contactId, contactName: it.contactName, phone: masked, at: now, smsId, cost: cost || 0, text: SMS_TEXT, test: !!r.testMode });
+      saveSms();   // сразу на диск: упади прогон дальше — повторной SMS не будет
     } else {
       mark("ошибка: " + (r.error || r.smsStatus || "SMS.ru"), { phone: masked });
     }
