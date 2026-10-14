@@ -122,6 +122,7 @@
   .sim .bal .v small{font-size:22px;font-weight:600;opacity:.85;margin-left:8px;letter-spacing:0;}
   /* вместо цифры остатка — фраза («Пакет закончился»): 60px не влезают в телефон */
   .sim .bal .v.txt{font-size:34px;line-height:1.1;letter-spacing:-.02em;}
+  .sim .bal .v.name{font-size:24px;line-height:1.2;letter-spacing:-.02em;word-break:break-word;}
   .sim .bal .of{font-size:15px;opacity:.85;margin-top:9px;}
   .sim .bar{height:8px;background:rgba(255,255,255,.22);border-radius:99px;overflow:hidden;margin-top:15px;position:relative;z-index:2;}
   .sim .bar i{display:block;height:100%;background:#fff;border-radius:99px;transition:width .8s cubic-bezier(.2,.9,.3,1);
@@ -443,6 +444,8 @@
         : "из "+gb(total)+" ГБ · потрачено "+gb(used)+" ГБ";
       el("bar").style.width = Math.max(3, Math.round(rem/total*100))+"%";
     } else {
+      // остатка нет (поставщик не отдал) — название тарифа обычным заголовком, а не гигантской цифрой
+      el("balV").className = "v name";
       el("balV").innerHTML = esc(o.title||"eSIM");
       el("balOf").textContent = "";
       el("bar").style.width = "0%";

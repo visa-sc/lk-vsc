@@ -24,12 +24,17 @@
   root.classList.add("brand-vsc");
   var css = document.createElement("style");
   css.textContent =
-    ".brand-vsc .brand .brandrow img,.brand-vsc .byvsc,.brand-vsc .tgl,.brand-vsc a[href*='t.me/esimvoyo_bot']{display:none!important}" +
-    ".brand-vsc .brand{flex-direction:row!important;align-items:center!important}" +
-    ".vsc-wm{display:inline-flex;align-items:center;gap:7px;font-family:ui-rounded,'SF Pro Rounded',system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;" +
-      "font-weight:800;font-size:20px;line-height:1;letter-spacing:.02em;color:#0097ca}" +
-    ".vsc-wm i{width:1.5px;height:15px;background:#0097ca;opacity:.45;border-radius:1px}" +
-    ".vsc-wm em{font-style:normal;font-weight:300;font-size:19px;letter-spacing:.01em;color:#3589bd;margin-left:3px}";
+    ".brand-vsc .brand img,.brand-vsc .byvsc,.brand-vsc .tgl,.brand-vsc a[href*='t.me/esimvoyo_bot']{display:none!important}" +
+    ".brand-vsc .brand{flex-direction:row!important;align-items:center!important;text-decoration:none!important}" +
+    // текстовый знак V|S|C и «mobile» заметно мельче (Андрей, 14.10.2026)
+    // !important — у страниц свои стили для .brand span (на «Оплата прошла» буквы становились тонкими)
+    ".brand-vsc .vsc-wm{display:inline-flex!important;align-items:center!important;gap:7px!important;" +
+      "font-family:ui-rounded,'SF Pro Rounded',system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif!important;" +
+      "font-weight:800!important;font-size:20px!important;line-height:1!important;letter-spacing:.02em!important;color:#0097ca!important;" +
+      "white-space:nowrap!important;background:none!important;-webkit-text-fill-color:#0097ca!important;margin:0!important;padding:0!important}" +
+    ".brand-vsc .vsc-wm i{display:block!important;width:1.5px!important;height:15px!important;background:#0097ca!important;opacity:.45;border-radius:1px}" +
+    ".brand-vsc .vsc-wm em{font-style:normal!important;font-weight:400!important;font-size:13px!important;letter-spacing:.02em!important;" +
+      "color:#3589bd!important;-webkit-text-fill-color:#3589bd!important;margin-left:2px!important;align-self:flex-end!important;padding-bottom:1px!important;background:none!important}";
   (document.head || root).appendChild(css);
 
   // значок вкладки и иконка «на экран» — VSC
