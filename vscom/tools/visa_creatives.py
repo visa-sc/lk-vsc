@@ -65,7 +65,8 @@ def pill(d, x, y, text, size, bg, fg, pad=30, right=False):
     return y + size + 2 * (pad // 2) + 8
 
 
-def flag_us(im, x, y, w):
+def flag_us(im, x, y, w0):
+    w = w0 * 8
     h = int(w * 10 / 19)
     fl = Image.new("RGB", (w, h), "white")
     d = ImageDraw.Draw(fl)
@@ -74,17 +75,18 @@ def flag_us(im, x, y, w):
         d.rectangle([0, round(i * sh), w, round((i + 1) * sh) - 1], fill="#B22234")
     cw, ch = int(w * 0.4), round(7 * sh)
     d.rectangle([0, 0, cw, ch], fill="#3C3B6E")
-    r = max(2, int(w / 95))
+    r = w / 95
     for row in range(9):
         cols = 6 if row % 2 == 0 else 5
         for c in range(cols):
             cx = cw / 12 * (2 * c + 1 + (row % 2))
             cy = ch / 10 * (row + 1)
             d.ellipse([cx - r, cy - r, cx + r, cy + r], fill="white")
-    paste_flag(im, fl, x, y)
+    paste_flag(im, fl.resize((w0, round(h / 8)), Image.LANCZOS), x, y)
 
 
-def flag_gb(im, x, y, w):
+def flag_gb(im, x, y, w0):
+    w = w0 * 8
     h = w // 2
     fl = Image.new("RGB", (w, h), "#012169")
     d = ImageDraw.Draw(fl)
@@ -95,10 +97,12 @@ def flag_gb(im, x, y, w):
     d.rectangle([0, h * 0.35, w, h * 0.65], fill="white")
     d.rectangle([w * 0.46, 0, w * 0.54, h], fill="#C8102E")
     d.rectangle([0, h * 0.41, w, h * 0.59], fill="#C8102E")
-    paste_flag(im, fl, x, y)
+    paste_flag(im, fl.resize((w0, round(h / 8)), Image.LANCZOS), x, y)
 
 
 def paste_flag(im, fl, x, y):
+    # флаг рисуется крупно (см. flag_*) и уменьшается: на мелком размере звёзды
+    # иначе сливаются в белое пятно вместо синего поля
     # маленький флаг со скруглёнными углами — значок в строке над заголовком
     r = max(4, fl.width // 12)
     m = Image.new("L", fl.size, 0)
