@@ -12,6 +12,8 @@
 // по нему панель eSIM считает расход (строка SMS) и выручку (первая покупка eSIM
 // с этого номера или почты в 30 дней после SMS).
 // Cron прода: 35 * * * * cd /var/www/voyo && /usr/bin/node tools/spbEsimSms.js >> /var/log/spb-esim-sms.log 2>&1
+// С 14.10.2026 включено: текст «Интернет в поездках: ESIM от 69₽. Готовность 1 мин. → voyomobile.ru/v» (69 знаков, 1 SMS ≈ 12,5 ₽),
+// voyomobile.ru/v → витрина VSC mobile (server.js, utm_source=sms, utm_campaign=spb14).
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config({ path: "/var/www/voyo/.env", quiet: true });

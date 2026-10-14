@@ -39,7 +39,7 @@ const ESIM_PARTNER_PATHS = ["visazen"];
 // Ценовые страницы витрины: voyomobile.ru/67 — пакеты за 69 ₽ стоят 67 ₽ (02.10.2026)
 const ESIM_PRICE_PATHS = ["67"];
 // VSC mobile — та же витрина под знаком VSC для клиентов визового центра (14.10.2026)
-const ESIM_BRAND_PATHS = ["vsc"];
+const ESIM_BRAND_PATHS = ["vsc", "v"];   // v — короткая ссылка из SMS, редирект на /vsc
 const ESIM_HOST_ALLOW = new RegExp(
   "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.concat(ESIM_PARTNER_PATHS, ESIM_PRICE_PATHS, ESIM_BRAND_PATHS).join("|") + ")\\/?$|" +
   "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|esim-support\\.js$|esim-a2hs\\.js$|esim-brand\\.js$|vsc-icon[^/]*\\.png$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
@@ -104,6 +104,12 @@ app.get("/", (req, res, next) => {
 });
 // Рекламные адреса стран на сайтах eSIM отдают ту же витрину, заголовок и
 // выбранную страну подставляет сама страница по адресу (список — ESIM_LAND_PATHS).
+// Короткая ссылка для SMS питерским контактам через 14 дней (tools/spbEsimSms.js):
+// voyomobile.ru/v → витрина VSC mobile с меткой SMS. Короче voyomobile.ru/vsc — SMS влезает в 70 знаков.
+app.get("/v", (req, res, next) => {
+  if (!ESIM_SITE_HOSTS.has(String(req.hostname || "").toLowerCase())) return next();
+  res.redirect(302, "/vsc?utm_source=sms&utm_campaign=spb14");
+});
 app.get(ESIM_LAND_PATHS.concat(ESIM_PRICE_PATHS, ESIM_BRAND_PATHS).map((c) => "/" + c), (req, res, next) => {
   if (!ESIM_SITE_HOSTS.has(String(req.hostname || "").toLowerCase())) return next();
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
