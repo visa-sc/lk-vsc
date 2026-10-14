@@ -29,8 +29,8 @@
  * SPB_RETURN_SMS_DAYS (30) дней, только 09:00–21:00 МСК (вечерний визит — SMS утром, если
  * он к тому времени сам не связался, и не позже 14 ч после визита), не больше 20 за прогон
  * и SPB_RETURN_SMS_MAX_DAY (100) в сутки. Цена — по ответу SMS.ru /sms/cost перед отправкой.
- * Выручка SMS: ПЕРВАЯ сделка контакта после SMS — новая (создана в течение 30 дней) или уже
- * открытая, успешно закрытая в эти 30 дней; её сумма, когда сделка успешна (статус 142).
+ * Выручка SMS: ПЕРВАЯ сделка контакта после SMS — новая (создана в течение 45 дней) или уже
+ * открытая, успешно закрытая в эти 45 дней; её сумма, когда сделка успешна (статус 142).
  * Следующие покупки этого клиента в SMS не идут. Всё — в stat/sms.json, его читает аналитика
  * сайта (строка «SMS» в «Каналах трафика»).
  *
@@ -66,7 +66,7 @@ const SMS_EVERY = Number(process.env[PFX + "_SMS_DAYS"] || 30) * 86400e3;
 const SMS_MAX_RUN = 20, SMS_MAX_DAY = Number(process.env[PFX + "_SMS_MAX_DAY"] || 100);
 // журналы SMS обоих сайтов — чтобы один человек не получил две SMS (Питер и Москва) за 30 дней
 const SMS_ALL = ["/var/www/spbcopy/stat/sms.json", "/var/www/mskcopy/stat/sms.json"];
-const SMS_ATTR = 30 * 86400e3; // окно, в котором первая сделка после SMS засчитывается SMS
+const SMS_ATTR = 45 * 86400e3; // окно, в котором первая сделка после SMS засчитывается SMS (Андрей 14.10: 45 дней)
 const mskHour = (ms) => new Date(ms + 3 * 3600e3).getUTCHours();
 
 const readJson = (f, d) => {
@@ -252,7 +252,7 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
     }
   }
 
-  // 3c. выручка после SMS: первая сделка контакта в 30 дней после SMS (новая или закрытая успешно)
+  // 3c. выручка после SMS: первая сделка контакта в 45 дней после SMS (новая или закрытая успешно)
   const qDealsAfter = db.prepare("SELECT l.id, l.name, l.price, l.status_id, l.created_at, l.closed_at FROM leads l JOIN lead_contacts lc ON lc.lead_id = l.id WHERE lc.contact_id = ? AND ((l.created_at BETWEEN ? AND ?) OR (l.status_id = 142 AND l.closed_at BETWEEN ? AND ?))");
   for (const x of sends) {
     if (x.dealFinal) continue;
@@ -265,7 +265,7 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
       x.dealId = d.id; x.dealName = d.name || ""; x.convAt = d.evt * 1000;
       x.won = d.status_id === 142; x.revenue = x.won ? Number(d.price) || 0 : 0;
       if (d.status_id === 142 || d.status_id === 143) x.dealFinal = true;   // сделка закрыта — итог не меняется
-    } else if (now - x.at > SMS_ATTR) x.dealFinal = true;                    // 30 дней прошло — обращения нет
+    } else if (now - x.at > SMS_ATTR) x.dealFinal = true;                    // 45 дней прошло — обращения нет
   }
   const smsOut = {
     builtAt: new Date().toISOString(), enabled: SMS_ON, textSet: !!SMS_TEXT, text: SMS_TEXT,
