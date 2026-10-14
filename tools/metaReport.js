@@ -57,12 +57,18 @@ const isMeta = (u) => {
 };
 const campOf = (u) => String((u && u.utm_campaign) || "").toLowerCase();
 
+// Роботы Meta: при модерации объявления Meta открывает страницу со своих адресов
+// (сеть Facebook, AS32934) и из облаков (Amazon/Google) и даже «начинает» форму.
+// 13.10.2026 так появились 5 «начали форму» по ETA US/BR в 09:26–09:40 МСК — ни одного человека.
+const BOT_IP = /^(31\.13\.|66\.220\.|69\.63\.|69\.171\.|173\.252\.|157\.240\.|179\.60\.|185\.60\.|129\.134\.|102\.132\.|163\.70\.|57\.14[1-4]\.|3\.|13\.|18\.|34\.|35\.|44\.|52\.|54\.)/;
+const isBot = (x) => BOT_IP.test(x.ip || "") || /facebookexternalhit|facebookcatalog|meta-externalagent|bot|crawler|headless/i.test(x.ua || "");
+
 // ── сайты визовых услуг: клики и заявки ──
 function siteStats(c, from, to) {
   const inR = (t) => t >= from && t < to;
   const clicks = read(".vscomClicks.json", []).filter((x) => {
     const t = Date.parse(x.at);
-    return inR(t) && (c.forms.indexOf(x.form) >= 0 || campOf(x.utm) === c.key) &&
+    return inR(t) && !isBot(x) && (c.forms.indexOf(x.form) >= 0 || campOf(x.utm) === c.key) &&
       (isMeta(x.utm) || campOf(x.utm) === c.key);
   });
   const leads = read(".vscomLeads.json", []).filter((x) => {
