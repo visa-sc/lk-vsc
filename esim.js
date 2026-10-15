@@ -5525,6 +5525,119 @@ function mount(app, opts) {
   });
 
   // Расходы на рекламу и процент эквайринга правим руками из панели
+  // ── Аналитика только на чтение по личному ключу (15.10.2026, для Петрова и его Claude) ──
+  // Ключи в .env: ESIM_RO_KEYS="имя:ключ,имя2:ключ2". Только GET, ничего не пишет; почты,
+  // телефоны и чаты клиентов замаскированы. Данные те же, что в панели dev.voyomobile.ru.
+  function roWho(req) {
+    const k = String(req.headers["x-key"] || req.query.key || "").trim();
+    if (k.length < 20) return null;
+    for (const pair of String(process.env.ESIM_RO_KEYS || "").split(",")) {
+      const i = pair.indexOf(":"); if (i < 1) continue;
+      const key = pair.slice(i + 1).trim();
+      if (key.length >= 20 && crypto.timingSafeEqual(Buffer.from(crypto.createHash("sha256").update(key).digest()), Buffer.from(crypto.createHash("sha256").update(k).digest()))) return pair.slice(0, i).trim();
+    }
+    return null;
+  }
+  const _roHits = {};
+  function roGate(req, res) {
+    const who = roWho(req);
+    if (!who) { res.status(403).json({ success: false, message: "Нет доступа: нужен ключ (заголовок X-Key или ?key=)." }); return null; }
+    const m = Math.floor(Date.now() / 60000), h = _roHits[who] = (_roHits[who] && _roHits[who].m === m) ? _roHits[who] : { m, n: 0 };
+    if (++h.n > 60) { res.status(429).json({ success: false, message: "Не чаще 60 запросов в минуту." }); return null; }
+    console.log("esim ro: " + who + " " + req.path + (req.url.includes("?") ? " " + req.url.split("?")[1].replace(/key=[^&]*/g, "key=…") : ""));
+    return who;
+  }
+  const roMaskEmail = (s) => s.replace(/([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, "$1***@$2");
+  const roMaskStr = (s) => roMaskEmail(s).replace(/\+?\d[\d\s()-]{8,}\d/g, (m) => { const d = m.replace(/\D/g, ""); return d.length >= 10 ? "***" + d.slice(-2) : m; })
+    .replace(/\btg:(\d+)/g, (_, d) => "tg:***" + d.slice(-2));
+  function roMask(v, k) {
+    if (v == null) return v;
+    if (typeof v === "string") return /^(text|last|summary|contact)$/.test(k || "") ? (k === "summary" ? roMaskStr(v) : "[скрыто]") : roMaskStr(v);
+    if (typeof v === "number" && /^(tg|chatId|tgChatId)$/.test(k || "")) return "***" + String(v).slice(-2);
+    if (Array.isArray(v)) return v.map((x) => roMask(x, k));
+    if (typeof v === "object") { const o = {}; for (const kk of Object.keys(v)) o[kk] = roMask(v[kk], kk); return o; }
+    return v;
+  }
+  const roPort = () => process.env.PORT || 3000;
+
+  app.get("/esim/api/ro", (req, res) => {
+    if (!roGate(req, res)) return;
+    res.json({ success: true, about: "Аналитика eSIM (VOYO mobile и VSC mobile: voyomobile.ru/.com, voyotravel.ru/esim, телеграм-бот @esimvoyo_bot). Только чтение. Деньги в рублях, даты по МСК (ГГГГ-ММ-ДД).",
+      auth: "Заголовок X-Key: <ключ> (или ?key=). Не чаще 60 запросов в минуту.",
+      endpoints: {
+        "/esim/api/ro/stats?from=&to=&test=1": "Всё, что видно в панели: итоги (выручка, себестоимость, комиссия, реклама, прибыль), по дням, каналы и их окупаемость, воронка сайта и бота, промокоды, SMS-рассылки, сервис и поддержка, клиенты (почты и телефоны скрыты), балансы поставщиков. from/to — период, без них за всё время; test=1 — вместе с тестовыми покупками.",
+        "/esim/api/ro/orders?from=&to=": "Список оплат: дата, пакет, сумма, себестоимость, промокод, скидка, канал, сайт или бот, бренд, количество eSIM. Возвраты — в stats.service.",
+        "/esim/api/ro/seo": "51 страница под поиск (/esim/турция и т.д.): заходы людей и переходы из Яндекса/Google по журналу сервера (хранится 14 дней), покупки с посадкой на странице.",
+      } });
+  });
+
+  app.get("/esim/api/ro/stats", async (req, res) => {
+    if (!roGate(req, res)) return;
+    try {
+      const q = new URLSearchParams({ adm: ADMIN_CODE });
+      for (const k of ["from", "to", "test"]) if (req.query[k]) q.set(k, String(req.query[k]).slice(0, 10));
+      const r = await axios.get("http://127.0.0.1:" + roPort() + "/esim/api/adm/stats?" + q.toString(), { timeout: 60000 });
+      res.json(roMask(r.data));
+    } catch (er) { res.status(500).json({ success: false, message: er.message }); }
+  });
+
+  app.get("/esim/api/ro/orders", async (req, res) => {
+    if (!roGate(req, res)) return;
+    try {
+      const from = String(req.query.from || "").slice(0, 10), to = String(req.query.to || "").slice(0, 10);
+      const rate = await usdRate();
+      const list = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && !o.groupOf && !isTestOrder(o))
+        .filter((o) => { const d = mskDay(o.paidAt); return (!from || d >= from) && (!to || d <= to); })
+        .sort((a, b) => a.paidAt - b.paidAt)
+        .map((o) => ({ id: o.id, paidAt: new Date(o.paidAt + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " "),
+          package: o.label || "", qty: o.qty || 1, renewal: !!o.parentOrderId,
+          listPriceRub: o.listPriceRub || null, paidRub: o.payTotalRub || o.priceRub || 0, balanceUsedRub: o.balanceUsed || 0,
+          costRub: o.costUsd ? Math.round(tsimCostRub(o.costUsd, rate)) : null,
+          promo: o.promoCode || null, discountKind: o.discountKind || null, channel: channelOf(o),
+          via: o.tgChatId ? "бот" : "сайт", brand: o.brand || "voyo",
+          utm: o.ads && o.ads.first ? { source: o.ads.first.utm_source || null, campaign: o.ads.first.utm_campaign || null, landing: o.ads.first.landing ? String(o.ads.first.landing).split("?")[0] : null } : null }));
+      res.json({ success: true, count: list.length, orders: list });
+    } catch (er) { res.status(500).json({ success: false, message: er.message }); }
+  });
+
+  // SEO: журнал nginx читается не чаще раза в час
+  let _roSeo = null;
+  app.get("/esim/api/ro/seo", async (req, res) => {
+    if (!roGate(req, res)) return;
+    try {
+      if (!_roSeo || Date.now() - _roSeo.at > 3600e3) _roSeo = { at: Date.now(), data: await roSeoBuild() };
+      res.json(Object.assign({ success: true, builtAt: new Date(_roSeo.at + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ") }, _roSeo.data));
+    } catch (er) { res.status(500).json({ success: false, message: er.message }); }
+  });
+  async function roSeoBuild() {
+    const zlib = require("zlib");
+    const sm = (await axios.get("http://127.0.0.1:" + roPort() + "/sitemap.xml", { headers: { host: "voyomobile.ru" }, timeout: 20000 })).data;
+    const pages = [...String(sm).matchAll(/<loc>https:\/\/voyomobile\.ru(\/esim\/[^<]+)<\/loc>/g)].map((m) => m[1]);
+    const st = {}; pages.forEach((p) => (st[p] = { visits: 0, people: new Set(), fromYandex: 0, fromGoogle: 0, yandexBot: 0, googleBot: 0 }));
+    const D = "/var/log/nginx/";
+    const BOT = /bot|crawl|spider|slurp|bing|ahrefs|semrush|mj12|petal|python|curl|wget|go-http|headless|lighthouse|preview|facebookexternalhit|telegram|whatsapp|vkshare/i;
+    const re = /^(\S+) \S+ \S+ \[([^\]]+)\] "GET (\S+) [^"]*" (\d{3}) \S+ "([^"]*)" "([^"]*)"/;
+    for (const f of fs.readdirSync(D).filter((x) => /^access\.log(\.\d+)?(\.gz)?$/.test(x))) {
+      let buf = fs.readFileSync(D + f); if (f.endsWith(".gz")) buf = zlib.gunzipSync(buf);
+      for (const line of buf.toString("utf8").split("\n")) {
+        if (line.indexOf("/esim/") < 0) continue;
+        const m = re.exec(line); if (!m || m[4] !== "200") continue;
+        const p = m[3].split("?")[0].replace(/\/$/, ""); const s = st[p]; if (!s) continue;
+        if (/YandexBot|YandexMobileBot/.test(m[6])) { s.yandexBot++; continue; }
+        if (/Googlebot/.test(m[6])) { s.googleBot++; continue; }
+        if (BOT.test(m[6])) continue;
+        s.visits++; s.people.add(m[1]);
+        if (/yandex\.|ya\.ru/.test(m[5]) && !/yclid/.test(m[3])) s.fromYandex++;
+        else if (/google\./.test(m[5]) && !/gclid/.test(m[3])) s.fromGoogle++;
+      }
+    }
+    const orders = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && !o.groupOf && !isTestOrder(o));
+    const land = (o) => [o.ads && o.ads.first, o.ads && o.ads.last].filter(Boolean).map((a) => String(a.landing || "").split("?")[0].replace(/\/$/, ""));
+    return { note: "Заходы и переходы из поиска — по журналу сервера, он хранится 14 дней. Счётчика Метрики на этих страницах нет. Позиции в поиске API не знает: их смотреть в Яндекс.Вебмастере и Google Search Console.",
+      pages: pages.map((p) => ({ url: "https://voyomobile.ru" + p, visits: st[p].visits, people: st[p].people.size, fromYandex: st[p].fromYandex, fromGoogle: st[p].fromGoogle,
+        yandexBot: st[p].yandexBot, googleBot: st[p].googleBot, purchases: orders.filter((o) => land(o).indexOf(p) >= 0).length })) };
+  }
+
   app.post("/esim/api/adm/spend", (req, res) => {
     const b = req.body || {};
     if (!isAdm(req)) return res.status(403).json({ success: false });
