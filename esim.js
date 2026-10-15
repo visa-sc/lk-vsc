@@ -1240,7 +1240,7 @@ function hasOrders(key) {
 function loadPromos() { return readJson(PROMOS_FILE, {}); }
 // Возвращает скидку либо причину отказа — клиенту важно понимать, почему код не сработал
 let _promoReason = null;
-function checkPromo(code, listPrice, email) {
+function checkPromo(code, listPrice, email, channel) {
   _promoReason = null;
   code = String(code || "").trim().toUpperCase();
   if (!code) return null;
@@ -1253,8 +1253,9 @@ function checkPromo(code, listPrice, email) {
   if (p.from && now < new Date(p.from + "T00:00:00+03:00").getTime()) { _promoReason = "not_started"; return null; }
   if (p.to && now > new Date(p.to + "T23:59:59.999+03:00").getTime()) { _promoReason = "expired"; return null; }
   if (p.maxUses && (p.uses || 0) >= p.maxUses) { _promoReason = "limit"; return null; }
-  // тестовый код: работает testWindowMin минут с первого ввода (activatedAt), потом — всё
-  if (p.testWindowMin && p.activatedAt && now > p.activatedAt + p.testWindowMin * 60000) { _promoReason = "expired"; return null; }
+  // тестовый код: работает testWindowMin минут с первого ввода, у сайта и у бота своё окно
+  const tStart = p[TEST_CH[channel === "tg" ? "tg" : "site"].at];
+  if (p.testWindowMin && tStart && now > tStart + p.testWindowMin * 60000) { _promoReason = "expired"; return null; }
   // «Только на первую eSIM» — у клиента ещё не должно быть выданных заказов
   if (p.firstOnly && email && hasOrders(email)) { _promoReason = "first_only"; return null; }
   // Личный код (ownerLock): закрепляется за первым, кто по нему оплатил, и дальше
@@ -1288,11 +1289,18 @@ function usePromo(code) {
 // Код-подарок: промокод с полем gift — сумма падает на баланс человеку, который
 // первым оплачивает по ссылке ?ref=КОД / ?promo=КОД (или ввёл код в боте). Один раз
 // на весь код (giftTo — кому достался). Бонусы списываются как обычно: до половины цены.
-// Тестовый код: окно действия начинается с первого успешного ввода
-function activateTestCode(code) {
+// Тестовый код: окно действия начинается с первого успешного ввода. У сайта и у
+// телеграм-бота окна отдельные: ввели в боте — бот считает своё время, сайт своё.
+const TEST_CH = { site: { at: "activatedAt", done: "processedAt", name: "сайт" }, tg: { at: "activatedAtTg", done: "processedAtTg", name: "телеграм-бот" } };
+function activateTestCode(code, channel) {
   code = String(code || "").toUpperCase();
-  const all = loadPromos(), p = all[code];
-  if (p && p.testWindowMin && !p.activatedAt) { p.activatedAt = Date.now(); writeJson(PROMOS_FILE, all); console.log("esim: тестовый код " + code + " включён на " + p.testWindowMin + " мин"); }
+  const all = loadPromos(), p = all[code], f = TEST_CH[channel === "tg" ? "tg" : "site"];
+  if (p && p.testWindowMin && !p[f.at]) { p[f.at] = Date.now(); writeJson(PROMOS_FILE, all); console.log("esim: тестовый код " + code + " включён (" + f.name + ") на " + p.testWindowMin + " мин"); }
+}
+function testCodeUntil(code, channel) {
+  const p = loadPromos()[String(code || "").toUpperCase()] || {};
+  const t = p[TEST_CH[channel === "tg" ? "tg" : "site"].at];
+  return t && p.testWindowMin ? t + p.testWindowMin * 60000 : null;
 }
 function isTestCode(code) { const p = loadPromos()[String(code || "").toUpperCase()]; return !!(p && p.testPct); }
 function giftOffer(code, who) {
@@ -1311,7 +1319,7 @@ function giftClaim(code, who) {
   addBalance(who, g.rub, "Подарок по ссылке " + g.code);
   return Object.assign(g, { claimed: true });
 }
-function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, useBalance, extraBalance }) {
+function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, useBalance, extraBalance, channel }) {
   // Личный код клиента работает и в поле промокода: человеку всё равно, как
   // называется код друга, а объяснять разницу в письме незачем.
   if (promoCode && !refCode) {
@@ -1346,7 +1354,7 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
     }
     return out;
   }
-  const promo = checkPromo(promoCode, listPrice, email);
+  const promo = checkPromo(promoCode, listPrice, email, channel);
   out.promoReason = _promoReason;
   if (promo && promo.testPct && costRub != null) {
     // тестовый код: доля себестоимости, округление вверх до …9, минимум 9 ₽; пол не действует
@@ -2081,8 +2089,8 @@ function mount(app, opts) {
         if (g.order.promoCode) {
           usePromo(g.order.promoCode);
           if (isTestCode(g.order.promoCode) && opts && opts.sendMail) {
-            const tp = loadPromos()[String(g.order.promoCode).toUpperCase()] || {};
-            const until = tp.activatedAt ? new Date(tp.activatedAt + tp.testWindowMin * 60000 + 3 * 3600e3).toISOString().slice(11, 16) : "—";
+            const tEnd = testCodeUntil(g.order.promoCode, g.order.tgChatId ? "tg" : "site");
+            const until = tEnd ? new Date(tEnd + 3 * 3600e3).toISOString().slice(11, 16) + " (" + (g.order.tgChatId ? "в боте" : "на сайте") + ")" : "—";
             opts.sendMail({ to: "director@visa-sc.ru", subject: "VOYO eSIM: покупка по тестовому коду " + g.order.promoCode + " — потом вернуть " + (g.order.payTotalRub || g.order.priceRub) + " ₽",
               text: "По тестовому промокоду " + g.order.promoCode + " оплатили eSIM.\n\n" +
                 "Пакет: " + (g.order.label || "") + "\nОплачено: " + (g.order.payTotalRub || g.order.priceRub) + " ₽" + (g.order.qty > 1 ? " (" + g.order.qty + " eSIM)" : "") +
@@ -2282,9 +2290,9 @@ function mount(app, opts) {
       // подарок по ссылке: начисляем на баланс (один раз) и сразу списываем в этой покупке
       if (!parentOrderId && giftClaim(b.promo || b.ref, who)) { b.promo = ""; b.ref = ""; b.useBalance = true; }
       const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
-        email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
+        email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance, channel: tgChatId ? "tg" : "site" });
       const priceRub = calc.total;
-      if (calc.discountKind === "test") activateTestCode(calc.promoCode);
+      if (calc.discountKind === "test") activateTestCode(calc.promoCode, tgChatId ? "tg" : "site");
       // дополнительные eSIM — только у обычной покупки (не у продления)
       const qty = (found.addon || parentOrderId || calc.free) ? 1 : qtyOf(b);
       const ex = extrasFor(calc, listPrice, costFor(found.item, rate));
@@ -2365,7 +2373,7 @@ function mount(app, opts) {
       const gift = giftOffer(b.promo || b.ref, who);
       if (gift) { b.promo = ""; b.ref = ""; b.useBalance = true; }
       const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
-        email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance, extraBalance: gift && !gift.claimed ? gift.rub : 0 });
+        email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance, extraBalance: gift && !gift.claimed ? gift.rub : 0, channel: b.tgChatId ? "tg" : "site" });
       const promoTried = String(b.promo || "").trim();
       const qty = qtyOf(b);
       const ex = extrasFor(calc, listPrice, costFor(found.item, rate));
@@ -2377,7 +2385,7 @@ function mount(app, opts) {
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         balanceRub: calc.balanceRub, balanceCanUse: calc.balanceCanUse, balanceUsed: calc.balanceUsed,
         balanceBlockedBy: calc.balanceBlockedBy, giftRub: gift ? gift.rub : 0,
-        testUntil: calc.discountKind === "test" ? (() => { activateTestCode(calc.promoCode); const p = loadPromos()[calc.promoCode] || {}; return p.activatedAt + p.testWindowMin * 60000; })() : undefined,
+        testUntil: calc.discountKind === "test" ? (activateTestCode(calc.promoCode, b.tgChatId ? "tg" : "site"), testCodeUntil(calc.promoCode, b.tgChatId ? "tg" : "site")) : undefined,
         // Промокод засчитан, если сервер его принял — хоть скидкой, хоть себестоимостью
         promoOk: promoTried ? !!(calc.promoCode || calc.discountKind === "ref") : null,
         promoReason: calc.promoReason,
@@ -3210,10 +3218,11 @@ function mount(app, opts) {
   // купленные по нему, код выключаем, Андрею — письмо, какие оплаты вернуть в Т-Банке.
   async function testCodeWatch() {
     const all = loadPromos();
-    for (const [code, p] of Object.entries(all)) {
-      if (!p.testPct || !p.testWindowMin || !p.activatedAt || p.processedAt) continue;
-      if (Date.now() < p.activatedAt + p.testWindowMin * 60000 + 5 * 60000) continue;   // +5 мин: вдруг оплата ещё проходит
-      const orders = readJson(ORDERS_FILE, []).filter((o) => String(o.promoCode || "").toUpperCase() === code && o.status === "done" && o.paidAt);
+    for (const [code, p] of Object.entries(all)) for (const ch of ["site", "tg"]) {
+      const f = TEST_CH[ch];
+      if (!p.testPct || !p.testWindowMin || !p[f.at] || p[f.done]) continue;
+      if (Date.now() < p[f.at] + p.testWindowMin * 60000 + 5 * 60000) continue;   // +5 мин: вдруг оплата ещё проходит
+      const orders = readJson(ORDERS_FILE, []).filter((o) => String(o.promoCode || "").toUpperCase() === code && o.status === "done" && o.paidAt && !!o.tgChatId === (ch === "tg"));
       const lines = [];
       let sum = 0;
       for (const o of orders) {
@@ -3229,13 +3238,14 @@ function mount(app, opts) {
         lines.push("• " + (o.label || "") + " — " + rub + " ₽, платёж " + (o.paymentId || "—") + "\n  " + results.join("\n  "));
       }
       const fresh = loadPromos();
-      if (fresh[code]) { fresh[code].processedAt = Date.now(); fresh[code].active = false; writeJson(PROMOS_FILE, fresh); }
+      // код выключаем целиком, когда отработали оба окна; пока одно не начато — там он ещё ждёт ввода
+      if (fresh[code]) { fresh[code][f.done] = Date.now(); if (fresh[code].processedAt && fresh[code].processedAtTg) fresh[code].active = false; writeJson(PROMOS_FILE, fresh); }
       if (opts && opts.sendMail) await opts.sendMail({ to: "director@visa-sc.ru",
-        subject: "VOYO eSIM: тестовый код " + code + " закрыт — вернуть " + sum + " ₽ (" + orders.length + " опл.)",
-        text: "Тестовый промокод " + code + " отработал своё окно и выключен.\n\n" +
+        subject: "VOYO eSIM: тестовый код " + code + " закрыт (" + f.name + ") — вернуть " + sum + " ₽ (" + orders.length + " опл.)",
+        text: "Тестовый промокод " + code + " отработал своё окно (" + f.name + ") и там больше не действует.\n\n" +
           (orders.length ? "Покупки по коду (eSIM отменены у поставщика):\n" + lines.join("\n") +
             "\n\nВерните в Т-Банке эти оплаты, всего " + sum + " ₽." : "Покупок по коду не было, возвращать нечего.") }).catch(() => {});
-      console.log("esim: тестовый код " + code + " закрыт, покупок " + orders.length);
+      console.log("esim: тестовый код " + code + " закрыт (" + f.name + "), покупок " + orders.length);
     }
   }
   setInterval(() => { testCodeWatch().catch((x) => console.error("esim тестовый код:", x.message)); }, 10 * 60 * 1000);

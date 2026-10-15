@@ -1203,11 +1203,13 @@
       "<tbody>" + rows.map(function(p){
         var what = p.testPct ? "тест: " + Math.round(p.testPct * 100) + "% себест." : p.cost ? "по себестоимости" : (p.pct ? p.pct + "%" : (p.rub ? RU(p.rub) + " ₽" : "—"));
         // тестовый код: одно общее окно на всех с первого ввода
-        var tEnd = p.testWindowMin && p.activatedAt ? p.activatedAt + p.testWindowMin * 60000 : 0;
-        var tOver = tEnd && Date.now() > tEnd;
+        // тестовый код: у сайта и у бота свои окна с первого ввода
         var tHm = function(ms){ return new Date(ms + 3 * 3600e3).toISOString().slice(11, 16); };
-        var term = p.testWindowMin ? (tEnd ? (tOver ? '<span class="dim">истёк в ' + tHm(tEnd) + " МСК</span>" : "до " + tHm(tEnd) + " МСК")
-            : (p.testWindowMin / 60) + " ч с первого ввода") : (p.from || p.to) ? ((p.from ? dShort(p.from) : "…") + " — " + (p.to ? dShort(p.to) : "…")) : '<span class="dim">без срока</span>';
+        var tWin = function(start, name){ if (!start) return name + ": " + (p.testWindowMin / 60) + " ч с ввода";
+          var end = start + p.testWindowMin * 60000;
+          return Date.now() > end ? '<span class="dim">' + name + ": истёк " + tHm(end) + "</span>" : name + ": до " + tHm(end) + " МСК"; };
+        var tOver = p.testWindowMin && p.activatedAt && p.activatedAtTg && Date.now() > Math.max(p.activatedAt, p.activatedAtTg) + p.testWindowMin * 60000;
+        var term = p.testWindowMin ? tWin(p.activatedAt, "сайт") + "<br>" + tWin(p.activatedAtTg, "бот") : (p.from || p.to) ? ((p.from ? dShort(p.from) : "…") + " — " + (p.to ? dShort(p.to) : "…")) : '<span class="dim">без срока</span>';
         var used = RU(p.usesPaid || 0) + (p.maxUses ? '<span class="dim"> из ' + RU(p.maxUses) + "</span>" : "");
         return row(['<span class="mono">' + esc(p.code) + "</span>", what, used, term, RU(p.revenue) + " ₽",
           p.active === false || tOver ? '<span class="dim">выключен</span>' : '<span class="pos">работает</span>'], R);
