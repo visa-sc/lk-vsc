@@ -17,6 +17,9 @@
   try {
     if (vsc) localStorage.setItem(KEY, "vsc");
     else if (store && location.pathname === "/") localStorage.removeItem(KEY);   // главная VOYO mobile
+    // Пришли по любой другой метке (Дзен, Директ, Meta, Google…) — это VOYO mobile, даже если
+    // в этом браузере раньше открывали витрину VSC (Андрей, 15.10.2026: Дзен показывал VSC)
+    else if (qs.get("utm_source") || qs.get("yclid") || qs.get("gclid") || qs.get("fbclid") || qs.get("b")) localStorage.removeItem(KEY);
     else vsc = localStorage.getItem(KEY) === "vsc";
   } catch (e) {}
   window.VOYO_BRAND = vsc ? "vsc" : "";
