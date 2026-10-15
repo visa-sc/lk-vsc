@@ -157,6 +157,8 @@ def build(cfg):
     # Без упоминаний гражданства (15.10.2026): Meta отнесла visa-sc.com к категории
     # «Nationality» и заблокировала события пикселя. Предмет страницы — поездка
     # (туризм и деловые визиты), а не гражданство заявителя.
+    if cfg.get("hero"):  # фон первого экрана: у Британии не Нью-Йорк, а паспорт (как в объявлении)
+        s = must(s, "url('/img/hero-usa.webp", "url('%s" % cfg["hero"])
     for a, b2 in NEUTRAL:
         s = s.replace(a, b2)
     s = re.sub(r'\s*<details><summary>Я не гражданин РФ[\s\S]*?</details>', "", s)
@@ -184,7 +186,7 @@ USA = dict(
 )
 
 UK = dict(
-    file="britain/fb.html", url="https://visa-sc.com/britain/fb", form="uk-fb",
+    file="britain/fb.html", url="https://visa-sc.com/britain/fb", form="uk-fb", hero="/img/hero-uk.webp",
     title="Виза в Великобританию от 3 рабочих дней, до 10 лет | VSC",
     desc="Виза в Англию: от 3 рабочих дней, на срок до 10 лет, с гарантией. Полный пакет документов, бесплатная консультация.",
     h1='\n        <span class="hl">Виза в Англию</span><br>\n        от 3 рабочих дней, на срок <span class="hl">до 10 лет</span>,<br>\n        с гарантией.\n      ',
