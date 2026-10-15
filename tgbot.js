@@ -437,6 +437,7 @@ async function showPack(chatId, productId, messageId) {
   if (price.discountRub > 0 || price.balanceUsed > 0) {
     const why = price.discountKind === "ref" ? "скидка по приглашению друга"
       : price.discountKind === "cost" ? "цена по себестоимости"
+      : price.discountKind === "test" ? "тестовый промокод " + (st.promo || "")
       : price.discountKind === "promo" ? "промокод " + (st.promo || "")
       : "скидка";
     text += "Цена: <s>" + RU(price.listPrice) + " ₽</s>  <b>" + RU(price.total) + " ₽</b>\n" +

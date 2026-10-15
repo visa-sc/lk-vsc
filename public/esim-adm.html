@@ -1201,11 +1201,16 @@
         { t: "Код", k: "code" }, { t: "Скидка" }, { t: "Применён", k: "uses", r: 1, num: 1 }, { t: "Срок" },
         { t: "Выручка", k: "revenue", r: 1, num: 1 }, { t: "Статус", k: "st" } ]) +
       "<tbody>" + rows.map(function(p){
-        var what = p.cost ? "по себестоимости" : (p.pct ? p.pct + "%" : (p.rub ? RU(p.rub) + " ₽" : "—"));
-        var term = (p.from || p.to) ? ((p.from ? dShort(p.from) : "…") + " — " + (p.to ? dShort(p.to) : "…")) : '<span class="dim">без срока</span>';
+        var what = p.testPct ? "тест: " + Math.round(p.testPct * 100) + "% себест." : p.cost ? "по себестоимости" : (p.pct ? p.pct + "%" : (p.rub ? RU(p.rub) + " ₽" : "—"));
+        // тестовый код: одно общее окно на всех с первого ввода
+        var tEnd = p.testWindowMin && p.activatedAt ? p.activatedAt + p.testWindowMin * 60000 : 0;
+        var tOver = tEnd && Date.now() > tEnd;
+        var tHm = function(ms){ return new Date(ms + 3 * 3600e3).toISOString().slice(11, 16); };
+        var term = p.testWindowMin ? (tEnd ? (tOver ? '<span class="dim">истёк в ' + tHm(tEnd) + " МСК</span>" : "до " + tHm(tEnd) + " МСК")
+            : (p.testWindowMin / 60) + " ч с первого ввода") : (p.from || p.to) ? ((p.from ? dShort(p.from) : "…") + " — " + (p.to ? dShort(p.to) : "…")) : '<span class="dim">без срока</span>';
         var used = RU(p.usesPaid || 0) + (p.maxUses ? '<span class="dim"> из ' + RU(p.maxUses) + "</span>" : "");
         return row(['<span class="mono">' + esc(p.code) + "</span>", what, used, term, RU(p.revenue) + " ₽",
-          p.active === false ? '<span class="dim">выключен</span>' : '<span class="pos">работает</span>'], R);
+          p.active === false || tOver ? '<span class="dim">выключен</span>' : '<span class="pos">работает</span>'], R);
       }).join("") + "</tbody>";
   }
 
