@@ -9,7 +9,8 @@
 //
 // Ручные записи по 15.10 включительно уже внесены (итог по 21.09 и ДРР 347 ₽),
 // поэтому автоматом берём дни с ESIM_YD_FROM (по умолчанию 2026-10-16).
-// Окно — 10 последних закрытых дней: Директ уточняет расход задним числом.
+// Окно — 10 последних закрытых дней (Директ уточняет расход задним числом), а если
+// API лежал дольше — с первого несобранного дня: пропущенное подтянется само.
 //
 // Крон: каждый час в :25; если вчерашний день уже снят сегодня — выходит сразу.
 // API Директа бывает недоступен (с 12.10.2026 отвечал пустым 204) — тогда
@@ -47,7 +48,11 @@ const wj = (f, v) => { const t = f + ".tmp"; fs.writeFileSync(t, JSON.stringify(
   if (!TOKEN) { console.log("нет YANDEX_DIRECT_TOKEN"); return; }
   if (yesterday < FROM) { console.log("ещё рано: автосбор с " + FROM); return; }
   if (!FORCE && state.lastOkDay === today && state.to === yesterday) { return; }
-  const from = [FROM, iso(Date.now() - WINDOW * 86400e3)].sort().pop();
+  // Окно — последние 10 дней, но если API лежал дольше, берём с первого
+  // несобранного дня: после восстановления подтянется всё пропущенное.
+  let firstMissing = null;
+  for (let d = FROM; d <= yesterday; d = iso(Date.parse(d + "T12:00:00+03:00") + 86400e3)) if (!state.days[d]) { firstMissing = d; break; }
+  const from = [[FROM, iso(Date.now() - WINDOW * 86400e3)].sort().pop(), firstMissing || yesterday].sort()[0];
 
   const headers = { Authorization: "Bearer " + TOKEN, "Accept-Language": "ru", "Content-Type": "application/json; charset=utf-8",
     processingMode: "auto", returnMoneyInMicros: "false", skipReportHeader: "true", skipColumnHeader: "true", skipReportSummary: "true" };
