@@ -14,7 +14,14 @@
 //   • .engineBudget.json — шлюз /internal/anthropic в engine-proxy. Через него
 //     идёт весь трафик движка переводов, включая служебные прогоны и сверки;
 //   • .scanner/store.json — распознавание паспортов, оно ходит в Anthropic мимо
-//     шлюза, своим ключом.
+//     шлюза, своим ключом;
+//   • .esim/doctor-usage.json — поддержка eSIM и сборка её базы опыта;
+//   • .aiUsage.json — общий журнал (ai-usage.js) для всех остальных со своим
+//     ключом: с 16.10.2026 это чат, дальше — любой новый сервис.
+// Строки письма собираются из этих журналов сами: новый сервис через шлюз (метка
+// x-voyo-service) или через ai-usage появится в письме без правок здесь. А тех,
+// кто ходит к Claude, но расход нигде не пишет, раз в сутки ищет strayCallers()
+// и выводит в письме красным.
 // Часов в журнале шлюза нет, только сутки, поэтому «расход после пополнения»
 // считаем не по дате, а по срезу: в момент пополнения запоминаем, сколько всего
 // потрачено за всё время, и потом вычитаем это число. Тогда траты того же дня до
@@ -45,10 +52,23 @@ const SCANNER_STORE = path.join(__dirname, ".scanner", "store.json");
 // мимо шлюза, поэтому свой журнал: каждая строка уже с ценой в $ (12.10.2026).
 const SUPPORT_LOG = path.join(__dirname, ".esim", "doctor-usage.json");
 function supportEntries() { try { return JSON.parse(fs.readFileSync(SUPPORT_LOG, "utf8")) || []; } catch (_) { return []; } }
+// Общий журнал для всех остальных, кто ходит своим ключом мимо шлюза (с 16.10.2026:
+// чат). Новый такой сервис пишет сюда через ai-usage.record() и сам появляется в письме.
+const AIU = require("./ai-usage");
 
 // $ за 1M токенов: [вход, выход] — как в шлюзе и сканере. Sonnet 5 — $2/$10
 // (до 05.10.2026 стояли $3/$15, расход завышался).
-const PRICES = { "claude-opus-5": [5, 25], "claude-sonnet-5": [2, 10], "claude-haiku-4-5": [1, 5] };
+const PRICES = {
+  "claude-opus-5-5": [4, 20], "claude-opus-5": [5, 25],
+  "claude-sonnet-5-5": [2, 10], "claude-sonnet-5": [2, 10], "claude-haiku-4-5": [1, 5],
+};
+
+// Метки шлюза → наши id. Катин сканер (work.voyotravel.ru) подписывается в шлюзе
+// как «scanner» — тем же именем, что наш сканер паспортов, который ходит своим
+// ключом и в шлюз не попадает вовсе. Чтобы в письме это были две разные строки,
+// всё «scanner» из шлюза — её. gwcheck — разовые служебные проверки шлюза.
+const GW_ALIAS = { scanner: "kate_scanner", gwcheck: "service" };
+function gwId(id) { return GW_ALIAS[id] || id; }
 const WARN_USD = Number(process.env.AI_BALANCE_WARN_USD || 20);
 const ALERT_USD = Number(process.env.AI_BALANCE_ALERT_USD || 15);
 // Получатели: Андрей и Катя Зайцева (её просьба Андрея 21.09.2026 — она первой
@@ -95,8 +115,6 @@ function lastTopup() {
 
 // ── Расход после момента ts ──────────────────────────────────────────────────
 // Накопленный расход за всё время — по каждому журналу отдельно.
-// Названия сервисов для письма. Идентификаторы ставит шлюз (engine-proxy.svcOf).
-const SVC_TITLES = { translate: "Переводы документов", cq: "Прослушка (качество коммуникации)", scanner: "Сканер паспортов" };
 function spendGatewayTotal() {
   let usd = 0, calls = 0; const svc = {};
   try {
@@ -188,14 +206,23 @@ function status() {
   const svc = [];
   let svcSum = 0;
   for (const [id, a] of Object.entries(svcSince)) {
-    if (a.usd > 0 || a.calls > 0) { svc.push({ id, title: SVC_TITLES[id] || id, usd: a.usd, calls: a.calls }); svcSum += a.usd; }
+    if (a.usd > 0 || a.calls > 0) { svc.push({ id: gwId(id), title: svcTitle(gwId(id)), usd: a.usd, calls: a.calls }); svcSum += a.usd; }
   }
   svc.sort((a, b) => b.usd - a.usd);
   const undivided = Math.max(0, gw.usd - svcSum);
   const sup = supportEntries().filter((x) => x.ts > (t.at || 0));
   const supUsd = sup.reduce((s, x) => s + (x.usd || 0), 0);
-  if (supUsd > 0) svc.push({ id: "support", title: "Поддержка eSIM", usd: supUsd, calls: sup.length });
-  const spent = gw.usd + sc.usd + supUsd;
+  if (supUsd > 0) svc.push({ id: "support", title: svcTitle("support"), usd: supUsd, calls: sup.length });
+  // Общий журнал (чат и любые будущие сервисы со своим ключом) — по сервисам.
+  const own = {};
+  for (const x of AIU.load()) {
+    if (!x || x.ts <= (t.at || 0)) continue;
+    const a = own[x.svc] || (own[x.svc] = { usd: 0, calls: 0 });
+    a.usd += x.usd || 0; a.calls++;
+  }
+  let ownUsd = 0;
+  for (const [id, a] of Object.entries(own)) { svc.push({ id, title: svcTitle(id), usd: a.usd, calls: a.calls }); ownUsd += a.usd; }
+  const spent = gw.usd + sc.usd + supUsd + ownUsd;
   return {
     known: true, topupUsd: t.usd, topupAt: t.at,
     spentUsd: spent, leftUsd: t.usd - spent,
@@ -217,15 +244,29 @@ function status() {
 const MONTH_NAMES = ["январь", "февраль", "март", "апрель", "май", "июнь",
   "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
 const MODEL_NAMES = { "claude-opus-5": "Opus 5", "claude-opus-5-5": "Opus 5.5", "claude-sonnet-5": "Sonnet 5", "claude-haiku-4-5": "Haiku 4.5" };
+// Эти строки в письме есть всегда, даже с нулём. Любой другой сервис, у которого
+// в месяце был расход, добавляется строкой сам — из шлюза (по метке
+// x-voyo-service) или из общего журнала ai-usage. Название для нового сервиса
+// стоит дописать в SVC_SHORT, но и без этого он покажется — под своей меткой.
 const SVC_ORDER = ["translate", "cq", "scanner", "support"];
-const SVC_SHORT = { translate: "Переводы", cq: "Прослушка", scanner: "Сканер паспортов", support: "Поддержка eSIM" };
+const SVC_SHORT = {
+  translate: "Переводы", cq: "Прослушка", scanner: "Сканер паспортов",
+  kate_scanner: "Сканер паспортов (work.)", support: "Поддержка eSIM",
+  chat: "ИИ-чат", service: "Служебные проверки",
+};
+function svcTitle(id) { return SVC_SHORT[id] || id; }
 // Единицы для счётчика: у каждого сервиса своя работа, «обращения» ни о чём не говорят.
 const SVC_UNIT = {
   translate: ["перевод", "перевода", "переводов"],
   cq: ["проверка", "проверки", "проверок"],
   scanner: ["паспорт", "паспорта", "паспортов"],
   support: ["ответ", "ответа", "ответов"],
+  chat: ["ответ", "ответа", "ответов"],
 };
+const UNIT_CALLS = ["вызов", "вызова", "вызовов"];
+// У этих сервисов свой счётчик работы (заказы, проверки, паспорта, ответы).
+// У остальных считаем вызовы модели — другого счётчика у нас нет.
+const OWN_COUNTER = { translate: 1, cq: 1, scanner: 1, support: 1, chat: 1 };
 const CQ_DIR = process.env.CQ_DATA_DIR || "/var/www/kateadmin/data";
 const TRANSLATE_ORDERS = process.env.TRANSLATE_ORDERS_FILE || "/var/www/translate-engine/.translate/orders.json";
 const RUB = Number(process.env.TRANSLATE_USD_RUB || 80);
@@ -286,7 +327,7 @@ function translateOrdersByMonth() {
 function spendByMonth() {
   const out = {};
   const slot = (ym) => out[ym] || (out[ym] = { usd: 0, svc: {} });
-  const bucket = (m, id) => m.svc[id] || (m.svc[id] = { usd: 0, n: 0, models: {} });
+  const bucket = (m, id) => m.svc[id] || (m.svc[id] = { usd: 0, n: 0, calls: 0, models: {} });
   const cq = cqJournal();
 
   const b = readJson(ENGINE_BUDGET) || { days: {} };
@@ -297,8 +338,9 @@ function spendByMonth() {
     const svc = v.svc || {};
     const named = Object.values(svc).reduce((s, t) => s + (t.usd || 0), 0);
     for (const [id, t] of Object.entries(svc)) {
-      const a = bucket(m, id);
+      const a = bucket(m, gwId(id));
       a.usd += t.usd || 0;
+      a.calls += t.calls || 0;
       for (const [mid, n] of Object.entries(t.models || {})) a.models[mid] = (a.models[mid] || 0) + n;
     }
     // День без пометок сервисов (до 16.09): прослушку знаем из её журнала,
@@ -343,7 +385,66 @@ function spendByMonth() {
     if (!x.kind) a.n++;   // kb — сборка базы опыта, reason — разметка причин, это не ответы
     if (x.model) a.models[x.model] = (a.models[x.model] || 0) + 1;
   }
+  // Общий журнал: чат и любой новый сервис со своим ключом.
+  for (const x of AIU.load()) {
+    if (!x || !x.ts || !x.svc) continue;
+    const m = slot(mskDay(x.ts).slice(0, 7));
+    const a = bucket(m, x.svc);
+    a.usd += x.usd || 0; m.usd += x.usd || 0;
+    a.calls++;
+    if (!x.kind) a.n++;
+    if (x.model) a.models[x.model] = (a.models[x.model] || 0) + 1;
+  }
   return out;
+}
+
+// ── Новые места в коде, которые ходят к Claude ───────────────────────────────
+// Расход видим только у тех, кто его записывает: шлюз, сканер, поддержка eSIM,
+// общий журнал ai-usage. Если кто-то заведёт новый сервис со своим ключом и не
+// подключит учёт, деньги уйдут молча. Поэтому раз в сутки обходим код на
+// сервере и ищем обращения к Anthropic. Учтённым считается файл, который
+//   • подписывается в шлюзе заголовком x-voyo-service, или
+//   • пишет расход в общий журнал (ai-usage), или
+//   • есть в списке ниже — у него свой журнал, сторож его уже читает.
+// Всё остальное попадает в письмо отдельным предупреждением.
+const SCAN_ROOTS = String(process.env.AI_SCAN_ROOTS || "/var/www").split(",").map((s) => s.trim()).filter(Boolean);
+const KNOWN_CALLERS = [
+  "/var/www/voyo/engine-proxy.js",           // сам шлюз
+  "/var/www/voyo/scanner.js",                // свой журнал .scanner/store.json
+  "/var/www/voyo/esimdoctor.js",             // .esim/doctor-usage.json
+  "/var/www/voyo/tools/buildSupportKb.js",   // .esim/doctor-usage.json
+  "/var/www/translate-engine/translate.js",  // через шлюз, метка translate (SDK)
+  "/var/www/translate-engine/engine-server.js",
+  "/var/www/kateadmin/cq-api.js",            // через шлюз, метка cq (голый http)
+];
+const SCAN_SKIP_DIR = /^(node_modules|_archive|backup|backups|bak|tmp|logs|dist|build)$/i;
+const SCAN_EXT = /\.(js|mjs|cjs|ts|py)$/;
+const SCAN_CALL = /api\.anthropic\.com|@anthropic-ai\/sdk|\/v1\/messages\b/;
+let _strays = null;
+function strayCallers() {
+  if (_strays && Date.now() - _strays.at < 24 * 3600 * 1000) return _strays.list;
+  const list = [];
+  const walk = (dir, depth) => {
+    if (depth > 5) return;
+    let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of ents) {
+      if (e.name.startsWith(".")) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { if (!SCAN_SKIP_DIR.test(e.name)) walk(p, depth + 1); continue; }
+      if (!SCAN_EXT.test(e.name) || /\.bak|backup|\.orig|\.old/i.test(e.name)) continue;
+      if (KNOWN_CALLERS.indexOf(p) !== -1 || p === __filename || p === AIU.FILE) continue;
+      let st; try { st = fs.statSync(p); } catch (_) { continue; }
+      if (st.size > 3e6) continue;
+      let s; try { s = fs.readFileSync(p, "utf8"); } catch (_) { continue; }
+      if (!SCAN_CALL.test(s)) continue;
+      if (/x-voyo-service/.test(s) || /ai-usage/.test(s)) continue;
+      list.push({ file: p, changed: st.mtime.toISOString().slice(0, 10) });
+    }
+  };
+  try { SCAN_ROOTS.forEach((r) => walk(r, 0)); } catch (e) { console.warn("aiBalance scan:", e.message); }
+  _strays = { at: Date.now(), list };
+  if (list.length) console.warn("AI BALANCE: обращения к Claude без учёта расхода: " + list.map((x) => x.file).join(", "));
+  return list;
 }
 
 // ── Письма ───────────────────────────────────────────────────────────────────
@@ -357,6 +458,8 @@ function configModel(id) {
   if (id === "scanner") return process.env.SCANNER_MODEL || "claude-haiku-4-5";
   if (id === "cq") return process.env.CQ_MODEL || "claude-haiku-4-5";
   if (id === "support") return process.env.ESIM_DOCTOR_MODEL || "claude-opus-5-5";
+  if (id === "kate_scanner") return "claude-haiku-4-5";   // её SCANNER_MODEL, своя .env
+  if (id === "chat") return process.env.CHAT_MODEL || "claude-sonnet-5";
   return "";
 }
 // Показываем одну — ту, на которой сервис работает в основном. Вторая модель
@@ -376,14 +479,16 @@ const C_N = 'style="' + CELL + 'white-space:nowrap;padding-left:20px;color:#8a8f
 
 // Блок месяца: итог и строки сервисов. Сумма строк равна итогу — иначе письмо
 // вызывает ровно тот вопрос, который Андрей и задал: «почему не сходится».
-function monthBlock(ym, data, note) {
+function monthBlock(ym, data, note, ids) {
   const d = data || { usd: 0, svc: {} };
-  const rows = SVC_ORDER.map(function (id) {
-    const a = d.svc[id] || { usd: 0, n: 0, models: {} };
-    return '<tr><td ' + C_NAME + '>' + SVC_SHORT[id] + '</td>'
+  const rows = (ids || SVC_ORDER).map(function (id) {
+    const a = d.svc[id] || { usd: 0, n: 0, calls: 0, models: {} };
+    const n = OWN_COUNTER[id] ? (a.n || 0) : (a.calls || a.n || 0);
+    const unit = OWN_COUNTER[id] ? (SVC_UNIT[id] || UNIT_CALLS) : UNIT_CALLS;
+    return '<tr><td ' + C_NAME + '>' + svcTitle(id) + '</td>'
       + '<td ' + C_MODEL + '>' + modelTitle(a.models, id) + '</td>'
       + '<td ' + C_USD + '>' + money(a.usd) + '</td>'
-      + '<td ' + C_N + '>' + (a.n || 0) + ' ' + plural(a.n || 0, SVC_UNIT[id]) + '</td></tr>';
+      + '<td ' + C_N + '>' + n + ' ' + plural(n, unit) + '</td></tr>';
   }).join("");
   return '<p style="margin:22px 0 6px;"><b>' + ymTitle(ym) + '</b>'
     + (note ? ' <span style="color:#8a8f98;font-weight:normal;">' + note + '</span>' : "")
@@ -395,9 +500,28 @@ function html(s) {
   const cur = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 7);
   const prev = ymShift(cur, -1);
   const by = spendByMonth();
+  // Постоянные строки плюс все, у кого был расход в одном из двух месяцев, —
+  // одинаковый набор в обоих блоках, чтобы месяцы читались рядом.
+  const extra = {};
+  for (const ym of [cur, prev]) {
+    for (const [id, a] of Object.entries((by[ym] || { svc: {} }).svc)) {
+      if (SVC_ORDER.indexOf(id) !== -1) continue;
+      // Меньше полцента — это разовые служебные вызовы, строкой они только шумят.
+      if ((a.usd || 0) >= 0.005) extra[id] = (extra[id] || 0) + (a.usd || 0);
+    }
+  }
+  const ids = SVC_ORDER.concat(Object.keys(extra).sort((x, y) => extra[y] - extra[x]));
+  const strays = strayCallers();
+  const strayHtml = !strays.length ? "" :
+    '<p style="margin:22px 0 4px;color:#b3261e;"><b>Расход не учитывается — новые обращения к Claude в коде:</b></p>'
+    + '<ul style="margin:0;padding-left:18px;color:#b3261e;font-size:13px;">'
+    + strays.map((x) => "<li>" + x.file + " (изменён " + x.changed + ")</li>").join("")
+    + '</ul><p style="margin:4px 0 0;font-size:12px;color:#8a8f98;">Подключить к учёту: заголовок x-voyo-service через шлюз '
+    + 'или ai-usage.record() — и сервис появится в письме строкой.</p>';
   return '<p style="font-size:15px;"><b>Баланс Claude API: ' + money(s.leftUsd) + '</b></p>'
-    + monthBlock(cur, by[cur], "(текущий)")
-    + monthBlock(prev, by[prev], "")
+    + monthBlock(cur, by[cur], "(текущий)", ids)
+    + monthBlock(prev, by[prev], "", ids)
+    + strayHtml
     + '<p style="margin:24px 0 0;"><a href="' + TOPUP_URL + '" style="background:#171c29;color:#fff;text-decoration:none;'
     + 'padding:10px 18px;border-radius:8px;display:inline-block;font-size:14px;">Пополнить счёт</a></p>'
     + '<p style="margin:8px 0 0;font-size:12px;color:#999;">' + TOPUP_URL + '</p>';
@@ -444,10 +568,10 @@ function schedule(send) {
 }
 
 // Разовая отправка письма «как есть» — для проверки вёрстки без ожидания порога.
-function sendTest(send) {
+function sendTest(send, subject) {
   const s = status();
   if (!s.known) { console.log(s.message); return; }
-  send({ to: TO, subject: "Claude API: осталось " + money(s.leftUsd), html: html(s), noBanner: true });
+  return send({ to: TO, subject: subject || ("Claude API: осталось " + money(s.leftUsd)), html: html(s), noBanner: true });
 }
 
-module.exports = { init, addTopup, status, check, schedule, sendTest, load, save };
+module.exports = { init, addTopup, status, check, schedule, sendTest, load, save, spendByMonth, strayCallers, html };

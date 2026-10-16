@@ -176,6 +176,9 @@ async function reply(messages, sessionId, meta) {
       tools: TOOLS,
       messages: convo,
     });
+    // Чат ходит своим ключом мимо шлюза — без этой строки его расход не попал бы
+    // в письмо сторожа баланса (ai-balance.js).
+    require("./ai-usage").record("chat", msg.model || MODEL, msg.usage);
     // Клиенту уходит текст только ПОСЛЕДНЕГО ответа модели. Если складывать все
     // шаги, куски до и после вызова save_lead склеиваются в дубль («…?Жду ответа…»).
     let stepText = "";
