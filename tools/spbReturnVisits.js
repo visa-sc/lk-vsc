@@ -39,6 +39,19 @@
  * SPBCOPY_LEADS=/var/www/mskcopy/leads.json — настройки MSK_RETURN_SMS / _SMS_TEXT / _TASKS.
  * Лимит «раз в 30 дней» общий для обоих сайтов (читаем sms.json обоих).
  *
+ * ЗАМЕР ДЛЯ КАТИ ЗАЙЦЕВОЙ (16.10.2026, её ТЗ, решение Андрея «сделай всё, как Катя говорит»):
+ *   • ответственный — менеджер из поля «Менеджер ОП» последней успешной сделки клиента;
+ *     уволен по «Графику» Кати (data/grafik/employees.json, active:false) или сделки нет —
+ *     Ксения Маслова;
+ *   • группы закрепляются за контактом навсегда: «контроль» (20 %, случайно — ни задачи,
+ *     ни SMS), остальные через одного — «задача+SMS» и «задача» (без SMS);
+ *   • первая новая сделка контакта в 30 дней после визита получает тег «Сигнал с сайта»
+ *     (у контроля — «Сигнал с сайта: контроль»), первый звонок и дозвон тоже пишутся;
+ *   • выгрузка для Кати — /var/www/kateadmin/data/site-visits/<spb|msk>-visits.json и .csv.
+ * Настройки — у Кати: /var/www/kateadmin/data/site-visits/settings.json (её Claude правит сам,
+ * значения проверяются и обрезаются по границам ниже). Главные выключатели остаются в .env
+ * (<PFX>_TASKS, <PFX>_SMS): её файл может выключить, но не включить сверх них.
+ *
  * Запуск: node tools/spbReturnVisits.js [--live]   cron: каждые 10 минут (тест).
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
@@ -52,21 +65,52 @@ const OUT = path.join(STAT, "return-visits.json");
 const DB_PATH = process.env.AMOCOPY_DB || "/var/www/voyo/.amocopy-db/crm.db";
 const SQLITE = process.env.SQLITE_MODULE || "/var/www/voyo/crm-svc/node_modules/better-sqlite3";
 const PFX = process.env.RETURN_PREFIX || "SPB_RETURN";            // SPB_RETURN | MSK_RETURN
-const LIVE = process.argv.includes("--live") && process.env[PFX + "_TASKS"] === "1";
+const SITE_KEY = PFX === "MSK_RETURN" ? "msk" : "spb";
+
+// Настройки Кати: common, поверх — spb / msk. Чего нет или что за границами — берём своё.
+const KATE_DIR = process.env.RETURN_KATE_DIR || "/var/www/kateadmin/data/site-visits";
+const CFG = (() => {
+  let f = {};
+  try { f = JSON.parse(fs.readFileSync(path.join(KATE_DIR, "settings.json"), "utf8")); } catch (_) {}
+  const c = Object.assign({}, f.common || {}, f[SITE_KEY] || {});
+  const num = (k, def, lo, hi) => { const v = Number(c[k]); return c[k] == null || c[k] === "" || !isFinite(v) ? def : Math.min(hi, Math.max(lo, v)); };
+  const str = (k, def, max) => (typeof c[k] === "string" && c[k].trim() ? c[k].trim().slice(0, max) : def);
+  return {
+    tasks: c.tasks !== false, sms: c.sms !== false,
+    // тип задачи: «Посещение сайта» (4391573, завела Катя 16.10.2026); без настройки — из .env, иначе 1 «Связаться»
+    taskType: num("taskType", Number(process.env[PFX + "_TASK_TYPE"] || process.env.RETURN_TASK_TYPE || 1), 1, 1e9),
+    fallbackResponsible: num("fallbackResponsible", Number(process.env.SPB_RETURN_RESPONSIBLE || 1605012), 1, 1e9), // Ксения Маслова
+    managerField: str("managerField", "Менеджер ОП", 80),
+    controlShare: num("controlShare", 0.2, 0, 0.9),
+    smsSplit: ["через одного", "всем", "никому"].includes(c.smsSplit) ? c.smsSplit : "через одного",
+    smsText: str("smsText", "", 160),
+    smsEveryDays: num("smsEveryDays", Number(process.env[PFX + "_SMS_DAYS"] || 30), 7, 365),
+    smsMaxDay: num("smsMaxDay", Number(process.env[PFX + "_SMS_MAX_DAY"] || 100), 0, 300),
+    taskMaxRun: num("taskMaxRun", 5, 0, 20), taskMaxDay: num("taskMaxDay", 30, 0, 100),
+    perContactHours: num("perContactHours", 24, 1, 24 * 30),
+    quietMinutes: num("quietMinutes", 30, 10, 180),
+    workFrom: num("workFrom", 10, 0, 23), workTo: num("workTo", 18, 1, 24),
+    dueInWorkMinutes: num("dueInWorkMinutes", 60, 10, 24 * 60), dueNextDayHour: num("dueNextDayHour", 11, 0, 23),
+    taskText: str("taskText", "", 1000),
+    dealTag: str("dealTag", "Сигнал с сайта", 60), controlDealTag: str("controlDealTag", "Сигнал с сайта: контроль", 60),
+    dealWindowDays: num("dealWindowDays", 30, 1, 90), callWindowDays: num("callWindowDays", 14, 1, 60)
+  };
+})();
+
+const LIVE = process.argv.includes("--live") && process.env[PFX + "_TASKS"] === "1" && CFG.tasks;
 const SESSION_GAP = 30 * 60e3; // пауза, после которой визит считается законченным
-const QUIET = 30 * 60e3; // ждём после визита: вдруг позвонит или оставит заявку
-const PER_CONTACT = 24 * 3600e3; // не чаще одной задачи на контакт в сутки
+const QUIET = CFG.quietMinutes * 60e3; // ждём после визита: вдруг позвонит или оставит заявку
+const PER_CONTACT = CFG.perContactHours * 3600e3; // не чаще одной задачи на контакт в сутки
 const SITE = process.env.SITE_NAME || "spb.visa-sc.ru";
-const RESPONSIBLE = Number(process.env.SPB_RETURN_RESPONSIBLE || 1605012); // Ксения Маслова
-const MAX_RUN = 5, MAX_DAY = 30;
-// тип задачи в amo: «Посещение сайта» (4391573, завела Катя Зайцева 16.10.2026) для Питера и Москвы;
-// свой тип на сайт — <PFX>_TASK_TYPE, общий — RETURN_TASK_TYPE, без настройки — 1 «Связаться»
-const TASK_TYPE = Number(process.env[PFX + "_TASK_TYPE"] || process.env.RETURN_TASK_TYPE || 1);
+const RESPONSIBLE = CFG.fallbackResponsible; // запасной ответственный — Ксения Маслова
+const MAX_RUN = CFG.taskMaxRun, MAX_DAY = CFG.taskMaxDay;
+const TASK_TYPE = CFG.taskType;
 const SMS_OUT = path.join(STAT, "sms.json");
-const SMS_TEXT = String(process.env[PFX + "_SMS_TEXT"] || "").trim();
-const SMS_ON = process.argv.includes("--live") && process.env[PFX + "_SMS"] === "1" && !!SMS_TEXT;
-const SMS_EVERY = Number(process.env[PFX + "_SMS_DAYS"] || 30) * 86400e3;
-const SMS_MAX_RUN = 20, SMS_MAX_DAY = Number(process.env[PFX + "_SMS_MAX_DAY"] || 100);
+const SMS_TEXT = CFG.smsText || String(process.env[PFX + "_SMS_TEXT"] || "").trim();
+const SMS_ON = process.argv.includes("--live") && process.env[PFX + "_SMS"] === "1" && CFG.sms && !!SMS_TEXT;
+const SMS_EVERY = CFG.smsEveryDays * 86400e3;
+const SMS_MAX_RUN = 20, SMS_MAX_DAY = CFG.smsMaxDay;
+const GROUP_CONTROL = "контроль", GROUP_SMS = "задача+SMS", GROUP_TASK = "задача без SMS";
 // журналы SMS обоих сайтов — чтобы один человек не получил две SMS (Питер и Москва) за 30 дней
 const SMS_ALL = ["/var/www/spbcopy/stat/sms.json", "/var/www/mskcopy/stat/sms.json"];
 const SMS_ATTR = 45 * 86400e3; // окно, в котором первая сделка после SMS засчитывается SMS (Андрей 14.10: 45 дней)
@@ -87,6 +131,62 @@ const readLines = (kind) => {
 };
 const digits = (s) => String(s || "").replace(/\D/g, "").slice(-10);
 const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ");
+
+// Выгрузка для Кати (её ТЗ 16.10.2026): каждый сигнал — визит, группа, задача, SMS, звонок, сделка.
+// Копится по ключу визита 400 дней (рабочий журнал держит только 60). Плюс status-<сайт>.json —
+// как всё настроено прямо сейчас: по нему Катин Claude отвечает «как это работает».
+function exportForKate(items, out, mobileOf) {
+  if (!fs.existsSync(KATE_DIR)) return;
+  const own = (f) => { try { const st = fs.statSync(KATE_DIR); fs.chownSync(f, st.uid, st.gid); } catch (_) {} };
+  const put = (name, text) => { const f = path.join(KATE_DIR, name); fs.writeFileSync(f + ".tmp", text); fs.renameSync(f + ".tmp", f); own(f); };
+  const iso = (ms) => (ms ? mskStr(ms) : "");
+  const fJson = path.join(KATE_DIR, SITE_KEY + "-visits.json");
+  const old = readJson(fJson, { rows: [] }).rows || [];
+  const byKey = new Map(old.map((r) => [r.key, r]));
+  for (const it of items) {
+    if (!["задача", "контроль"].includes(it.decision) && typeof it.taskId !== "number" && !/^задача/.test(it.decision)) continue;
+    const { phones, mobile } = mobileOf(it.contactId);
+    const c = it.call || {}, d = it.deal || {};
+    byKey.set(it.key, {
+      key: it.key, site: SITE, group: it.group || "", decision: it.decision, mode: it.mode,
+      visitStart: iso(it.start), visitEnd: iso(it.end), pages: it.pages || [], source: it.source || "",
+      contactId: it.contactId, contactName: it.contactName || "", phone: mobile ? "+" + mobile : (phones[0] ? "+7" + phones[0] : ""),
+      contactUrl: `https://${(process.env.AMO_SUBDOMAIN || "").replace(/^https?:\/\//, "").replace(/\..*/, "")}.amocrm.ru/contacts/detail/${it.contactId}`,
+      taskId: typeof it.taskId === "number" ? it.taskId : null, taskError: typeof it.taskId === "string" ? it.taskId : "",
+      taskAt: iso(it.taskAt), taskDue: iso(it.taskDue), taskType: it.taskType || null,
+      responsibleId: it.responsibleId || null, responsible: it.responsible || "", responsibleWhy: it.responsibleWhy || "",
+      smsSent: !!(it.sms && it.sms.status === "отправлено"), smsAt: it.sms && it.sms.status === "отправлено" ? iso(it.sms.at) : "",
+      smsStatus: (it.sms && it.sms.status) || "",
+      firstCallAt: iso(c.firstAt), firstCallDir: c.firstDir || "", firstOutCallAt: iso(c.firstOutAt),
+      talkAt: iso(c.talkAt), talkDir: c.talkDir || "", talkSec: c.talkSec || 0,
+      minutesVisitToTalk: c.talkAt ? Math.round((c.talkAt - it.end) / 60e3) : null,
+      dealId: d.id || null, dealCreatedAt: iso(d.createdAt), dealStatusId: d.statusId || null,
+      dealWon: !!d.won, dealLost: !!d.lost, dealPrice: d.price || 0, dealClosedAt: iso(d.closedAt), dealTag: d.tagged || "",
+      updatedAt: iso(Date.now())
+    });
+  }
+  const rows = [...byKey.values()].filter((r) => Date.now() - Date.parse(r.visitEnd.replace(" ", "T") + ":00+03:00") < 400 * 86400e3)
+    .sort((x, y) => (x.visitStart < y.visitStart ? -1 : 1));
+  put(SITE_KEY + "-visits.json", JSON.stringify({ builtAt: out.builtAt, site: SITE, rows }, null, 1));
+  const cols = ["visitStart", "visitEnd", "site", "group", "decision", "contactId", "contactName", "phone", "contactUrl", "taskId", "taskAt", "taskDue",
+    "taskType", "responsible", "responsibleWhy", "smsSent", "smsAt", "firstCallAt", "firstCallDir", "talkAt", "talkDir", "talkSec",
+    "minutesVisitToTalk", "dealId", "dealCreatedAt", "dealStatusId", "dealWon", "dealPrice", "dealClosedAt", "dealTag", "source", "pages", "mode", "key"];
+  const cell = (v) => { const t = Array.isArray(v) ? v.join(" ") : v == null ? "" : String(v); return /[";\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  put(SITE_KEY + "-visits.csv", "\ufeff" + [cols.join(";")].concat(rows.map((r) => cols.map((k) => cell(r[k])).join(";"))).join("\n"));
+  put("code-spbReturnVisits.js.txt", fs.readFileSync(__filename, "utf8"));   // копия кода — Катиному Claude для чтения
+  const cnt = {};
+  for (const r of rows) cnt[r.group || "без группы (до 16.10)"] = (cnt[r.group || "без группы (до 16.10)"] || 0) + 1;
+  put("status-" + SITE_KEY + ".json", JSON.stringify({
+    builtAt: out.builtAt, site: SITE, mode: out.mode,
+    switches: {
+      tasksEnv: process.env[PFX + "_TASKS"] === "1", tasksKate: CFG.tasks, tasksWorking: LIVE,
+      smsEnv: process.env[PFX + "_SMS"] === "1", smsKate: CFG.sms, smsWorking: SMS_ON,
+      note: "Работает, только если включено И в .env Андрея, И в settings.json Кати. Москва — после переноса visa-sc.ru."
+    },
+    effectiveSettings: Object.assign({}, CFG, { smsText: SMS_TEXT }),
+    knownVisitors: out.knownVisitors, rowsByGroup: cnt, contactsInGroups: Object.keys(out.groups || {}).length
+  }, null, 1));
+}
 
 (async () => {
   const now = Date.now();
@@ -144,6 +244,33 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
   const qOpenTask = db.prepare("SELECT count(*) n FROM tasks WHERE entity_type = 'contacts' AND entity_id = ? AND is_completed = 0");
   const qOurTask = db.prepare("SELECT count(*) n FROM tasks WHERE entity_type = 'contacts' AND entity_id = ? AND is_completed = 0 AND text LIKE '%на сайт%не позвонил%'");
   const respName = (qUser.get(RESPONSIBLE) || {}).name || "";
+  // Ответственный (ТЗ Кати): «Менеджер ОП» последней успешной сделки клиента, если он работает
+  // по «Графику» Кати; иначе запасной (Маслова). why — пояснение для выгрузки.
+  const norm = (s) => String(s || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+  const grafik = readJson("/var/www/kateadmin/data/grafik/employees.json", { list: [] }).list || [];
+  const crmUsers = db.prepare("SELECT id, name, email FROM users").all();
+  const fieldId = (db.prepare("SELECT id FROM cf_defs WHERE entity = 'leads' AND name = ?").get(CFG.managerField) || {}).id;
+  const qWon = db.prepare("SELECT l.id, l.cf, l.closed_at FROM leads l JOIN lead_contacts lc ON lc.lead_id = l.id WHERE lc.contact_id = ? AND l.status_id = 142 ORDER BY l.closed_at DESC LIMIT 20");
+  const managerFor = (contactId) => {
+    const fb = (why) => ({ id: RESPONSIBLE, name: respName, why });
+    if (!fieldId) return fb("поля «" + CFG.managerField + "» нет в amo");
+    const deals = qWon.all(contactId);
+    if (!deals.length) return fb("у клиента нет успешных сделок");
+    for (const d of deals) {
+      let cf = [];
+      try { cf = JSON.parse(d.cf || "[]"); } catch (_) {}
+      const f = cf.find((x) => x.field_id === fieldId);
+      const name = f && f.values && f.values[0] && f.values[0].value;
+      if (!name) continue;
+      const u = crmUsers.find((x) => norm(x.name) === norm(name));
+      if (!u) return fb(`${name} (сделка ${d.id}) — нет среди пользователей amo`);
+      const e = grafik.find((x) => norm(x.name) === norm(name)) || grafik.find((x) => u.email && norm(x.email) === norm(u.email));
+      if (!e) return fb(`${name} (сделка ${d.id}) — нет в «Графике»`);
+      if (e.active === false) return fb(`${name} (сделка ${d.id}) — уволен(а) по «Графику»`);
+      return { id: u.id, name: u.name, why: `менеджер ОП сделки ${d.id}`, dealId: d.id };
+    }
+    return fb("в успешных сделках не заполнено «" + CFG.managerField + "»");
+  };
   // Связался ли клиент сам между from и to (мс): заявка, звонок на питерский номер,
   // входящий звонок или новая сделка в amo. Нужна и для задач, и перед отправкой SMS.
   const contactedWhy = (contactId, phones, vid, from, to) => {
@@ -160,8 +287,22 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
   const prev = readJson(OUT, { items: [], done: {} });
   const done = prev.done || {};
   const items = prev.items || [];
+  // Группа замера закрепляется за контактом при первом его «задачном» визите и больше не меняется:
+  // иначе один человек попадёт и в контроль, и в обработку, и сравнение потеряет смысл.
+  const groups = prev.groups || {};          // contactId → { g, at }
+  let groupSeq = Number(prev.groupSeq || 0); // счётчик «через одного» среди не-контроля
+  const groupFor = (contactId) => {
+    if (groups[contactId]) return groups[contactId].g;
+    let g;
+    if (Math.random() < CFG.controlShare) g = GROUP_CONTROL;
+    else if (CFG.smsSplit === "всем") g = GROUP_SMS;
+    else if (CFG.smsSplit === "никому") g = GROUP_TASK;
+    else g = groupSeq++ % 2 === 0 ? GROUP_SMS : GROUP_TASK;
+    groups[contactId] = { g, at: Date.now() };
+    return g;
+  };
   const lastTaskAt = new Map();
-  for (const it of items) if (it.decision === "задача") lastTaskAt.set(it.contactId, Math.max(lastTaskAt.get(it.contactId) || 0, it.end));
+  for (const it of items) if (it.decision === "задача" || it.decision === "контроль") lastTaskAt.set(it.contactId, Math.max(lastTaskAt.get(it.contactId) || 0, it.end));
 
   let added = 0;
   for (const s of sessions.sort((a, b) => a.start - b.start)) {
@@ -184,19 +325,31 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
     else if (why.length) decision = "связался: " + why.join(", ");
     else if (recent && s.start - recent < PER_CONTACT) decision = "уже была задача за сутки";
     else if (qOurTask.get(k.contact).n) decision = "уже есть открытая такая задача";
+    // группа замера — только у тех, кто прошёл все фильтры (иначе контроль и обработка несравнимы)
+    let group = found && groups[k.contact] ? groups[k.contact].g : "";
+    if (decision === "задача") {
+      group = groupFor(k.contact);
+      if (group === GROUP_CONTROL) decision = "контроль";
+    }
     const src = s.first.utm && s.first.utm.utm_term ? "Директ «" + s.first.utm.utm_term + "»" : s.first.channel || "прямой заход";
+    const mgr = decision === "задача" ? managerFor(k.contact) : { id: null, name: "", why: "" };
+    const when = `${mskStr(s.start)}${s.end - s.start > 60e3 ? "–" + mskStr(s.end).slice(11) : ""}`;
+    const pagesTxt = `${s.pages.slice(0, 4).join(", ")}${s.pages.length > 4 ? " и ещё " + (s.pages.length - 4) : ""}`;
     const item = {
-      key, vid: s.vid, contactId: k.contact, contactName: c.name || "", responsibleId: RESPONSIBLE, responsible: respName,
+      key, vid: s.vid, contactId: k.contact, contactName: c.name || "", group,
+      responsibleId: mgr.id, responsible: mgr.name, responsibleWhy: mgr.why,
       contactOwner: (c.responsible_user_id && (qUser.get(c.responsible_user_id) || {}).name) || "",
       knownBy: k.how, start: s.start, end: s.end, pages: s.pages.slice(0, 12), source: src,
       openTasks: qOpenTask.get(k.contact).n, decision, mode: LIVE ? "боевой" : "тест", taskId: null,
-      text: `Клиент зашёл на сайт ${SITE} ${mskStr(s.start)}${s.end - s.start > 60e3 ? "–" + mskStr(s.end).slice(11) : ""} МСК, но не позвонил и не оставил заявку — связаться, узнать, что хотел.` +
-        ` Смотрел: ${s.pages.slice(0, 4).join(", ")}${s.pages.length > 4 ? " и ещё " + (s.pages.length - 4) : ""}. Источник: ${src}.`
+      text: CFG.taskText
+        ? CFG.taskText.replace(/\{site\}/g, SITE).replace(/\{when\}/g, when).replace(/\{pages\}/g, pagesTxt).replace(/\{source\}/g, src)
+        : `Клиент зашёл на сайт ${SITE} ${when} МСК, но не позвонил и не оставил заявку — связаться, узнать, что хотел.` +
+          ` Смотрел: ${pagesTxt}. Источник: ${src}.`
     };
     items.push(item);
     done[key] = 1;
     added++;
-    if (decision === "задача") lastTaskAt.set(k.contact, s.end);
+    if (decision === "задача" || decision === "контроль") lastTaskAt.set(k.contact, s.end); // контролю — то же правило «раз в сутки»
   }
 
   // 3b. SMS тем, кто не связался (см. шапку). Без SPB_RETURN_SMS=1 и текста — только запись.
@@ -223,7 +376,11 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
   const hourNow = mskHour(now), dayTime = hourNow >= 9 && hourNow < 21;
   for (const it of items) {
     if (it.sms && it.sms.final) continue;
-    if (!/^задача|^уже /.test(it.decision)) continue;            // связался сам или контакта нет — не пишем
+    if (!/^задача|^уже /.test(it.decision)) continue;            // связался сам, контроль или контакта нет — не пишем
+    if (it.group === GROUP_TASK || it.group === GROUP_CONTROL) {  // замер Кати: SMS только группе «задача+SMS»
+      it.sms = { status: "не положена: группа «" + it.group + "»", at: now, final: true };
+      continue;
+    }
     const he = mskHour(it.end), maxAge = (he >= 20 || he < 9) ? 14 * 3600e3 : 3 * 3600e3;
     if (now - it.end > maxAge) { if (!it.sms) it.sms = { status: "не отправлено: визит давно", final: true }; else it.sms.final = true; continue; }
     const { phones, mobile } = mobileOf(it.contactId);
@@ -279,18 +436,53 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
   fs.renameSync(SMS_OUT + ".tmp", SMS_OUT);
   try { const st = fs.statSync(STAT); fs.chownSync(SMS_OUT, st.uid, st.gid); } catch (_) {}
 
+  // 3d. замер (ТЗ Кати): первый звонок/дозвон и первая новая сделка контакта после визита —
+  // одинаково для обработанных и контроля, по локальной копии CRM
+  const qCalls = db.prepare(`SELECT n.note_type, n.params, n.created_at FROM amo_notes n
+    WHERE n.note_type IN ('call_in','call_out') AND n.created_at BETWEEN ? AND ? AND (
+      (n.entity_type = 'contacts' AND n.entity_id = ?) OR
+      (n.entity_type = 'leads' AND n.entity_id IN (SELECT lead_id FROM lead_contacts WHERE contact_id = ?)))
+    ORDER BY n.created_at`);
+  const qFirstDeal = db.prepare("SELECT l.id, l.name, l.price, l.status_id, l.pipeline_id, l.created_at, l.closed_at, l.tags FROM leads l JOIN lead_contacts lc ON lc.lead_id = l.id WHERE lc.contact_id = ? AND l.created_at BETWEEN ? AND ? ORDER BY l.created_at LIMIT 1");
+  const qDeal = db.prepare("SELECT id, name, price, status_id, created_at, closed_at, tags FROM leads WHERE id = ?");
+  for (const it of items) {
+    if (it.decision !== "контроль" && it.decision !== "задача" && typeof it.taskId !== "number") continue;
+    const a = Math.floor(it.end / 1000);
+    if (!it.call || !it.call.talkAt) {
+      const calls_ = qCalls.all(a, a + CFG.callWindowDays * 86400, it.contactId, it.contactId);
+      const dur = (x) => { try { return Number(JSON.parse(x.params || "{}").duration) || 0; } catch (_) { return 0; } };
+      const first = calls_[0], talk = calls_.find((x) => dur(x) > 0), out_ = calls_.find((x) => x.note_type === "call_out");
+      it.call = {
+        firstAt: first ? first.created_at * 1000 : null, firstDir: first ? (first.note_type === "call_out" ? "исходящий" : "входящий") : "",
+        firstOutAt: out_ ? out_.created_at * 1000 : null,
+        talkAt: talk ? talk.created_at * 1000 : null, talkDir: talk ? (talk.note_type === "call_out" ? "исходящий" : "входящий") : "",
+        talkSec: talk ? dur(talk) : 0
+      };
+    }
+    if (!it.deal) {
+      const d = qFirstDeal.get(it.contactId, a, a + CFG.dealWindowDays * 86400);
+      if (d) it.deal = { id: d.id };
+    }
+    if (it.deal && !it.deal.final) {
+      const d = qDeal.get(it.deal.id);
+      if (d) Object.assign(it.deal, { name: d.name || "", createdAt: d.created_at * 1000, statusId: d.status_id,
+        won: d.status_id === 142, lost: d.status_id === 143, price: Number(d.price) || 0, closedAt: d.closed_at ? d.closed_at * 1000 : null,
+        final: d.status_id === 142 || d.status_id === 143 });
+    }
+  }
+
   // 4. (выключено) постановка задач в amo — только SPB_RETURN_TASKS=1 и --live
   if (LIVE) {
     const axios = require("axios");
     const SUB = (process.env.AMO_SUBDOMAIN || "").replace(/^https?:\/\//, "").replace(/\..*/, "");
     const H = { Authorization: "Bearer " + process.env.AMO_ACCESS_TOKEN };
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    // срок: в рабочее время — через час, иначе — 11:00 следующего рабочего дня (МСК)
+    // срок: в рабочее время (10–18 МСК, пн–пт) — через час, иначе — 11:00 следующего рабочего дня (МСК)
     const dueFor = (t) => {
       const m = new Date(t + 3 * 3600e3);
       const h = m.getUTCHours(), wd = m.getUTCDay();
-      if (wd >= 1 && wd <= 5 && h >= 10 && h < 18) return Math.floor((t + 3600e3) / 1000);
-      const d = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), m.getUTCDate() + (h >= 10 ? 1 : 0), 8, 0));
+      if (wd >= 1 && wd <= 5 && h >= CFG.workFrom && h < CFG.workTo) return Math.floor((t + CFG.dueInWorkMinutes * 60e3) / 1000);
+      const d = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), m.getUTCDate() + (h >= CFG.workFrom ? 1 : 0), CFG.dueNextDayHour - 3, 0));
       while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
       return Math.floor(d.getTime() / 1000);
     };
@@ -301,7 +493,7 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
       try {
         const post = (type) => axios.post(`https://${SUB}.amocrm.ru/api/v4/tasks`, [{
           task_type_id: type, text: it.text, complete_till: dueFor(now), entity_type: "contacts", entity_id: it.contactId,
-          responsible_user_id: RESPONSIBLE
+          responsible_user_id: it.responsibleId || RESPONSIBLE
         }], { headers: H, timeout: 30000, validateStatus: null });
         let r = await post(TASK_TYPE);
         it.taskType = TASK_TYPE;
@@ -314,22 +506,49 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
         }
         if (r.status === 429 || r.status === 403) { console.log("amo ответил " + r.status + " — стоп"); break; }
         it.taskId = (r.data && r.data._embedded && r.data._embedded.tasks && r.data._embedded.tasks[0] && r.data._embedded.tasks[0].id) || "ошибка " + r.status;
-        if (typeof it.taskId === "number") { it.taskAt = Date.now(); sentRun++; sentToday++; }
+        if (typeof it.taskId === "number") { it.taskAt = Date.now(); it.taskDue = dueFor(now) * 1000; sentRun++; sentToday++; }
       } catch (e) {
         it.taskId = "ошибка: " + e.message;
       }
+    }
+
+    // 4b. тег на первой новой сделке после сигнала (ТЗ Кати): «Сигнал с сайта» / «… контроль»
+    let tagged = 0;
+    for (const it of items.filter((x) => x.deal && !x.deal.tagged && x.mode === "боевой" && (typeof x.taskId === "number" || x.decision === "контроль"))) {
+      if (tagged >= 10) break;
+      const tag = it.decision === "контроль" ? CFG.controlDealTag : CFG.dealTag;
+      await sleep(1100);
+      try {
+        let r = await axios.patch(`https://${SUB}.amocrm.ru/api/v4/leads/${it.deal.id}`, { _embedded: { tags_to_add: [{ name: tag }] } },
+          { headers: H, timeout: 30000, validateStatus: null });
+        if (r.status === 400) {
+          // старый способ: прочитать теги сделки из amo и записать их вместе с новым
+          await sleep(1100);
+          const g = await axios.get(`https://${SUB}.amocrm.ru/api/v4/leads/${it.deal.id}`, { headers: H, timeout: 30000, validateStatus: null });
+          const old = ((g.data && g.data._embedded && g.data._embedded.tags) || []).map((t) => ({ id: t.id }));
+          await sleep(1100);
+          r = await axios.patch(`https://${SUB}.amocrm.ru/api/v4/leads/${it.deal.id}`, { _embedded: { tags: old.concat([{ name: tag }]) } },
+            { headers: H, timeout: 30000, validateStatus: null });
+        }
+        if (r.status === 429 || r.status === 403) { console.log("amo ответил " + r.status + " на тег — стоп"); break; }
+        if (r.status >= 200 && r.status < 300) { it.deal.tagged = tag; it.deal.taggedAt = Date.now(); tagged++; }
+        else it.deal.tagError = "amo " + r.status;
+      } catch (e) { it.deal.tagError = e.message; }
     }
   }
 
   const keep = items.filter((x) => now - x.end < 60 * 86400e3).slice(-1000);
   const keepDone = Object.fromEntries(Object.entries(done).filter(([k]) => now - Number(k.split("|")[1]) < 70 * 86400e3));
-  const out = { builtAt: new Date().toISOString(), mode: LIVE ? "боевой" : "тест", knownVisitors: known.size, items: keep, done: keepDone };
+  const keepGroups = Object.fromEntries(Object.entries(groups).filter(([, v]) => now - v.at < 400 * 86400e3));
+  const out = { builtAt: new Date().toISOString(), mode: LIVE ? "боевой" : "тест", knownVisitors: known.size, items: keep, done: keepDone,
+    groups: keepGroups, groupSeq };
   fs.writeFileSync(OUT + ".tmp", JSON.stringify(out));
   fs.renameSync(OUT + ".tmp", OUT);
   try {
     const st = fs.statSync(STAT);
     fs.chownSync(OUT, st.uid, st.gid);
   } catch (_) {}
+  try { exportForKate(keep, out, mobileOf); } catch (e) { console.log("выгрузка для Кати: " + e.message); }
   console.log(`${out.builtAt} SMS: ${SMS_ON ? "вкл" : "выкл"}, за прогон ${smsRun}; узнаваемых посетителей ${known.size}, посещений ${sessions.length}, новых случаев ${added}, задач ${keep.filter((x) => x.decision === "задача").length} (${out.mode})`);
 })().catch((e) => {
   console.log("ошибка:", e.message);
