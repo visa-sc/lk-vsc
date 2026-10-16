@@ -402,7 +402,10 @@
        шильдику всплывающим окном. */
     .obr-chip { display: none; }
     .obr-close { display: none; }
-    .obr-backdrop { display: none; position: fixed; inset: 0; background: rgba(20,24,40,.45); z-index: 1000; }
+    /* Всплывашка «Ваши обращения» — выше нижнего меню (z-index 1200) и разделов
+       (1150): иначе меню оставалось чётким и нажимаемым поверх затемнения, а
+       нажатие на раздел открывало его над висящим окном (аудит 16.10.2026). */
+    .obr-backdrop { display: none; position: fixed; inset: 0; background: rgba(20,24,40,.45); z-index: 1250; }
     .obr-backdrop.show { display: block; }
     @media (max-width: 760px) {
       .obr-chip {
@@ -420,7 +423,7 @@
       #obrCard.sheet-open {
         display: block; position: fixed; left: 12px; right: 12px; top: 50%;
         transform: translateY(-50%); max-height: 82vh; overflow-y: auto;
-        z-index: 1001; margin: 0; box-shadow: 0 24px 60px rgba(20,24,40,.28);
+        z-index: 1251; margin: 0; box-shadow: 0 24px 60px rgba(20,24,40,.28);
       }
       .obr-close {
         display: flex; align-items: center; justify-content: center;
@@ -973,6 +976,14 @@
 
       .file-attach-btn {
         width: 100%;
+        /* На узких телефонах (320 px) надпись «Прикрепить фото или файл» не
+           влезала в строку и залезала на рамку — разрешаем перенос, высоту
+           держим не меньше прежней. */
+        white-space: normal;
+        height: auto;
+        min-height: 38px;
+        padding: 8px 12px;
+        line-height: 1.25;
       }
 
       .help-actions {
@@ -1023,8 +1034,8 @@
     /* Обёртка страницы — легче и чище.
        ВАЖНО: НИКАКОГО backdrop-filter на .wrap — он создаёт containing block
        и stacking context для потомков, из-за чего мобильная всплывашка
-       обращений (#obrCard.sheet-open, position:fixed, z-index:1001) оказывалась
-       ПОД подложкой .obr-backdrop (z-index:1000 в body) и «не появлялась». */
+       обращений (#obrCard.sheet-open, position:fixed, z-index:1251) оказывалась
+       ПОД подложкой .obr-backdrop (z-index:1250 в body) и «не появлялась». */
     body.lk-skin .wrap {
       background: rgba(252,252,254,.92);
       border: 1px solid var(--lk-border);
@@ -3555,6 +3566,11 @@
 
         if (index < currentIndex) row.classList.add("done");
         if (index === currentIndex) row.classList.add("current");
+        // «Оформление на паузе» — не шаг пути, а временное состояние. Строку
+        // показываем, только пока клиент на паузе: иначе у всех, кто прошёл
+        // дальше, она горела «пройдено», будто пауза была (аудит 16.10.2026).
+        // Узел остаётся в DOM — индексы этапов и гейтинг блоков не меняются.
+        if (stageName === "Оформление на паузе" && index !== currentIndex) row.style.display = "none";
 
         row.innerHTML = `
           <div class="dot"></div>

@@ -126,9 +126,9 @@
   + '.vl-card .vl-foot{transform:translate3d(calc(var(--px,0px) * -.2),calc(var(--py,0px) * -.2),0);}'
   + '.vl-card .vl-prog{transform:translate3d(calc(var(--px,0px) * -.2),calc(var(--py,0px) * -.2),0);}'
   + '.vl-c-top{display:flex;justify-content:space-between;align-items:center;gap:10px;}'
-  + '.vl-brand{font-weight:500;font-size:10.5px;letter-spacing:.2em;opacity:.76;'
+  + '.vl-brand{font-weight:500;font-size:11px;letter-spacing:.2em;opacity:.76;'
   + 'text-shadow:0 1px 0 rgba(255,255,255,.12),0 1px 6px rgba(0,0,0,.16);}'
-  + '.vl-tier{display:inline-flex;align-items:center;gap:2px;font-size:10.5px;font-weight:600;letter-spacing:.05em;'
+  + '.vl-tier{display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;letter-spacing:.05em;'
   + 'text-transform:uppercase;padding:6px 13px;border-radius:999px;background:rgba(255,255,255,.16);'
   + 'border:1px solid rgba(255,255,255,.24);box-shadow:0 1px 0 rgba(255,255,255,.2) inset;'
   + 'backdrop-filter:saturate(170%) blur(10px);-webkit-backdrop-filter:saturate(170%) blur(10px);white-space:nowrap;}'
@@ -137,7 +137,7 @@
   + 'font-variant-numeric:tabular-nums;text-shadow:0 1px 0 rgba(255,255,255,.14),0 4px 22px rgba(0,0,0,.20);}'
   + '.vl-bal small{font-size:13.5px;font-weight:400;opacity:.66;margin-left:9px;letter-spacing:0;text-shadow:none;}'
   + '.vl-foot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:18px;}'
-  + '.vl-name{font-size:10.5px;opacity:.66;letter-spacing:.11em;text-transform:uppercase;font-weight:500;'
+  + '.vl-name{font-size:11px;opacity:.66;letter-spacing:.11em;text-transform:uppercase;font-weight:500;'
   + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
   /* ── прогресс статуса: отдельная светлая панель ПОД картой ── 
      На карте ему места нет (там пропорции пластика), а внизу он читается лучше. */
@@ -220,10 +220,17 @@
   + '.vl-code::after{content:"⧉";position:absolute;bottom:12px;right:13px;font-size:13px;'
   + 'color:var(--vl-accent);opacity:.5;transition:opacity .15s ease;}'
   + '.vl-code:hover::after{opacity:.9;}'
-  /* Подпись длинная — держим её в ОДНУ строку на любой ширине: не переносим и
-     плавно уменьшаем кегль вместе с шириной экрана. */
-  + '.vl-code .lb{display:block;font-size:clamp(7.6px,2.35vw,11px);color:var(--vl-mut);font-weight:500;'
+  /* Подпись длинная — держим её в ОДНУ строку на любой ширине: не переносим.
+     Раньше кегль уменьшался вместе с экраном и на 320 px падал до 7,6 px — не
+     читалось. Теперь кегль не меньше 11 px, а на узких экранах вместо полной
+     подписи показываем короткую (без «с промокодом»). */
+  + '.vl-code .lb{display:block;font-size:11px;color:var(--vl-mut);font-weight:500;'
   + 'letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 10px;}'
+  /* Ширины замерены в кабинете: полная (293 px при 11 px) влезает от экрана
+     440 px, «…скопировать ссылку» (210 px) — от 360, «…скопировать» (166 px) — на 320. */
+  + '.vl-code .lb-s,.vl-code .lb-xs{display:none;}'
+  + '@media (max-width:439px){.vl-code .lb-f{display:none;}.vl-code .lb-s{display:inline;}}'
+  + '@media (max-width:359px){.vl-code .lb-s{display:none;}.vl-code .lb-xs{display:inline;}}'
   /* Промокод набран лёгким начертанием с широкой разрядкой — читается как код,
      а не как заголовок; жирный на такой ширине выглядел грубо. */
   + '.vl-code .cd{display:block;font-size:26px;font-weight:400;letter-spacing:.22em;color:var(--vl-accent-d);'
@@ -264,7 +271,11 @@
   + '.vl-i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;'
   + 'border:1.2px solid currentColor;color:#adb5c2;font-size:9.5px;font-weight:700;font-style:italic;'
   + 'font-family:Georgia,"Times New Roman",serif;line-height:1;cursor:pointer;vertical-align:middle;margin-left:7px;'
-  + '-webkit-user-select:none;user-select:none;flex:0 0 auto;transition:color .18s ease,transform .18s ease;}'
+  + '-webkit-user-select:none;user-select:none;flex:0 0 auto;transition:color .18s ease,transform .18s ease;'
+  + 'position:relative;}'
+  /* Кружок 15 px, а пальцем нужно попадать хотя бы в ~33 px: невидимая зона
+     нажатия вокруг, внешний вид не меняется. */
+  + '.vl-i::after{content:"";position:absolute;inset:-9px;border-radius:50%;}'
   + '.vl-i:hover,.vl-i.open{color:var(--vl-accent);transform:scale(1.12);}'
   + '.vl-card .vl-i{color:rgba(255,255,255,.6);margin-left:8px;}'
   + '.vl-card .vl-i:hover,.vl-card .vl-i.open{color:#fff;}'
@@ -324,7 +335,8 @@
   + '.vl-howb-q{position:relative;flex:0 0 auto;width:24px;height:24px;border-radius:50%;display:inline-flex;'
   + 'align-items:center;justify-content:center;color:#fff;font-size:13.5px;font-weight:700;line-height:1;'
   + 'background:linear-gradient(145deg,#5cb0e0,#2b6d97);box-shadow:0 3px 8px -2px rgba(43,109,151,.55);}'
-  + '.vl-howb-t{position:relative;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+  /* На 320 px надпись обрезалась «…програ…» — даём ей перенестись на вторую строку. */
+  + '.vl-howb-t{position:relative;min-width:0;line-height:1.25;text-align:left;text-wrap:balance;}'
 
   /* окно */
   + '.vl-modal{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;'
@@ -667,7 +679,9 @@
       + " ₽</b> — другу!<br>Другу баллы приходят сразу, вам — после его оплаты."
       + "<br>Приглашайте неограниченное количество друзей.</div>"
       + '<button type="button" class="vl-code" data-act="copy" title="Нажмите, чтобы скопировать промокод">'
-      + '<span class="lb">Нажмите, чтобы скопировать ссылку с промокодом</span>'
+      + '<span class="lb"><span class="lb-f">Нажмите, чтобы скопировать ссылку с промокодом</span>'
+      + '<span class="lb-s">Нажмите, чтобы скопировать ссылку</span>'
+      + '<span class="lb-xs">Нажмите, чтобы скопировать</span></span>'
       + '<span class="cd">' + esc(ref.code) + "</span></button>"
       + '<div class="vl-share">'
       + '<a class="vl-btn" href="' + esc(wa) + '" target="_blank" rel="noopener">Отправить в WhatsApp</a>'
@@ -682,9 +696,11 @@
     codeBox.addEventListener("click", function () {
       function flash() {
         codeBox.classList.add("done");
-        var lb = codeBox.querySelector(".lb"), was = lb.textContent;
-        lb.textContent = "✓ Ссылка с промокодом скопирована";
-        setTimeout(function () { codeBox.classList.remove("done"); lb.textContent = was; }, 1600);
+        // Подпись — две версии (полная и короткая для узких экранов), поэтому
+        // запоминаем и возвращаем разметку, а не текст.
+        var lb = codeBox.querySelector(".lb"), was = lb.innerHTML;
+        lb.textContent = "✓ Ссылка скопирована";
+        setTimeout(function () { codeBox.classList.remove("done"); lb.innerHTML = was; }, 1600);
       }
       // Clipboard API может отказать (нет жеста/прав) — тогда молча уходим на
       // execCommand, но подтверждение показываем в любом случае.
