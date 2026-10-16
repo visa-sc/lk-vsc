@@ -43,8 +43,12 @@
  *   • ответственный — менеджер из поля «Менеджер ОП» последней успешной сделки клиента;
  *     уволен по «Графику» Кати (data/grafik/employees.json, active:false) или сделки нет —
  *     Ксения Маслова;
- *   • группы закрепляются за контактом навсегда: «контроль» (20 %, случайно — ни задачи,
- *     ни SMS), остальные через одного — «задача+SMS» и «задача» (без SMS);
+ *   • четыре группы, случайно по долям groupShares, закрепляются за контактом навсегда
+ *     (с 16.10 22:50, её запрос в data/site-visits/ЗАПРОС-ОТ-ЕКАТЕРИНЫ.md): «контроль» 20 % —
+ *     ни задачи, ни SMS; «только SMS» 20 %; «только задача» 30 %; «SMS + задача» 30 %;
+ *   • задачу не ставим поверх живой работы: у клиента есть активные задачи (на контакте или
+ *     незакрытых сделках) — «не поставлена: есть активная задача», кроме случая, когда она
+ *     одна и типа «Повторная сделка» (1095426). Группа и SMS при этом остаются;
  *   • первая новая сделка контакта в 30 дней после визита получает тег «Сигнал с сайта»
  *     (у контроля — «Сигнал с сайта: контроль»), первый звонок и дозвон тоже пишутся;
  *   • выгрузка для Кати — /var/www/kateadmin/data/site-visits/<spb|msk>-visits.json и .csv.
@@ -81,8 +85,20 @@ const CFG = (() => {
     taskType: num("taskType", Number(process.env[PFX + "_TASK_TYPE"] || process.env.RETURN_TASK_TYPE || 1), 1, 1e9),
     fallbackResponsible: num("fallbackResponsible", Number(process.env.SPB_RETURN_RESPONSIBLE || 1605012), 1, 1e9), // Ксения Маслова
     managerField: str("managerField", "Менеджер ОП", 80),
-    controlShare: num("controlShare", 0.2, 0, 0.9),
-    smsSplit: ["через одного", "всем", "никому"].includes(c.smsSplit) ? c.smsSplit : "через одного",
+    // доли четырёх групп замера (запрос Кати 16.10.2026); сумма не обязана быть 1 — нормируем
+    groupShares: (() => {
+      const def = { "контроль": 0.2, "только SMS": 0.2, "только задача": 0.3, "SMS + задача": 0.3 };
+      const g = c.groupShares && typeof c.groupShares === "object" ? c.groupShares : {};
+      const out = {};
+      for (const k of Object.keys(def)) { const v = Number(g[k]); out[k] = g[k] == null || !isFinite(v) ? def[k] : Math.min(1, Math.max(0, v)); }
+      const sum = Object.values(out).reduce((a, b) => a + b, 0);
+      if (!(sum > 0)) return def;
+      for (const k of Object.keys(out)) out[k] = Math.round((out[k] / sum) * 1000) / 1000;
+      return out;
+    })(),
+    // задачу не ставим поверх живой работы: есть активные задачи — нет, кроме одной-единственной этого типа
+    checkActiveTasks: c.checkActiveTasks !== false,
+    okIfOnlyActiveTaskType: num("okIfOnlyActiveTaskType", 1095426, 0, 1e9), // «Повторная сделка»
     smsText: str("smsText", "", 160),
     smsEveryDays: num("smsEveryDays", Number(process.env[PFX + "_SMS_DAYS"] || 30), 7, 365),
     smsMaxDay: num("smsMaxDay", Number(process.env[PFX + "_SMS_MAX_DAY"] || 100), 0, 300),
@@ -110,7 +126,11 @@ const SMS_TEXT = CFG.smsText || String(process.env[PFX + "_SMS_TEXT"] || "").tri
 const SMS_ON = process.argv.includes("--live") && process.env[PFX + "_SMS"] === "1" && CFG.sms && !!SMS_TEXT;
 const SMS_EVERY = CFG.smsEveryDays * 86400e3;
 const SMS_MAX_RUN = 20, SMS_MAX_DAY = CFG.smsMaxDay;
-const GROUP_CONTROL = "контроль", GROUP_SMS = "задача+SMS", GROUP_TASK = "задача без SMS";
+const GROUP_CONTROL = "контроль", GROUP_SMS_ONLY = "только SMS", GROUP_TASK = "только задача", GROUP_BOTH = "SMS + задача";
+const GROUPS_WITH_SMS = [GROUP_SMS_ONLY, GROUP_BOTH, "задача+SMS"];          // «задача+SMS» — название до 16.10 22:50
+const GROUPS_WITH_TASK = [GROUP_TASK, GROUP_BOTH, "задача+SMS", "задача без SMS"];
+// какие решения — это «сигнал» (визит прошёл фильтры): по ним раз-в-сутки, замер и выгрузка
+const isSignal = (d) => d === "задача" || d === "контроль" || d === "только SMS" || /^не поставлена/.test(String(d || ""));
 // журналы SMS обоих сайтов — чтобы один человек не получил две SMS (Питер и Москва) за 30 дней
 const SMS_ALL = ["/var/www/spbcopy/stat/sms.json", "/var/www/mskcopy/stat/sms.json"];
 const SMS_ATTR = 45 * 86400e3; // окно, в котором первая сделка после SMS засчитывается SMS (Андрей 14.10: 45 дней)
@@ -144,7 +164,7 @@ function exportForKate(items, out, mobileOf) {
   const old = readJson(fJson, { rows: [] }).rows || [];
   const byKey = new Map(old.map((r) => [r.key, r]));
   for (const it of items) {
-    if (!["задача", "контроль"].includes(it.decision) && typeof it.taskId !== "number" && !/^задача/.test(it.decision)) continue;
+    if (!isSignal(it.decision) && typeof it.taskId !== "number" && !/^задача/.test(it.decision)) continue;
     const { phones, mobile } = mobileOf(it.contactId);
     const c = it.call || {}, d = it.deal || {};
     byKey.set(it.key, {
@@ -242,7 +262,21 @@ function exportForKate(items, out, mobileOf) {
   const qCallInLead = db.prepare("SELECT count(*) n FROM amo_notes n JOIN lead_contacts lc ON lc.lead_id = n.entity_id WHERE n.entity_type = 'leads' AND lc.contact_id = ? AND n.note_type = 'call_in' AND n.created_at BETWEEN ? AND ?");
   const qNewLead = db.prepare("SELECT count(*) n FROM lead_contacts lc JOIN leads l ON l.id = lc.lead_id WHERE lc.contact_id = ? AND l.created_at BETWEEN ? AND ?");
   const qOpenTask = db.prepare("SELECT count(*) n FROM tasks WHERE entity_type = 'contacts' AND entity_id = ? AND is_completed = 0");
-  const qOurTask = db.prepare("SELECT count(*) n FROM tasks WHERE entity_type = 'contacts' AND entity_id = ? AND is_completed = 0 AND text LIKE '%на сайт%не позвонил%'");
+  // активные задачи клиента: на контакте и на его незакрытых сделках (задачи на закрытых — не живая работа)
+  const qActive = db.prepare(`SELECT t.id, t.task_type FROM tasks t WHERE t.is_completed = 0 AND (
+      (t.entity_type = 'contacts' AND t.entity_id = ?) OR
+      (t.entity_type = 'leads' AND t.entity_id IN (SELECT l.id FROM leads l JOIN lead_contacts lc ON lc.lead_id = l.id
+        WHERE lc.contact_id = ? AND l.status_id NOT IN (142, 143))))`);
+  const typeName = new Map(db.prepare("SELECT id, name FROM task_types").all().map((x) => [x.id, x.name]));
+  typeName.set(4391573, "Посещение сайта");
+  const activeBlock = (contactId) => {
+    if (!CFG.checkActiveTasks) return "";
+    const t = qActive.all(contactId, contactId);
+    if (!t.length) return "";
+    if (t.length === 1 && CFG.okIfOnlyActiveTaskType && t[0].task_type === CFG.okIfOnlyActiveTaskType) return "";
+    const names = [...new Set(t.map((x) => typeName.get(x.task_type) || "тип " + x.task_type))].slice(0, 4).join(", ");
+    return `не поставлена: есть активная задача (${t.length}: ${names})`;
+  };
   const respName = (qUser.get(RESPONSIBLE) || {}).name || "";
   // Ответственный (ТЗ Кати): «Менеджер ОП» последней успешной сделки клиента, если он работает
   // по «Графику» Кати; иначе запасной (Маслова). why — пояснение для выгрузки.
@@ -290,19 +324,18 @@ function exportForKate(items, out, mobileOf) {
   // Группа замера закрепляется за контактом при первом его «задачном» визите и больше не меняется:
   // иначе один человек попадёт и в контроль, и в обработку, и сравнение потеряет смысл.
   const groups = prev.groups || {};          // contactId → { g, at }
-  let groupSeq = Number(prev.groupSeq || 0); // счётчик «через одного» среди не-контроля
+  let groupSeq = Number(prev.groupSeq || 0); // сколько контактов распределено (для сверки)
   const groupFor = (contactId) => {
     if (groups[contactId]) return groups[contactId].g;
-    let g;
-    if (Math.random() < CFG.controlShare) g = GROUP_CONTROL;
-    else if (CFG.smsSplit === "всем") g = GROUP_SMS;
-    else if (CFG.smsSplit === "никому") g = GROUP_TASK;
-    else g = groupSeq++ % 2 === 0 ? GROUP_SMS : GROUP_TASK;
+    // случайно по долям groupShares (контроль / только SMS / только задача / SMS + задача)
+    let g = GROUP_BOTH, r = Math.random(), acc = 0;
+    for (const [name, share] of Object.entries(CFG.groupShares)) { acc += share; if (r < acc) { g = name; break; } }
+    groupSeq++;
     groups[contactId] = { g, at: Date.now() };
     return g;
   };
   const lastTaskAt = new Map();
-  for (const it of items) if (it.decision === "задача" || it.decision === "контроль") lastTaskAt.set(it.contactId, Math.max(lastTaskAt.get(it.contactId) || 0, it.end));
+  for (const it of items) if (isSignal(it.decision)) lastTaskAt.set(it.contactId, Math.max(lastTaskAt.get(it.contactId) || 0, it.end));
 
   let added = 0;
   for (const s of sessions.sort((a, b) => a.start - b.start)) {
@@ -324,12 +357,13 @@ function exportForKate(items, out, mobileOf) {
     if (!found) decision = "контакта нет в CRM (удалён)";
     else if (why.length) decision = "связался: " + why.join(", ");
     else if (recent && s.start - recent < PER_CONTACT) decision = "уже была задача за сутки";
-    else if (qOurTask.get(k.contact).n) decision = "уже есть открытая такая задача";
     // группа замера — только у тех, кто прошёл все фильтры (иначе контроль и обработка несравнимы)
     let group = found && groups[k.contact] ? groups[k.contact].g : "";
     if (decision === "задача") {
       group = groupFor(k.contact);
       if (group === GROUP_CONTROL) decision = "контроль";
+      else if (!GROUPS_WITH_TASK.includes(group)) decision = "только SMS";
+      else { const block = activeBlock(k.contact); if (block) decision = block; }   // сигнал не теряем: группа и SMS остаются
     }
     const src = s.first.utm && s.first.utm.utm_term ? "Директ «" + s.first.utm.utm_term + "»" : s.first.channel || "прямой заход";
     const mgr = decision === "задача" ? managerFor(k.contact) : { id: null, name: "", why: "" };
@@ -349,7 +383,7 @@ function exportForKate(items, out, mobileOf) {
     items.push(item);
     done[key] = 1;
     added++;
-    if (decision === "задача" || decision === "контроль") lastTaskAt.set(k.contact, s.end); // контролю — то же правило «раз в сутки»
+    if (isSignal(decision)) lastTaskAt.set(k.contact, s.end); // всем группам — одно правило «раз в сутки»
   }
 
   // 3b. SMS тем, кто не связался (см. шапку). Без SPB_RETURN_SMS=1 и текста — только запись.
@@ -376,8 +410,8 @@ function exportForKate(items, out, mobileOf) {
   const hourNow = mskHour(now), dayTime = hourNow >= 9 && hourNow < 21;
   for (const it of items) {
     if (it.sms && it.sms.final) continue;
-    if (!/^задача|^уже /.test(it.decision)) continue;            // связался сам, контроль или контакта нет — не пишем
-    if (it.group === GROUP_TASK || it.group === GROUP_CONTROL) {  // замер Кати: SMS только группе «задача+SMS»
+    if (!/^задача|^уже |^только SMS|^не поставлена/.test(it.decision)) continue;  // связался сам, контроль или контакта нет — не пишем
+    if (it.group && !GROUPS_WITH_SMS.includes(it.group)) {        // замер Кати: SMS только группам с SMS
       it.sms = { status: "не положена: группа «" + it.group + "»", at: now, final: true };
       continue;
     }
@@ -446,7 +480,7 @@ function exportForKate(items, out, mobileOf) {
   const qFirstDeal = db.prepare("SELECT l.id, l.name, l.price, l.status_id, l.pipeline_id, l.created_at, l.closed_at, l.tags FROM leads l JOIN lead_contacts lc ON lc.lead_id = l.id WHERE lc.contact_id = ? AND l.created_at BETWEEN ? AND ? ORDER BY l.created_at LIMIT 1");
   const qDeal = db.prepare("SELECT id, name, price, status_id, created_at, closed_at, tags FROM leads WHERE id = ?");
   for (const it of items) {
-    if (it.decision !== "контроль" && it.decision !== "задача" && typeof it.taskId !== "number") continue;
+    if (!isSignal(it.decision) && typeof it.taskId !== "number") continue;
     const a = Math.floor(it.end / 1000);
     if (!it.call || !it.call.talkAt) {
       const calls_ = qCalls.all(a, a + CFG.callWindowDays * 86400, it.contactId, it.contactId);
@@ -514,7 +548,7 @@ function exportForKate(items, out, mobileOf) {
 
     // 4b. тег на первой новой сделке после сигнала (ТЗ Кати): «Сигнал с сайта» / «… контроль»
     let tagged = 0;
-    for (const it of items.filter((x) => x.deal && !x.deal.tagged && x.mode === "боевой" && (typeof x.taskId === "number" || x.decision === "контроль"))) {
+    for (const it of items.filter((x) => x.deal && !x.deal.tagged && x.mode === "боевой" && (typeof x.taskId === "number" || isSignal(x.decision)))) {
       if (tagged >= 10) break;
       const tag = it.decision === "контроль" ? CFG.controlDealTag : CFG.dealTag;
       await sleep(1100);
