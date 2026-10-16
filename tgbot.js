@@ -1529,14 +1529,32 @@ let _hookErrs = [];         // моменты разных ошибок дост
 let _fellBackAt = 0;        // когда ушли на опрос из-за ошибок
 let _fallbacks = [];        // моменты отступлений за последние сутки
 let _hookEnabling = false;  // идёт включение вебхука — опрос не должен его снимать
-async function enableWebhook() {
+// Адрес, на который должен смотреть вебхук
+function hookUrl() {
   // Телеграм до нашего сервера не достукивается напрямую (проверено 29.09.2026),
   // поэтому вебхук регистрируем на ретранслятор: он примет и перешлёт нам.
   // ESIM_TG_HOOK_VIA_RELAY=0 вернёт прямой адрес, если блокировка снимется.
   const viaRelay = String(process.env.ESIM_TG_HOOK_VIA_RELAY || "1") !== "0" && !!relay();
-  const url = viaRelay
-    ? relay() + "/hook" + webhookPath().replace("/tg/esim", "")
-    : HOOK_BASE + webhookPath();
+  return viaRelay ? relay() + "/hook" + webhookPath().replace("/tg/esim", "") : HOOK_BASE + webhookPath();
+}
+// Ставит вебхук и проверяет, что Телеграм его принял. 16.10.2026: tg() при сбое
+// не бросает ошибку, а возвращает null — и бот считал вебхук включённым, хотя
+// ретранслятор команду не донёс: опрос стоял, вебхука не было, сообщения ждали
+// у Телеграма до следующей проверки. Теперь — до трёх попыток со сверкой адреса.
+async function setHookChecked(url) {
+  for (let i = 1; i <= 3; i++) {
+    const ok = await tg("setWebhook", {
+      url, secret_token: hookSecret(), drop_pending_updates: false,
+      max_connections: 20, allowed_updates: ["message", "callback_query", "my_chat_member"],
+    }, { quiet: true });
+    const info = ok ? await tg("getWebhookInfo", {}, { quiet: true }) : null;
+    if (info && String(info.url || "") === url) return true;
+    await sleep(3000 * i);
+  }
+  return false;
+}
+async function enableWebhook() {
+  const url = hookUrl();
   // 16.10.2026: опрос останавливаем ДО setWebhook. Телеграм обрывает висящий
   // getUpdates ошибкой 409 раньше, чем отвечает на setWebhook, и старый цикл
   // успевал «починить конфликт» — снять только что включённый вебхук. Сторож
@@ -1545,10 +1563,7 @@ async function enableWebhook() {
   _polling = false;
   _hookEnabling = true;
   try {
-    await tg("setWebhook", {
-      url, secret_token: hookSecret(), drop_pending_updates: false,
-      max_connections: 20, allowed_updates: ["message", "callback_query", "my_chat_member"],
-    });
+    if (!(await setHookChecked(url))) throw new Error((_lastErr && _lastErr.desc) || "Телеграм не подтвердил адрес");
     _hookOn = true;
     _hookSince = Date.now();
     _hookErrs = [];
@@ -1559,6 +1574,7 @@ async function enableWebhook() {
     console.error("tgbot: вебхук не включился (" + e.message + "), остаёмся на опросе");
     _hookOn = false;
     _hookEnabling = false;
+    _fellBackAt = Date.now();
     pollLoop();
   }
 }
@@ -1568,9 +1584,15 @@ async function webhookWatch() {
   let info = null;
   try { info = await tg("getWebhookInfo", {}, { quiet: true }); } catch (_) { return; }
   if (!info) return;
-  const viaRelay = String(process.env.ESIM_TG_HOOK_VIA_RELAY || "1") !== "0" && !!relay();
-  const want = viaRelay ? relay() + "/hook" + webhookPath().replace("/tg/esim", "") : HOOK_BASE + webhookPath();
-  const badUrl = String(info.url || "") !== want;
+  const want = hookUrl();
+  let badUrl = String(info.url || "") !== want;
+  // Самопочинка: вебхук пропал или смотрит не туда — ставим заново. Сообщения
+  // за это время ждут у Телеграма и придут сразу после установки.
+  if (badUrl && (await setHookChecked(want))) {
+    console.log("tgbot: вебхук пропал (" + (info.url ? "чужой адрес" : "пустой адрес") + "), поставлен заново");
+    _hookSince = Date.now();
+    return;
+  }
   const lastErr = Number(info.last_error_date || 0) * 1000;
   // ошибка до включения нас не касается: она осталась от прошлой попытки
   const freshErr = lastErr && lastErr > _hookSince && Date.now() - lastErr < 15 * 60 * 1000;
@@ -1633,7 +1655,7 @@ function mount(app, opts) {
   // Сторож: зависший опрос перезапускает, долгое молчание сообщает письмом
   setInterval(watchdogTick, 60 * 1000);
   // Сторож вебхука: если Телеграм не может до нас достучаться, возвращаемся на опрос
-  setInterval(() => { webhookWatch().catch(() => {}); }, 5 * 60 * 1000);
+  setInterval(() => { webhookWatch().catch(() => {}); }, 2 * 60 * 1000);   // чаще: пропавший вебхук = сообщения ждут
   setInterval(webhookRetry, 10 * 60 * 1000);
   setTimeout(() => { webhookWatch().catch(() => {}); }, 3 * 60 * 1000);
 
