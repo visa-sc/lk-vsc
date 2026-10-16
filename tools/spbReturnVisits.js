@@ -17,7 +17,7 @@
  *
  * РЕЖИМ. Без SPB_RETURN_TASKS=1 в .env и флага --live — ТЕСТ: в amo НИЧЕГО не пишется, случаи
  * складываются в /var/www/spbcopy/stat/return-visits.json (их показывает аналитика сайта,
- * «Вернувшиеся клиенты»). С 06.10.2026 включено (решение Андрея): задача «Связаться» на контакт,
+ * «Вернувшиеся клиенты»). С 06.10.2026 включено (решение Андрея): задача на контакт (с 16.10.2026 тип «Посещение сайта», RETURN_TASK_TYPE),
  * ответственная — Ксения Маслова (SPB_RETURN_RESPONSIBLE, по умолчанию 1605012). Выключить —
  * убрать SPB_RETURN_TASKS=1 из .env. Бережём amo: 1 запрос в 1,1 с, не больше 5 задач за прогон
  * и 30 в сутки, при 429/403 — стоп; удалённые контакты и уже открытые такие задачи — пропуск.
@@ -59,6 +59,9 @@ const PER_CONTACT = 24 * 3600e3; // не чаще одной задачи на �
 const SITE = process.env.SITE_NAME || "spb.visa-sc.ru";
 const RESPONSIBLE = Number(process.env.SPB_RETURN_RESPONSIBLE || 1605012); // Ксения Маслова
 const MAX_RUN = 5, MAX_DAY = 30;
+// тип задачи в amo: «Посещение сайта» (4391573, завела Катя Зайцева 16.10.2026) для Питера и Москвы;
+// свой тип на сайт — <PFX>_TASK_TYPE, общий — RETURN_TASK_TYPE, без настройки — 1 «Связаться»
+const TASK_TYPE = Number(process.env[PFX + "_TASK_TYPE"] || process.env.RETURN_TASK_TYPE || 1);
 const SMS_OUT = path.join(STAT, "sms.json");
 const SMS_TEXT = String(process.env[PFX + "_SMS_TEXT"] || "").trim();
 const SMS_ON = process.argv.includes("--live") && process.env[PFX + "_SMS"] === "1" && !!SMS_TEXT;
@@ -297,7 +300,7 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
       await sleep(1100);
       try {
         const r = await axios.post(`https://${SUB}.amocrm.ru/api/v4/tasks`, [{
-          task_type_id: 1, text: it.text, complete_till: dueFor(now), entity_type: "contacts", entity_id: it.contactId,
+          task_type_id: TASK_TYPE, text: it.text, complete_till: dueFor(now), entity_type: "contacts", entity_id: it.contactId,
           responsible_user_id: RESPONSIBLE
         }], { headers: H, timeout: 30000, validateStatus: null });
         if (r.status === 429 || r.status === 403) { console.log("amo ответил " + r.status + " — стоп"); break; }
