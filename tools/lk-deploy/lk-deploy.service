@@ -1,0 +1,14 @@
+[Unit]
+Description=Выкладка ЛК Екатериной Зайцевой: обработка заявки
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node /usr/local/lib/lk-deploy/lk-deploy.js
+TimeoutStartSec=120
+Nice=5
+# Песочница: пишет только туда, где это нужно для выкладки, домашние папки — только чтение.
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/lk-deploy /var/www/voyo/public /var/www/voyo/.lk-deploy-backups /var/www/voyo/.lkChangelogKate.json
+PrivateTmp=true
+NoNewPrivileges=true

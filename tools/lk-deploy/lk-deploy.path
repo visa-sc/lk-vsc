@@ -1,0 +1,10 @@
+[Unit]
+Description=Выкладка ЛК Екатериной Зайцевой: следим за файлом-заявкой
+
+[Path]
+# Заявку пишет команда lkdeploy от пользователя kateadmin.
+PathChanged=/home/kateadmin/lk-deploy/REQUEST
+Unit=lk-deploy.service
+
+[Install]
+WantedBy=multi-user.target

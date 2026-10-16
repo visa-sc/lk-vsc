@@ -123,6 +123,21 @@ app.get("/cabinet", (req, res) => {
   res.set("Expires", "0");
   res.sendFile(path.join(__dirname, "public", "cabinet.html"));
 });
+// Предпросмотр выкладки Екатерины Зайцевой (tools/lk-deploy, с 16.10.2026): её проверенная,
+// но ещё не выложенная версия кабинета или входа. Открывается только по секретному ключу
+// (/var/lib/lk-deploy/preview.key, его знает она); без ключа — 404, поисковикам — noindex.
+// Работает на настоящих данных: адрес на том же сайте, сессия клиента та же.
+app.get(["/lk-preview/cabinet", "/lk-preview/index"], (req, res) => {
+  let key = "";
+  try { key = fs.readFileSync("/var/lib/lk-deploy/preview.key", "utf8").trim(); } catch (_) {}
+  const k = String(req.query.k || "");
+  if (!key || k.length !== key.length || !crypto.timingSafeEqual(Buffer.from(k), Buffer.from(key))) return res.status(404).send("Not found");
+  const file = path.join("/var/lib/lk-deploy/preview", req.path.endsWith("/index") ? "index.html" : "cabinet.html");
+  if (!fs.existsSync(file)) return res.status(404).send("Предпросмотра нет: сначала lkdeploy preview");
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.set("X-Robots-Tag", "noindex, nofollow");
+  res.sendFile(file);
+});
 
 app.get("/search", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "search.html"));
@@ -5226,12 +5241,28 @@ const LK_CHANGELOG = [
   ] }
 ];
 
+// Записи из выкладок Екатерины Зайцевой (tools/lk-deploy, с 16.10.2026): она выкладывает
+// cabinet.html / index.html сама, без доступа к server.js, и к каждой выкладке обязана
+// приложить запись — служба кладёт её в .lkChangelogKate.json. Здесь они смешиваются с
+// LK_CHANGELOG по дате (свежие сверху), чтобы «История изменений» оставалась единой.
+const LK_CHANGELOG_KATE_FILE = path.join(__dirname, ".lkChangelogKate.json");
+function lkChangelogAll() {
+  let kate = [];
+  try { kate = JSON.parse(fs.readFileSync(LK_CHANGELOG_KATE_FILE, "utf8")); } catch (_) {}
+  if (!Array.isArray(kate) || !kate.length) return LK_CHANGELOG;
+  const key = (e) => String(e.date || "").split(".").reverse().join("");   // дд.мм.гггг → ггггммдд
+  const all = kate.filter((e) => e && e.date && e.title).map((e, i) => ({ e, k: key(e), o: i }))
+    .concat(LK_CHANGELOG.map((e, i) => ({ e, k: key(e), o: 100000 + i })));
+  all.sort((a, b) => (b.k.localeCompare(a.k)) || (a.o - b.o));
+  return all.map((x) => x.e);
+}
+
 // ── Что изменилось (changelog): живая лента + полный авто-список корректировок ──
 app.get("/admin/kb/changelog", requireStaff, (req, res) => {
   try {
     let b = `<h1>История изменений клиентского ЛК</h1><p class="sub">Что менялось в клиентском ЛК — понятным языком, со всеми нюансами. Ниже — полный авто-список реализованных корректировок.</p>`;
-    // 1) Живая курируемая лента (что видит клиент).
-    LK_CHANGELOG.forEach((e) => {
+    // 1) Живая курируемая лента (что видит клиент) + записи из выкладок Екатерины.
+    lkChangelogAll().forEach((e) => {
       b += `<div class="card"><h3>${kbEsc(e.date)} · ${kbEsc(e.title)}</h3>`;
       if (e.by) b += `<p class="sub" style="margin-top:-6px;">${kbEsc(e.by)}</p>`;
       b += `<ul>` + (e.points || []).map((p) => `<li>${kbEsc(p)}</li>`).join("") + `</ul></div>`;
