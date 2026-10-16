@@ -1274,6 +1274,7 @@ async function pollLoop() {
         }
         continue;
       }
+      if (gen !== _pollGen) return;
       failStreak++;
       markFail();
       const st = _lastErr ? _lastErr.status : 0;
@@ -1284,6 +1285,8 @@ async function pollLoop() {
       // Автопочинка 1. На боте включён вебхук или его опрашивает кто-то ещё —
       // снимаем вебхук сами, дальше опрос продолжится.
       if (st === 409) {
+        // старый цикл или вебхук включаем сами — это не конфликт, а наша же смена режима
+        if (gen !== _pollGen || _hookOn || _hookEnabling) return;
         await tg("deleteWebhook", { drop_pending_updates: false }, { quiet: true });
         console.error("tgbot: конфликт опроса, вебхук снят автоматически");
         await sleep(5000);
@@ -1525,6 +1528,7 @@ let _hookSince = 0;
 let _hookErrs = [];         // моменты разных ошибок доставки после включения
 let _fellBackAt = 0;        // когда ушли на опрос из-за ошибок
 let _fallbacks = [];        // моменты отступлений за последние сутки
+let _hookEnabling = false;  // идёт включение вебхука — опрос не должен его снимать
 async function enableWebhook() {
   // Телеграм до нашего сервера не достукивается напрямую (проверено 29.09.2026),
   // поэтому вебхук регистрируем на ретранслятор: он примет и перешлёт нам.
@@ -1533,6 +1537,13 @@ async function enableWebhook() {
   const url = viaRelay
     ? relay() + "/hook" + webhookPath().replace("/tg/esim", "")
     : HOOK_BASE + webhookPath();
+  // 16.10.2026: опрос останавливаем ДО setWebhook. Телеграм обрывает висящий
+  // getUpdates ошибкой 409 раньше, чем отвечает на setWebhook, и старый цикл
+  // успевал «починить конфликт» — снять только что включённый вебхук. Сторож
+  // видел пустой адрес, считал это сбоем, и за сутки набегало три «сбоя».
+  _pollGen++;
+  _polling = false;
+  _hookEnabling = true;
   try {
     await tg("setWebhook", {
       url, secret_token: hookSecret(), drop_pending_updates: false,
@@ -1542,12 +1553,12 @@ async function enableWebhook() {
     _hookSince = Date.now();
     _hookErrs = [];
     _fellBackAt = 0;
-    _pollGen++;          // если шёл опрос — останавливаем: при вебхуке getUpdates не работает
-    _polling = false;
+    _hookEnabling = false;
     console.log("tgbot: включён вебхук " + url.replace(/\/tg\/esim\/.*/, "/tg/esim/…"));
   } catch (e) {
     console.error("tgbot: вебхук не включился (" + e.message + "), остаёмся на опросе");
     _hookOn = false;
+    _hookEnabling = false;
     pollLoop();
   }
 }
@@ -1565,8 +1576,12 @@ async function webhookWatch() {
   const freshErr = lastErr && lastErr > _hookSince && Date.now() - lastErr < 15 * 60 * 1000;
   if (freshErr && _hookErrs.indexOf(lastErr) < 0) _hookErrs.push(lastErr);
   _hookErrs = _hookErrs.filter((t) => Date.now() - t < 30 * 60 * 1000);
-  const stuck = Number(info.pending_update_count || 0) > 30;
-  if (!badUrl && !stuck && _hookErrs.length < 2) return;
+  const pending = Number(info.pending_update_count || 0);
+  const stuck = pending > 30;
+  // 16.10.2026: разовые «Read timeout» Телеграм сам передоставляет — очередь при
+  // этом пустая, и уходить на опрос незачем. Уходим, если ошибки повторяются
+  // И сообщения копятся, если очередь застряла или адрес вебхука чужой.
+  if (!badUrl && !stuck && !(_hookErrs.length >= 2 && pending > 0)) return;
   console.error("tgbot: вебхук не работает (" + (info.last_error_message || (badUrl ? "чужой адрес" : "очередь " + info.pending_update_count)) + "), возвращаюсь на опрос");
   _hookOn = false;
   _fellBackAt = Date.now();
