@@ -4456,12 +4456,17 @@
       // «Туры» — два кадра под одним переключателем: слева пакетные туры
       // (/packages), справа экскурсии (/excursion). Второй кадр создаётся
       // только при первом переключении, чтобы не тянуть обе страницы сразу.
+      // С 16.10.2026 пакетные туры Слетать.ру законсервированы (лицензия шлюза
+      // не продлена): раздел открывает только экскурсии одной рамкой, как до
+      // 29.09. Вернуть — TOURS_PACKAGES = true здесь и PAUSED = false в sletat.js.
+      var TOURS_PACKAGES = false;
       var toursPage = document.getElementById("lklTours");
       var toursFrames = {};
       var TOURS_TABS = [
         { key: "packages", label: "Туры", src: "/packages?embed=1", title: "Пакетные туры" },
         { key: "excursion", label: "Экскурсии", src: "/excursion?embed=1", title: "Экскурсии" }
-      ];
+      ].filter(function (t) { return TOURS_PACKAGES || t.key !== "packages"; });
+      if (TOURS_TABS.length === 1) TOURS_TABS[0].title = "Туры и экскурсии";
       function toursFrame(tab) {
         if (toursFrames[tab.key]) return toursFrames[tab.key];
         var f = document.createElement("iframe");
@@ -4487,6 +4492,8 @@
       function mountTours() {
         if (!toursPage || toursPage.dataset.on) return;
         toursPage.dataset.on = "1";
+        // Одна вкладка — без переключателя, просто рамка (вид до 29.09.2026).
+        if (TOURS_TABS.length === 1) { toursShow(TOURS_TABS[0].key); return; }
         var seg = document.createElement("div");
         seg.className = "lkl-tseg";
         seg.setAttribute("role", "tablist");
@@ -4497,7 +4504,7 @@
           seg.appendChild(b);
         });
         toursPage.appendChild(seg);
-        toursShow("packages");
+        toursShow(TOURS_TABS[0].key);
       }
       function go(which) {
         var loyalty = which === "loyalty", esim = which === "esim",

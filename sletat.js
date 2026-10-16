@@ -66,6 +66,11 @@ const PASSWORD = process.env.SLETAT_PASSWORD || "";
 const MARKUP_PCT = Number(process.env.SLETAT_MARKUP_PCT || 0);
 const WORKFLOW = /twostep/i.test(String(process.env.SLETAT_WORKFLOW || "")) ? 1 : 0;
 const DICT_TTL = 24 * 3600 * 1000;
+// КОНСЕРВАЦИЯ с 16.10.2026: лицензия шлюза поиска не продлена, пока не решим, как
+// продавать туры. На паузе фоновый сбор подборок (он ходит в шлюз сам) и страница
+// /packages: она уводит на экскурсии. Код, заявки, настройки и .env не тронуты.
+// Вернуть — оплатить шлюз, PAUSED = false здесь и TOURS_PACKAGES = true в cabinet.html.
+const PAUSED = true;
 
 // Поиск у Слетать.ру тарифицируется ПОШТУЧНО: в пакет входит 20 000 запросов в
 // месяц, каждый сверх пакета — 10 копеек, счёт приходит в следующем месяце уже
@@ -767,6 +772,7 @@ function mount(app, deps) {
 
   app.get("/packages", (req, res) => {
     res.set("Cache-Control", "no-cache");
+    if (PAUSED) return res.redirect(302, "/excursion" + (req.query.embed ? "?embed=1" : ""));
     res.sendFile(path.join(__dirname, "public", "packages.html"));
   });
 
@@ -867,7 +873,7 @@ function mount(app, deps) {
     catch (e) { fail(res, e); }
   });
 
-  picksSchedule();
+  if (!PAUSED) picksSchedule();
 
   // Расход пакета поисков по месяцам — чтобы счёт за перерасход не был сюрпризом.
   app.get("/api/sletat/usage", requireAdmin, (req, res) => {
