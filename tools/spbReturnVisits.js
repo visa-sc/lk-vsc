@@ -299,10 +299,19 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
       if (sentRun >= MAX_RUN || sentToday >= MAX_DAY) { it.decision = "задача (отложена: лимит)"; continue; }
       await sleep(1100);
       try {
-        const r = await axios.post(`https://${SUB}.amocrm.ru/api/v4/tasks`, [{
-          task_type_id: TASK_TYPE, text: it.text, complete_till: dueFor(now), entity_type: "contacts", entity_id: it.contactId,
+        const post = (type) => axios.post(`https://${SUB}.amocrm.ru/api/v4/tasks`, [{
+          task_type_id: type, text: it.text, complete_till: dueFor(now), entity_type: "contacts", entity_id: it.contactId,
           responsible_user_id: RESPONSIBLE
         }], { headers: H, timeout: 30000, validateStatus: null });
+        let r = await post(TASK_TYPE);
+        it.taskType = TASK_TYPE;
+        // свой тип удалили или переименовали в amo — задача не должна пропасть: ставим обычным «Связаться» и пишем в журнал
+        if (r.status === 400 && TASK_TYPE !== 1) {
+          console.log(`amo не принял тип задачи ${TASK_TYPE} (400) — ставлю «Связаться»`);
+          await sleep(1100);
+          r = await post(1);
+          it.taskType = 1;
+        }
         if (r.status === 429 || r.status === 403) { console.log("amo ответил " + r.status + " — стоп"); break; }
         it.taskId = (r.data && r.data._embedded && r.data._embedded.tasks && r.data._embedded.tasks[0] && r.data._embedded.tasks[0].id) || "ошибка " + r.status;
         if (typeof it.taskId === "number") { it.taskAt = Date.now(); sentRun++; sentToday++; }
