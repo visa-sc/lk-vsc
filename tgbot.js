@@ -1529,6 +1529,7 @@ let _hookErrs = [];         // моменты разных ошибок дост
 let _fellBackAt = 0;        // когда ушли на опрос из-за ошибок
 let _fallbacks = [];        // моменты отступлений за последние сутки
 let _hookEnabling = false;  // идёт включение вебхука — опрос не должен его снимать
+let _pendingSince = 0;      // с какого момента у Телеграма висят недоставленные сообщения
 // Адрес, на который должен смотреть вебхук
 function hookUrl() {
   // Телеграм до нашего сервера не достукивается напрямую (проверено 29.09.2026),
@@ -1599,20 +1600,27 @@ async function webhookWatch() {
   if (freshErr && _hookErrs.indexOf(lastErr) < 0) _hookErrs.push(lastErr);
   _hookErrs = _hookErrs.filter((t) => Date.now() - t < 30 * 60 * 1000);
   const pending = Number(info.pending_update_count || 0);
+  if (pending > 0) { if (!_pendingSince) _pendingSince = Date.now(); } else _pendingSince = 0;
   const stuck = pending > 30;
   // 16.10.2026: разовые «Read timeout» Телеграм сам передоставляет — очередь при
-  // этом пустая, и уходить на опрос незачем. Уходим, если ошибки повторяются
-  // И сообщения копятся, если очередь застряла или адрес вебхука чужой.
-  if (!badUrl && !stuck && !(_hookErrs.length >= 2 && pending > 0)) return;
+  // этом пустая, и уходить на опрос незачем.
+  // 18.10.2026: но если сообщения при этом висят, клиент ждёт: Телеграм повторяет
+  // доставку с растущей паузой, и Андрей ждал ответа 5 минут (ретранслятор не
+  // достукивался до сервера). Теперь проверка раз в 30 с, и на опрос уходим, как
+  // только сообщения висят дольше ~25 с или по свежей ошибке доставки есть очередь.
+  const stalled = pending > 0 && ((freshErr && Date.now() - lastErr < 3 * 60 * 1000) ||
+    (_pendingSince && Date.now() - _pendingSince >= 25 * 1000));
+  if (!badUrl && !stuck && !stalled && !(_hookErrs.length >= 2 && pending > 0)) return;
+  _pendingSince = 0;
   console.error("tgbot: вебхук не работает (" + (info.last_error_message || (badUrl ? "чужой адрес" : "очередь " + info.pending_update_count)) + "), возвращаюсь на опрос");
   _hookOn = false;
   _fellBackAt = Date.now();
   _fallbacks = _fallbacks.filter((t) => Date.now() - t < 24 * 3600 * 1000).concat(Date.now());
   try { await tg("deleteWebhook", { drop_pending_updates: false }); } catch (_) {}
   if (!_polling) pollLoop();
-  if (_fallbacks.length !== 3) return;   // письмо одно, на третьем отступлении за сутки
+  if (_fallbacks.length !== 6) return;   // письмо одно, на шестом отступлении за сутки (бот чинится сам)
   try {
-    require("./mail.js").sendMail({ to: ALERT_TO, subject: "VOYO eSIM: вебхук бота за сутки сбоил трижды",
+    require("./mail.js").sendMail({ to: ALERT_TO, subject: "VOYO eSIM: вебхук бота за сутки сбоил 6 раз",
       text: "Телеграм не может доставлять сообщения боту через ретранслятор: " + (info.last_error_message || "нет деталей") +
         ".\nБот работает через опрос, клиенты ничего не замечают, каждые полчаса он пробует вернуться на вебхук.\n" +
         "Пока он на опросе, растёт расход на Deno Deploy." }).catch(() => {});
@@ -1655,7 +1663,13 @@ function mount(app, opts) {
   // Сторож: зависший опрос перезапускает, долгое молчание сообщает письмом
   setInterval(watchdogTick, 60 * 1000);
   // Сторож вебхука: если Телеграм не может до нас достучаться, возвращаемся на опрос
-  setInterval(() => { webhookWatch().catch(() => {}); }, 2 * 60 * 1000);   // чаще: пропавший вебхук = сообщения ждут
+  // раз в 30 с: застрявшие сообщения = клиент ждёт; проверки не накладываются друг на друга
+  let watchBusy = false;
+  setInterval(() => {
+    if (watchBusy) return;
+    watchBusy = true;
+    webhookWatch().catch(() => {}).finally(() => { watchBusy = false; });
+  }, 30 * 1000);
   setInterval(webhookRetry, 10 * 60 * 1000);
   setTimeout(() => { webhookWatch().catch(() => {}); }, 3 * 60 * 1000);
 
