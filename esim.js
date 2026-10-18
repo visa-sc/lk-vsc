@@ -984,11 +984,44 @@ async function getTsimProducts(force) {
   if (tsimLeftUsd() < TSIM_RESERVE_USD) return [];
   return cat.products;
 }
+// ── АКЦИЯ ПОСТАВЩИКА: СКИДКУ ЗАБИРАЕМ СЕБЕ (18.10.2026, решение Андрея) ──
+// eSIM Access с 17.10 по 20.11 снизил закупку региональных и глобальных пакетов
+// на 10–30%. Клиентские цены оставляем прежними: розница считается от закупки
+// до акции, а в учёт (себестоимость, прибыль, полы скидок) идёт настоящая.
+// .esim/ea-promo-ref.json: { until: "ГГГГ-ММ-ДД", factors: { "ea_КОД": старая/новая } },
+// коэффициент действует и на суточные варианты пакета (id с «~»). После until
+// файл не действует сам. Удалить файл — вернуть цены по текущей закупке.
+const EA_PROMO_FILE = path.join(DIR, "ea-promo-ref.json");
+let _eaPromo = { at: 0, d: null };
+function eaPromo() {
+  if (Date.now() - _eaPromo.at > 60000) _eaPromo = { at: Date.now(), d: readJson(EA_PROMO_FILE, null) };
+  const d = _eaPromo.d;
+  return d && d.until && Date.now() < new Date(d.until + "T23:59:59+03:00").getTime() && d.factors ? d : null;
+}
+function eaPromoFactor(id) {
+  const d = eaPromo();
+  if (!d || !isEaId(id)) return 1;
+  const f = Number(d.factors[id] || d.factors[String(id).replace(/~.*$/, "")] || 1);
+  return f > 1 && f < 2 ? f : 1;
+}
+// Товар с закупкой «как до акции» — только для расчёта розницы
+function pricingItem(item) {
+  const f = item ? eaPromoFactor(item.id) : 1;
+  return f > 1 ? Object.assign({}, item, { costUsd: Number(item.costUsd) * f }) : item;
+}
+let _eaPriced = { key: "", list: [] };
+function eaPricedProducts(cat) {
+  const d = eaPromo();
+  const key = ((cat && cat.ts) || 0) + ":" + (d ? d.until + ":" + Object.keys(d.factors).length : "-");
+  if (_eaPriced.key !== key) _eaPriced = { key, list: ((cat && cat.products) || []).map(pricingItem) };
+  return _eaPriced;
+}
 // Розница: у MobiMatter общая ступенчатая наценка, у TSim своя лестница
 function baseRetailFor(item, rate) {
+  item = pricingItem(item);
   if (isEaId(item.id) && TSIM_PRICING === "ladder") {
-    const cat = loadEaCatalog();
-    const p = ladderMap("ea", (cat && cat.products) || [], rate, (cat && cat.ts) || 0).get(item.id);
+    const pr = eaPricedProducts(loadEaCatalog());
+    const p = ladderMap("ea", pr.list, rate, pr.key).get(item.id);
     if (p) return p;
   }
   if (isTsimId(item.id) && TSIM_PRICING === "ladder") {
@@ -1045,6 +1078,7 @@ function upliftSkipSet(rate) {
   return skip;
 }
 function retailFor(item, rate) {
+  item = pricingItem(item);   // акция поставщика: розница от закупки до акции
   return cnTrPrice(item, rate, retailBeforeCnTr(item, rate));
 }
 function retailBeforeCnTr(item, rate) {
