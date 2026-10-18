@@ -30,9 +30,9 @@ const LEADS_FILE = path.join(__dirname, ".vscomLeads.json");
 const CLICKS_FILE = path.join(__dirname, ".vscomClicks.json");
 const LEADS_EMAIL = process.env.VSCOM_LEADS_EMAIL || "director@visa-sc.ru";
 const AMO_TAG = process.env.VSCOM_AMO_TAG || "VSC-EN";
-// С 27.08.2026 по решению Андрея заявки в amoCRM НЕ заводим: они уходят письмом
-// на director@visa-sc.ru. Включить обратно можно переменной VSCOM_AMO=1.
-const AMO_ENABLED = process.env.VSCOM_AMO === "1";
+// 27.08.2026 заявки шли только письмом; с 18.10.2026 (Андрей) — снова в amoCRM,
+// а письмом только если amo не приняла. Выключить выгрузку: VSCOM_AMO=0.
+const AMO_ENABLED = process.env.VSCOM_AMO !== "0";
 const PIPELINE_NAME = "отдел продаж";
 const STATUS_NAME = "ещё не связывались";
 const MAX_STORED = 2000;
@@ -455,9 +455,9 @@ function mount(app, deps) {
       }
     }
 
-    // 3) письмо. Заявки из рекламы Meta (ВНЖ, США, Великобритания), дошедшие до amoCRM,
-    // письмом не дублируем — Андрей 14.10.2026. Не дошла до amo — письмо уходит, чтобы не потерять.
-    if (isMetaVnj(lead) && amo && amo.leadId) {
+    // 3) письмо. Заявки, дошедшие до amoCRM, письмом не дублируем (Андрей: Meta — 14.10,
+    // все остальные — 18.10.2026). Не дошла до amo — письмо уходит, чтобы не потерять.
+    if (amo && amo.leadId) {
       return res.json({ ok: true });
     }
     try {
