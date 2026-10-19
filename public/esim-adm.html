@@ -555,12 +555,16 @@
   });
   // Канал и метка — два списка (Петров: «канал - метка, чтобы по конкретной SMS развернуть воронку»).
   // Метка — utm_campaign (или utm_content) из ссылки; список меток появляется, когда у канала они есть.
-  function fsrcHtml(f){
-    var list = f.sources || [];
+  // side: "site" — каналы сайта, "bot" — каналы бота; основные каналы сайта видны всегда, даже с нулём
+  var FSRC_MAIN = [["sms","SMS"],["meta","Meta (реклама)"],["yandex","Яндекс Директ"],["google","Google Ads"],["direct","Прямые заходы"]];
+  function fsrcHtml(f, side){
+    var all = (f.sources || []).map(function(x){ return { key: x.key, name: x.name, n: side === "bot" ? x.bot : x.site, camps: side === "bot" ? [] : (x.camps || []) }; });
+    var list = all.filter(function(x){ return x.n > 0; });
+    if (side !== "bot") FSRC_MAIN.forEach(function(m){ if (!list.some(function(x){ return x.key === m[0]; })) list.push({ key: m[0], name: m[1], n: 0, camps: [] }); });
     var ch = FSRC.split("|")[0], lab = FSRC.indexOf("|") > 0 ? FSRC.slice(FSRC.indexOf("|") + 1) : "";
     var opt = '<option value="">Все каналы</option>';
     list.forEach(function(x){
-      opt += '<option value="' + esc(x.key) + '"' + (ch === x.key ? " selected" : "") + ">" + esc(x.name) + " · " + RU(x.site + x.bot) + "</option>";
+      opt += '<option value="' + esc(x.key) + '"' + (ch === x.key ? " selected" : "") + ">" + esc(x.name) + " · " + RU(x.n) + "</option>";
     });
     if (ch && !list.some(function(x){ return x.key === ch; })) opt += '<option value="' + esc(ch) + '" selected>' + esc(ch) + " · 0</option>";
     var cur = list.filter(function(x){ return x.key === ch; })[0];
@@ -862,8 +866,8 @@
       { label: "Перешли к оплате", n: f.bot.pay || 0 },
       { label: "Оплатили", n: f.bot.paid || 0 },
     ];
-    el("fsite").innerHTML = fsrcHtml(f) + funnelHtml(site, "посетителей") + note;
-    el("fbot").innerHTML = fsrcHtml(f) + funnelHtml(bot, "чатов") + note;
+    el("fsite").innerHTML = fsrcHtml(f, "site") + funnelHtml(site, "посетителей") + note;
+    el("fbot").innerHTML = fsrcHtml(f, "bot") + funnelHtml(bot, "чатов") + note;
     var sc = conv(site[5].n, site[0].n), bc = conv(bot[4].n, bot[0].n);
     renderAb();
     renderBlog();

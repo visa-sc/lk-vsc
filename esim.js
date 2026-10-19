@@ -5222,7 +5222,10 @@ function mount(app, opts) {
     const tagDays = Object.keys(f.tags || {}).sort();
     out.tagsSince = tagDays[0] || null;
     const siteSrc = new Map();
-    tagDays.filter(inR).forEach((day) => Object.entries(f.tags[day]).forEach(([v, k]) => { if (!siteSrc.has(v)) siteSrc.set(v, k); }));
+    tagDays.filter(inR).forEach((day) => Object.entries(f.tags[day]).forEach(([v, k]) => {
+      if (/^audit_test(\||$)/.test(k)) return;   // наши проверочные заходы
+      if (!siteSrc.has(v)) siteSrc.set(v, k);
+    }));
     const botVisits = new Set();
     Object.keys(f.days).filter(inR).forEach((day) => (((f.days[day].bot || {}).start) || []).forEach((v) => botVisits.add(v)));
     const cnt = {};
