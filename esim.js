@@ -4775,7 +4775,7 @@ function mount(app, opts) {
     const ours = (readJson(SPB_SMS_FILE, { sends: [] }).sends || []).map((x) => Object.assign({ campaign: "Питер: заходил на сайт, 14 дней" }, x))
       .concat((readJson(path.join(DIR, "msk-esim-sms.json"), { sends: [] }).sends || []).map((x) => Object.assign({ campaign: "Москва: заходил на сайт, 14 дней" }, x)))
       .filter((x) => x.status === "отправлено");
-    const amo = (readJson(path.join(DIR, "amo-esim-sms.json"), { sends: [] }).sends || []).map((x) => Object.assign({}, x, { campaign: "amoCRM: " + (x.campaign || "SMS") }));
+    const amo = (readJson(path.join(DIR, "amo-esim-sms.json"), { sends: [] }).sends || []).map((x) => Object.assign({}, x, { campaign: /^SMS на статусе/.test(x.campaign || "") ? x.campaign : "amoCRM: " + (x.campaign || "SMS") }));
     const sends = ours.concat(amo).sort((a, b) => a.at - b.at);
     const paidList = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.priceRub)
       .sort((a, b) => a.paidAt - b.paidAt);

@@ -34,8 +34,19 @@ async function resolveShort(link, cache) {
   if (cache[u] === null || /showcaptcha/.test(cache[u] || "")) { const v = cache[u]; delete cache[u]; return /showcaptcha/.test(v || "") ? "" : ""; }
   return cache[u] || "";
 }
-// Серые статусы: сделка не «Успешно реализовано» (142) — SMS считаем отдельной строкой
-const SUCCESS_STATUS = 142;
+// Строка в панели — по статусу сделки (Андрей 19.10.2026): «SMS на статусе «Успешно реализовано»»,
+// «SMS на статусе «Закрыто и не реализовано»», в скобках — вариант текста (цена), чтобы сравнивать тексты.
+const SUCCESS_STATUS = 142, LOST_STATUS = 143;
+function statusLabel(id, names) {
+  if (Number(id) === SUCCESS_STATUS) return "Успешно реализовано";
+  if (Number(id) === LOST_STATUS) return "Закрыто и не реализовано";
+  return names[id] || "статус " + id;
+}
+function campaignName(text, statusName) {
+  const price = (String(text).match(/ESIM\s+от\s+\d[\d\s]*₽/i) || [])[0];
+  const variant = price ? price.replace(/\s+/g, " ") : campaignOf(text).slice(0, 30);
+  return "SMS на статусе «" + statusName + "»" + (variant ? " (" + variant + ")" : "");
+}
 const campaignOf = (t) => String(t || "").replace(/##[^#]*##/g, "").replace(/https?:\/\/\S+|\S+\.(ru|com)\/\S+/g, "").replace(/\s+/g, " ").trim().slice(0, 40);
 
 (async () => {
@@ -49,6 +60,8 @@ const campaignOf = (t) => String(t || "").replace(/##[^#]*##/g, "").replace(/htt
   const qLeadEmails = db.prepare("SELECT c.emails FROM lead_contacts lc JOIN contacts c ON c.id = lc.contact_id WHERE lc.lead_id = ?");
   const qContactEmails = db.prepare("SELECT emails FROM contacts WHERE id = ?");
   const qLeadStatus = db.prepare("SELECT status_id FROM leads WHERE id = ?");
+  const qNote = db.prepare("SELECT entity_type, entity_id FROM amo_notes WHERE id = ?");
+  const stNames = {}; db.prepare("SELECT id, name FROM statuses").all().forEach((x) => { stNames[x.id] = x.name; });
   const links = store.links || {};
   let added = 0;
   for (const r of rows) {
@@ -64,14 +77,23 @@ const campaignOf = (t) => String(t || "").replace(/##[^#]*##/g, "").replace(/htt
     if (!ESIM_RE.test(text) && !ESIM_TARGET_RE.test(target)) continue;
     const ls = r.entity_type === "leads" ? qLeadStatus.get(r.entity_id) : null;
     const grey = !!(ls && Number(ls.status_id) !== SUCCESS_STATUS);
+    const stName = ls ? statusLabel(ls.status_id, stNames) : "без сделки";
     const em = r.entity_type === "leads" ? qLeadEmails.all(r.entity_id).map((x) => x.emails).join(",")
       : r.entity_type === "contacts" ? ((qContactEmails.get(r.entity_id) || {}).emails || "") : "";
     // amo хранит почты списком в JSON («["a@b.ru"]») — вынимаем сами адреса
     const emails = Array.from(new Set(String(em).toLowerCase().match(/[^\s"',;\[\]]+@[^\s"',;\[\]]+\.[a-z]{2,}/g) || [])).slice(0, 3);
     byId.set(key, { smsId, noteId: r.id, at: r.created_at * 1000, phone10: digits(p.phone), emails,
-      text: text.replace(/\s*##[^#]*##\s*/g, "").slice(0, 160), campaign: (grey ? "серые: " : "") + campaignOf(text),
-      seg: grey ? "grey" : "success", link: target ? target.slice(0, 200) : undefined, cost: null, costAt: 0 });
+      text: text.replace(/\s*##[^#]*##\s*/g, "").slice(0, 160), campaign: campaignName(text, stName),
+      seg: grey ? "grey" : "success", statusId: ls ? ls.status_id : null, link: target ? target.slice(0, 200) : undefined, cost: null, costAt: 0 });
     added++;
+  }
+  // старые записи (до 19.10) — то же имя по статусу их сделки
+  for (const x of byId.values()) {
+    if (/^SMS на статусе/.test(x.campaign || "")) continue;
+    let sid = x.statusId;
+    if (sid == null && x.noteId) { const n = qNote.get(x.noteId); const l = n && n.entity_type === "leads" ? qLeadStatus.get(n.entity_id) : null; sid = l ? l.status_id : null; }
+    x.statusId = sid; x.seg = sid == null || Number(sid) === SUCCESS_STATUS ? "success" : "grey";
+    x.campaign = campaignName(x.text, sid == null ? "без сделки" : statusLabel(sid, stNames));
   }
   // стоимость у SMS.ru: новые и те, где пока 0 (SMS.ru иногда дописывает цену позже) — не чаще раза в сутки
   const now = Date.now();
