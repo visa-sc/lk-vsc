@@ -10047,6 +10047,10 @@ async function amoGetPageWithRetry(url, params, page, limit, maxAttempts = 3) {
   throw lastErr;
 }
 
+// Данные только на чтение для своих Claude по личному ключу (dataro.js, Андрей 19.10.2026):
+// amoCRM — через этот же лимитер в низкой очереди (amoBg), копия amo, SMS.ru, АТС, Директ, KPI.
+require("./dataro").mount({ app, amoBg, amoGet, amoBase: () => `https://${AMO_SUBDOMAIN}.amocrm.ru` });
+
 async function amoGetAllPagesParallel(url, params = {}, concurrency = 4) {
   const limit = 250;
   const allItems = [];
