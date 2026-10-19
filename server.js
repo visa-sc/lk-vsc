@@ -7892,6 +7892,9 @@ function getVscForecast() {
   }).finally(() => { _vscFcInflight = null; });
   return _vscFcInflight;
 }
+// Радар возможностей: решения по карточкам и поиск новых идей Claude (vscradar.js, Андрей 19.10.2026).
+require("./vscradar").mount({ app, requireAdmin, createAdminSession, isAdminTokenValid, potok, port: PORT,
+  aiUsage: require("./ai-usage"), sendMail: (o) => mail.sendMail(o) });
 app.get("/admin/api/vsc-forecast", requireAdmin, async (req, res) => {
   try { return res.json(await getVscForecast()); }
   catch (e) {
