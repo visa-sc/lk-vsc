@@ -5720,7 +5720,7 @@ function mount(app, opts) {
     res.json({ success: true, about: "Аналитика eSIM (VOYO mobile и VSC mobile: voyomobile.ru/.com, voyotravel.ru/esim, телеграм-бот @esimvoyo_bot). Только чтение. Деньги в рублях, даты по МСК (ГГГГ-ММ-ДД).",
       auth: "Заголовок X-Key: <ключ> (или ?key=). Не чаще 60 запросов в минуту.",
       endpoints: {
-        "/esim/api/ro/stats?from=&to=&test=1": "Всё, что видно в панели: итоги (выручка, себестоимость, комиссия, реклама, прибыль), по дням, каналы и их окупаемость, воронка сайта и бота, промокоды, SMS-рассылки, сервис и поддержка, клиенты (почты и телефоны скрыты), балансы поставщиков. from/to — период, без них за всё время; test=1 — вместе с тестовыми покупками.",
+        "/esim/api/ro/stats?from=&to=&test=1&fsrc=": "fsrc — воронка только по источнику (sms, meta, yandex, google, direct… или канал|кампания), список источников за период — в funnel.sources. Всё, что видно в панели: итоги (выручка, себестоимость, комиссия, реклама, прибыль), по дням, каналы и их окупаемость, воронка сайта и бота, промокоды, SMS-рассылки, сервис и поддержка, клиенты (почты и телефоны скрыты), балансы поставщиков. from/to — период, без них за всё время; test=1 — вместе с тестовыми покупками.",
         "/esim/api/ro/orders?from=&to=": "Список оплат: дата, пакет, сумма, себестоимость, промокод, скидка, канал, сайт или бот, бренд, количество eSIM. Возвраты — в stats.service.",
         "/esim/api/ro/seo": "51 страница под поиск (/esim/турция и т.д.): заходы людей и переходы из Яндекса/Google по журналу сервера (хранится 14 дней), покупки с посадкой на странице.",
       } });
@@ -5731,6 +5731,7 @@ function mount(app, opts) {
     try {
       const q = new URLSearchParams({ adm: ADMIN_CODE });
       for (const k of ["from", "to", "test"]) if (req.query[k]) q.set(k, String(req.query[k]).slice(0, 10));
+      if (req.query.fsrc) q.set("fsrc", String(req.query.fsrc).slice(0, 100));   // воронка по источнику (19.10.2026)
       const r = await axios.get("http://127.0.0.1:" + roPort() + "/esim/api/adm/stats?" + q.toString(), { timeout: 60000 });
       res.json(roMask(r.data));
     } catch (er) { res.status(500).json({ success: false, message: er.message }); }
