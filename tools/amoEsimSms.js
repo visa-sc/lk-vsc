@@ -19,6 +19,23 @@ const ESIM_RE = /88GPH|voyomobile|voyotravel\.ru\/esim|\besim\b/i;
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (_) { return d; } };
 const digits = (s) => String(s || "").replace(/\D/g, "").slice(-10);
 // кампания — по началу текста: так видно, какая из двух SMS сработала лучше
+// Короткая ссылка (sms.ru/…, clck.ru/…) может вести на витрину eSIM без слова eSIM в тексте:
+// раскрываем её один раз и запоминаем, куда ведёт (19.10.2026, Петров завёл свои короткие ссылки).
+const SHORT_RE = /(?:https?:\/\/)?(?:sms\.ru|clck\.ru)\/[A-Za-z0-9_-]+/g;
+const ESIM_TARGET_RE = /voyomobile\.(ru|com)|voyotravel\.ru\/esim|voyovoyo\.ru\/esim|t\.me\/esimvoyo_bot/i;
+async function resolveShort(link, cache) {
+  const u = /^https?:/.test(link) ? link : "https://" + link;
+  if (cache[u] !== undefined) return cache[u];
+  try {
+    const r = await axios.get(u, { maxRedirects: 0, validateStatus: () => true, timeout: 15000 });
+    cache[u] = String((r.headers && r.headers.location) || "");
+  } catch (_) { cache[u] = null; }   // сеть подвела — попробуем в следующий раз
+  // нет ответа или капча (clck.ru не пускает серверы) — не запоминаем, спросим в следующий раз
+  if (cache[u] === null || /showcaptcha/.test(cache[u] || "")) { const v = cache[u]; delete cache[u]; return /showcaptcha/.test(v || "") ? "" : ""; }
+  return cache[u] || "";
+}
+// Серые статусы: сделка не «Успешно реализовано» (142) — SMS считаем отдельной строкой
+const SUCCESS_STATUS = 142;
 const campaignOf = (t) => String(t || "").replace(/##[^#]*##/g, "").replace(/https?:\/\/\S+|\S+\.(ru|com)\/\S+/g, "").replace(/\s+/g, " ").trim().slice(0, 40);
 
 (async () => {
@@ -31,21 +48,29 @@ const campaignOf = (t) => String(t || "").replace(/##[^#]*##/g, "").replace(/htt
     .all(Math.floor(Date.parse("2026-09-01") / 1000));
   const qLeadEmails = db.prepare("SELECT c.emails FROM lead_contacts lc JOIN contacts c ON c.id = lc.contact_id WHERE lc.lead_id = ?");
   const qContactEmails = db.prepare("SELECT emails FROM contacts WHERE id = ?");
+  const qLeadStatus = db.prepare("SELECT status_id FROM leads WHERE id = ?");
+  const links = store.links || {};
   let added = 0;
   for (const r of rows) {
     let p = {};
     try { p = JSON.parse(r.params || "{}"); } catch (_) { continue; }
     const text = String(p.text || "");
-    if (!ESIM_RE.test(text)) continue;
     const smsId = (/##([0-9]+-[0-9]+)##/.exec(text) || [])[1] || null;
     const key = smsId || "note" + r.id;
     if (byId.has(key)) continue;
+    let target = "";
+    const short = (text.match(SHORT_RE) || [])[0];
+    if (short) target = await resolveShort(short, links);
+    if (!ESIM_RE.test(text) && !ESIM_TARGET_RE.test(target)) continue;
+    const ls = r.entity_type === "leads" ? qLeadStatus.get(r.entity_id) : null;
+    const grey = !!(ls && Number(ls.status_id) !== SUCCESS_STATUS);
     const em = r.entity_type === "leads" ? qLeadEmails.all(r.entity_id).map((x) => x.emails).join(",")
       : r.entity_type === "contacts" ? ((qContactEmails.get(r.entity_id) || {}).emails || "") : "";
     // amo хранит почты списком в JSON («["a@b.ru"]») — вынимаем сами адреса
     const emails = Array.from(new Set(String(em).toLowerCase().match(/[^\s"',;\[\]]+@[^\s"',;\[\]]+\.[a-z]{2,}/g) || [])).slice(0, 3);
     byId.set(key, { smsId, noteId: r.id, at: r.created_at * 1000, phone10: digits(p.phone), emails,
-      text: text.replace(/\s*##[^#]*##\s*/g, "").slice(0, 160), campaign: campaignOf(text), cost: null, costAt: 0 });
+      text: text.replace(/\s*##[^#]*##\s*/g, "").slice(0, 160), campaign: (grey ? "серые: " : "") + campaignOf(text),
+      seg: grey ? "grey" : "success", link: target ? target.slice(0, 200) : undefined, cost: null, costAt: 0 });
     added++;
   }
   // стоимость у SMS.ru: новые и те, где пока 0 (SMS.ru иногда дописывает цену позже) — не чаще раза в сутки
@@ -61,7 +86,7 @@ const campaignOf = (t) => String(t || "").replace(/##[^#]*##/g, "").replace(/htt
     await new Promise((ok) => setTimeout(ok, 400));
   }
   const sends = Array.from(byId.values()).sort((a, b) => a.at - b.at).filter((x) => now - x.at < 400 * 86400e3);
-  fs.writeFileSync(OUT + ".tmp", JSON.stringify({ builtAt: new Date().toISOString(), sends }));
+  fs.writeFileSync(OUT + ".tmp", JSON.stringify({ builtAt: new Date().toISOString(), links, sends }));
   fs.renameSync(OUT + ".tmp", OUT);
   const total = sends.reduce((a, x) => a + (Number(x.cost) || 0), 0);
   console.log(new Date().toISOString(), "SMS про eSIM из amo:", sends.length, "(новых " + added + ")", "стоимость", Math.round(total), "₽,",
