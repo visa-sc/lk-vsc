@@ -407,6 +407,31 @@
       </div>
       <div class="ig-h" id="smsFlowH" hidden>SMS: от отправки до оплаты</div>
       <div id="smsFlow"></div>
+      <!-- График по дням (Андрей 19.10.2026): свёрнут; любой столбец таблицы или все сразу, у каждой линии своя шкала -->
+      <style>
+        .smsch{margin-top:18px;border:1px solid #ece7f2;border-radius:14px;background:#fff}
+        .smsch-t{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:11px 14px;font-size:14px;font-weight:700;color:#161d45}
+        .smsch-t i{font-style:normal;color:#9aa0ab;transition:transform .15s}
+        .smsch.open .smsch-t i{transform:rotate(90deg)}
+        .smsch-b{padding:0 14px 14px}
+        .smsch-leg{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+        .smsch-leg span{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border:1px solid #e3deeb;border-radius:999px;cursor:pointer;user-select:none;color:#4a5260;background:#fff}
+        .smsch-leg span i{width:9px;height:9px;border-radius:50%;display:inline-block}
+        .smsch-leg span.off{opacity:.45}
+        .smsch-leg span.all{font-weight:600}
+        .smsch-box{position:relative;height:200px;touch-action:pan-y}
+        .smsch-x{display:flex;justify-content:space-between;font-size:10px;color:#9aa0ab;margin-top:4px}
+        .smsch-tip{position:absolute;display:none;background:#1d2433;color:#fff;font-size:11.5px;line-height:1.5;padding:7px 10px;border-radius:8px;white-space:nowrap;pointer-events:none;z-index:5;box-shadow:0 4px 14px rgba(20,30,50,.25)}
+        .smsch-tip b{font-weight:600}
+        .smsch-empty{font-size:13px;color:#9aa0ab;padding:24px 0;text-align:center}
+        #tSmsDays tr.smswk td{background:#fff6d6}
+        #tSmsDays tr.smswk td:first-child{border-radius:8px 0 0 8px}
+        #tSmsDays tr.smswk td:last-child{border-radius:0 8px 8px 0}
+      </style>
+      <div class="smsch" id="smsChartW">
+        <button type="button" class="smsch-t" id="smsChartT">График по дням <i>›</i></button>
+        <div class="smsch-b" id="smsChart" hidden></div>
+      </div>
       <div class="ig-h" id="smsDaysH" style="margin-top:22px;display:none">SMS по дням</div>
       <div class="scroll"><table id="tSmsDays"></table></div>
       <div class="ig-h" id="smsCampH" style="margin-top:22px;display:none">SMS по рассылкам</div>
@@ -706,24 +731,116 @@
     var cells = function(x){ var v = x.cl != null;
       return [RU(x.sent), RU(x.dlv), v ? RU(x.cl) : ND, v ? pct1(x.cl, x.dlv) : DASH, RU(x.st), v ? pct1(x.st, x.cl) : DASH,
         RU(x.paid), pct1(x.paid, x.st), x.rev ? RU(x.rev) + " ₽" : DASH, v ? pct1(x.paid, x.cl) : DASH, pct1(x.paid, x.dlv)]; };
+    SMS_ROWS = [];
     var body = days.map(function(d){
       var o = D[d], x = { sent: o.sent, dlv: o.dlv, cl: o.vis ? Object.keys(o.ppl).length : null, st: o.st, paid: o.paid, rev: o.rev };
+      var pc = function(n, of){ return of ? Math.round(n / of * 1000) / 10 : null; }, v = x.cl != null;
+      SMS_ROWS.unshift({ day: d, sent: x.sent, dlv: x.dlv, cl: x.cl, clPct: v ? pc(x.cl, x.dlv) : null, st: x.st, stPct: v ? pc(x.st, x.cl) : null,
+        paid: x.paid, paidPct: pc(x.paid, x.st), rev: x.rev, paidCl: v ? pc(x.paid, x.cl) : null, paidDlv: pc(x.paid, x.dlv) });
       ["sent","dlv","st","paid","rev"].forEach(function(k){ A[k] += x[k]; });
       if (x.cl != null) { V.n++; ["sent","dlv","cl","st","paid","rev"].forEach(function(k){ V[k] += x[k]; }); }
       var c = cells(x);
-      if (!x.sent && !x.cl && !x.st && !x.paid) return row(['<span class="dim">' + smsDay(d) + "</span>"].concat(c.map(function(t){ return '<span class="dim">' + t + "</span>"; })), R);
-      return row([smsDay(d)].concat(c), R);
+      if (!x.sent && !x.cl && !x.st && !x.paid) return smsWk(d, row(['<span class="dim">' + smsDay(d) + "</span>"].concat(c.map(function(t){ return '<span class="dim">' + t + "</span>"; })), R));
+      return smsWk(d, row([smsDay(d)].concat(c), R));
     }).join("");
     var foot = row(["Итого"].concat(cells({ sent: A.sent, dlv: A.dlv, cl: null, st: A.st, paid: A.paid, rev: A.rev })), R).split(ND).join(DASH);
     if (V.n && V.n < days.length) foot += row(["Дни с переходами"].concat(cells(V)), R);
     else if (V.n) foot = row(["Итого"].concat(cells(V)), R);
     days.forEach(function(d){ A.cost = (A.cost || 0) + (D[d].cost || 0); });
     renderSmsFlow(A, V, days.length, from, to, byPhone, byPhoneRev);
+    renderSmsChart();
     el("tSmsDays").innerHTML = head(["День", "Отправлено", "Доставлено", "Перешли", "% перехода", "Начали оплату", "% от перешедших",
       "Оплат", "% от начавших", "Сумма оплат", "Оплат от перешедших", "Оплат от доставленных"], R) + "<tbody>" + body + "</tbody>" +
       "<tfoot>" + foot + "</tfoot>";
   }
+  // ── График по дням (Андрей 19.10.2026) ── свёрнут по умолчанию; легенда — те же столбцы, что в таблице.
+  // Любой столбец или «Все»; у каждой линии своя шкала (штуки, проценты и рубли несравнимы),
+  // поэтому подписи оси — у единственной выбранной линии, а точные значения — в подсказке.
+  var SMS_ROWS = [];
+  var SMS_SERIES = [
+    { k: "sent", label: "Отправлено", c: "#8a93a6", f: "n" }, { k: "dlv", label: "Доставлено", c: "#5b6b8c", f: "n" },
+    { k: "cl", label: "Перешли", c: "#4a90d9", f: "n" }, { k: "clPct", label: "% перехода", c: "#2f6fb5", f: "p" },
+    { k: "st", label: "Начали оплату", c: "#9b6bd2", f: "n" }, { k: "stPct", label: "% от перешедших", c: "#7a4cb3", f: "p" },
+    { k: "paid", label: "Оплат", c: "#4f9f68", f: "n" }, { k: "paidPct", label: "% от начавших", c: "#3c7f52", f: "p" },
+    { k: "rev", label: "Сумма оплат", c: "#c9762e", f: "r" }, { k: "paidCl", label: "Оплат от перешедших", c: "#d2685f", f: "p" },
+    { k: "paidDlv", label: "Оплат от доставленных", c: "#a8475f", f: "p" } ];
+  var SMS_ON = { clPct: true }, SMS_CHART_OPEN = false;
+  el("smsChartT").addEventListener("click", function(){
+    SMS_CHART_OPEN = !SMS_CHART_OPEN;
+    el("smsChartW").classList.toggle("open", SMS_CHART_OPEN);
+    el("smsChart").hidden = !SMS_CHART_OPEN;
+    if (SMS_CHART_OPEN) renderSmsChart();
+  });
+  function smsFmt(v, f){
+    if (v == null) return "нет данных";
+    return f === "p" ? String(v).replace(".", ",") + "%" : f === "r" ? RU(v) + " ₽" : RU(v);
+  }
+  function renderSmsChart(){
+    if (!SMS_CHART_OPEN) return;
+    var box = el("smsChart"), rows = SMS_ROWS || [];
+    var allOn = SMS_SERIES.every(function(x){ return SMS_ON[x.k]; });
+    var leg = '<div class="smsch-leg"><span class="all' + (allOn ? "" : " off") + '" data-k="*">Все</span>' +
+      SMS_SERIES.map(function(x){ return '<span class="' + (SMS_ON[x.k] ? "" : "off") + '" data-k="' + x.k + '"><i style="background:' + x.c + '"></i>' + x.label + "</span>"; }).join("") + "</div>";
+    var on = SMS_SERIES.filter(function(x){ return SMS_ON[x.k]; });
+    if (!rows.length) { box.innerHTML = leg + '<div class="smsch-empty">Нет данных за период.</div>'; return smsLegBind(box); }
+    if (!on.length) { box.innerHTML = leg + '<div class="smsch-empty">Выберите, что показать.</div>'; return smsLegBind(box); }
+    var VW = 1000, VH = 200, PT = 14, PB = 186, n = rows.length;
+    var X = function(i){ return n === 1 ? VW / 2 : 8 + i * (VW - 16) / (n - 1); };
+    var sc = {};
+    on.forEach(function(x){ var vv = rows.map(function(r){ return r[x.k]; }).filter(function(v){ return v != null; });
+      var hi = vv.length ? Math.max.apply(null, vv) : 1; sc[x.k] = hi > 0 ? hi : 1; });
+    var Y = function(k, v){ return PT + (1 - v / sc[k]) * (PB - PT); };
+    var step = n > 1 ? (VW - 16) / (n - 1) : VW;
+    var wk = rows.map(function(r, i){ return smsIsWk(r.day) ? '<rect x="' + Math.max(0, X(i) - step / 2).toFixed(1) + '" y="0" width="' + step.toFixed(1) + '" height="' + VH + '" fill="#fff3c4"/>' : ""; }).join("");
+    var grid = wk + [PT, (PT + PB) / 2, PB].map(function(y){ return '<line x1="0" x2="' + VW + '" y1="' + y + '" y2="' + y + '" stroke="#e9edf3" stroke-width="1" vector-effect="non-scaling-stroke"/>'; }).join("");
+    var lines = on.map(function(x){
+      var parts = [], cur = [];
+      rows.forEach(function(r, i){ var v = r[x.k]; if (v == null) { if (cur.length) parts.push(cur); cur = []; } else cur.push(X(i).toFixed(1) + "," + Y(x.k, v).toFixed(1)); });
+      if (cur.length) parts.push(cur);
+      return parts.map(function(p){ return p.length > 1
+        ? '<polyline points="' + p.join(" ") + '" fill="none" stroke="' + x.c + '" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
+        : '<circle cx="' + p[0].split(",")[0] + '" cy="' + p[0].split(",")[1] + '" r="3" fill="' + x.c + '"/>'; }).join("");
+    }).join("");
+    var axis = "";
+    if (on.length === 1) {
+      var o1 = on[0], top = sc[o1.k];
+      axis = [[PT, top], [(PT + PB) / 2, top / 2], [PB, 0]].map(function(a){ return '<div style="position:absolute;left:4px;top:' + (a[0] - 7) + 'px;font-size:10px;color:#9aa0ab;background:rgba(255,255,255,.8);padding:0 3px;border-radius:4px">' +
+        smsFmt(o1.f === "p" ? Math.round(a[1] * 10) / 10 : Math.round(a[1]), o1.f) + "</div>"; }).join("");
+    }
+    var lbl = []; var m = Math.min(7, n); for (var j = 0; j < m; j++) lbl.push(Math.round(j * (n - 1) / Math.max(1, m - 1)));
+    lbl = lbl.filter(function(v, i, a){ return a.indexOf(v) === i; });
+    box.innerHTML = leg + '<div class="smsch-box"><svg width="100%" height="' + VH + '" viewBox="0 0 ' + VW + " " + VH + '" preserveAspectRatio="none" style="display:block">' + grid + lines + "</svg>" + axis +
+      '<div class="smsch-tip"></div></div><div class="smsch-x">' + lbl.map(function(i){ return "<span>" + smsDay(rows[i].day) + "</span>"; }).join("") + "</div>";
+    smsLegBind(box);
+    var b = box.querySelector(".smsch-box"), tip = box.querySelector(".smsch-tip");
+    var show = function(cx){
+      var r = b.getBoundingClientRect(); if (!r.width) return;
+      var vx = (cx - r.left) / r.width * VW, best = 0, bd = 1e9;
+      for (var i = 0; i < n; i++) { var d = Math.abs(X(i) - vx); if (d < bd) { bd = d; best = i; } }
+      var row0 = rows[best];
+      tip.innerHTML = "<b>" + smsDay(row0.day) + "</b><br>" + on.map(function(x){ return '<span style="color:' + x.c + '">●</span> ' + x.label + ": " + smsFmt(row0[x.k], x.f); }).join("<br>");
+      tip.style.display = "block";
+      var px = X(best) / VW * r.width, w = tip.offsetWidth;
+      tip.style.left = Math.max(0, Math.min(r.width - w, px + 12 > r.width - w ? px - w - 12 : px + 12)) + "px";
+      tip.style.top = "6px";
+    };
+    b.addEventListener("mousemove", function(e){ show(e.clientX); });
+    b.addEventListener("touchstart", function(e){ if (e.touches[0]) show(e.touches[0].clientX); }, { passive: true });
+    b.addEventListener("touchmove", function(e){ if (e.touches[0]) show(e.touches[0].clientX); }, { passive: true });
+    b.addEventListener("mouseleave", function(){ tip.style.display = "none"; });
+  }
+  function smsLegBind(box){
+    box.querySelectorAll(".smsch-leg span").forEach(function(sp){ sp.addEventListener("click", function(){
+      var k = sp.getAttribute("data-k");
+      if (k === "*") { var all = SMS_SERIES.every(function(x){ return SMS_ON[x.k]; }); SMS_ON = {}; if (!all) SMS_SERIES.forEach(function(x){ SMS_ON[x.k] = true; }); }
+      else { if (SMS_ON[k]) delete SMS_ON[k]; else SMS_ON[k] = true; }
+      renderSmsChart();
+    }); });
+  }
   // «19 окт, пн» — день недели рядом с датой (Андрей 19.10.2026)
+  // суббота и воскресенье — независимо от праздников
+  function smsIsWk(d){ var w = new Date(d + "T12:00:00Z").getUTCDay(); return w === 0 || w === 6; }
+  function smsWk(d, tr){ return smsIsWk(d) ? tr.replace("<tr>", '<tr class="smswk">') : tr; }
   function smsDay(d){ return dShort(d) + ", " + ["вс","пн","вт","ср","чт","пт","сб"][new Date(d + "T12:00:00Z").getUTCDay()]; }
   function pct1(n, of){ return of ? (Math.round(n / of * 1000) / 10).toString().replace(".", ",") + "%" : "—"; }
   // Воронка раздела SMS — те же итоги, что в «SMS по дням». Если в периоде есть дни без журнала переходов,
