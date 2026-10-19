@@ -914,6 +914,11 @@
       "what": "Выкладка визового ЛК Екатериной",
       "where": "/var/lib/lk-deploy, /var/www/voyo/.lk-deploy-backups, /var/www/voyo/.lkChangelogKate.json",
       "note": "Служба lk-deploy (systemd, заявка ~kateadmin/lk-deploy/REQUEST) выкладывает только cabinet.html и index.html: проверка файлов, защита от затирания, копии для отката (30 на файл), записи журнала изменений ЛК от Екатерины."
+    },
+    {
+      "what": "Выкладка админки eSIM Андреем Петровым",
+      "where": "/var/lib/esim-deploy, /var/www/voyo/.esim-deploy-backups, /var/www/voyo/.esimAdmChangelogPetrov.json",
+      "note": "Служба esim-deploy (systemd, заявка ~spbadmin/esim-deploy/REQUEST, команда esimdeploy) выкладывает только public/esim-adm.html (dev.voyomobile.ru): те же проверки и откат, что у lk-deploy. Сервер eSIM, витрина и бот Петрову не выданы (с 19.10.2026)."
     }
   ]
 }

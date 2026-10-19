@@ -1,0 +1,9 @@
+[Unit]
+Description=Выкладка админки eSIM Андреем Петровым: следим за файлом-заявкой
+
+[Path]
+PathChanged=/home/spbadmin/esim-deploy/REQUEST
+Unit=esim-deploy.service
+
+[Install]
+WantedBy=multi-user.target

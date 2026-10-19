@@ -1,0 +1,16 @@
+[Unit]
+# Заявки бывают пачкой (pull, check, deploy за секунды) — без этого systemd после 5 запусков за 10 с
+# перестаёт их принимать (19.10.2026: откат не обработался).
+StartLimitIntervalSec=0
+Description=Выкладка админки eSIM Андреем Петровым: обработка заявки
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node /usr/local/lib/esim-deploy/esim-deploy.js
+TimeoutStartSec=120
+Nice=5
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/esim-deploy /var/www/voyo/public /var/www/voyo/.esim-deploy-backups /var/www/voyo/.esimAdmChangelogPetrov.json
+PrivateTmp=true
+NoNewPrivileges=true

@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# esimdeploy — выкладка админки eSIM (esim-adm.html, dev.voyomobile.ru) для Андрея Петрова.
+#
+#   esimdeploy pull                     взять свежий боевой esim-adm.html в ~/esim-deploy
+#   esimdeploy status                   отличается ли ваш файл от боевого
+#   esimdeploy check                    проверить свой файл, ничего не выкладывая
+#   esimdeploy deploy                   выложить на боевой (нужен ~/esim-deploy/CHANGELOG.md)
+#   esimdeploy rollback esim-adm.html   вернуть предыдущую версию
+#   esimdeploy log                      последние выкладки
+#
+# Сама команда ничего на боевом не меняет: она кладёт заявку ~/esim-deploy/REQUEST, а служба
+# сервера (esim-deploy) проверяет файл и выкладывает. Подробно — ~/esim-deploy/README.md.
+set -u
+W="$HOME/esim-deploy"; OUT=/var/lib/esim-deploy/out; CUR=/var/lib/esim-deploy/current
+FILES="esim-adm.html"
+[ "$(id -un)" = "spbadmin" ] || { echo "Запускать от пользователя spbadmin"; exit 1; }
+mkdir -p "$W/.base" "$W/.changelog-archive"
+
+cmd="${1:-help}"; arg="${2:-}"
+case "$cmd" in
+  pull|status|check|deploy|log) ;;
+  rollback) case "$arg" in esim-adm.html) ;; *) echo "Укажите файл: esimdeploy rollback esim-adm.html"; exit 1;; esac ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+# Неразобранная свежая боевая версия (после pull при своих правках) — выкладывать рано:
+# иначе ваш файл на старой основе затрёт чужие правки, пришедшие с pull.
+if [ "$cmd" = "deploy" ]; then
+  for f in $FILES; do
+    if [ -f "$W/$f.prod" ]; then
+      echo "Есть $f.prod — свежая боевая версия, в которую ещё не перенесены ваши правки."
+      echo "Перенесите правки в неё, сохраните результат как $f, удалите $f.prod и выкладывайте."
+      exit 1
+    fi
+  done
+fi
+
+id="$(date +%s)-$$-$RANDOM"
+printf '{"id":"%s","cmd":"%s","file":"%s"}\n' "$id" "$cmd" "$arg" > "$W/REQUEST"
+
+# Ждём ответ службы (обычно 1–3 секунды, выкладка с проверкой — до 30).
+for _ in $(seq 1 90); do
+  [ -f "$OUT/$id.txt" ] && break
+  sleep 1
+done
+if [ ! -f "$OUT/$id.txt" ]; then
+  echo "Служба выкладки не ответила за 90 секунд. Повторите команду; если снова тишина — напишите Андрею."
+  exit 1
+fi
+cat "$OUT/$id.txt"
+ok=0; head -1 "$OUT/$id.txt" | grep -q '^OK' && ok=1
+
+if [ "$cmd" = "pull" ] && [ "$ok" = 1 ]; then
+  for f in $FILES; do
+    [ -f "$CUR/$f" ] || continue
+    # Ваш файл без правок (совпадает с прошлым pull) — просто обновляем.
+    # С правками — не трогаем, свежую боевую кладём рядом как ФАЙЛ.prod.
+    if [ ! -f "$W/$f" ] || cmp -s "$W/$f" "$W/.base/$f"; then
+      cp "$CUR/$f" "$W/$f"
+      echo "  $f: обновлён до боевого"
+    else
+      cp "$CUR/$f" "$W/$f.prod"
+      echo "  $f: у вас есть свои правки — боевая версия положена рядом как $f.prod, перенесите правки в неё"
+    fi
+    cp "$CUR/$f" "$W/.base/$f"
+  done
+fi
+
+if [ "$cmd" = "deploy" ] && [ "$ok" = 1 ]; then
+  for f in $FILES; do [ -f "$W/$f" ] && cp "$W/$f" "$W/.base/$f"; done
+  mv "$W/CHANGELOG.md" "$W/.changelog-archive/$id.md" 2>/dev/null
+fi
+[ "$ok" = 1 ]
