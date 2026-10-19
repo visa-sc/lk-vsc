@@ -110,6 +110,12 @@
   .funnel-conv{flex:0 0 auto;align-self:center;background:#fff;border:1px solid #ece7f2;border-radius:999px;padding:4px 10px;
     font-size:12px;font-weight:600;color:#3589bd;white-space:nowrap;font-variant-numeric:tabular-nums;}
   .funnel-conv.none{color:var(--mut2)}
+  .fsrc{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+  .fsrc label{font-size:13px;color:#4a5260}
+  .fsrc select{font:inherit;font-size:14px;padding:7px 30px 7px 12px;border:1px solid #e3deeb;border-radius:10px;background:#fff;color:#161d45;
+    max-width:100%;-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8a90a0 50%),linear-gradient(135deg,#8a90a0 50%,transparent 50%);
+    background-position:calc(100% - 15px) 52%,calc(100% - 10px) 52%;background-size:5px 5px;background-repeat:no-repeat;cursor:pointer}
+  .fsrc .dim{font-size:12px}
   .ig-wrap{margin-top:26px;padding-top:22px;border-top:1px solid #ece7f2;}
   .ig-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:17px;font-weight:700;color:#161d45;margin:0 0 16px;}
   .ig-sum{margin-left:auto;font-size:13px;font-weight:500;color:var(--mut2);}
@@ -542,10 +548,34 @@
     el("seg").querySelectorAll("button").forEach(function(x){ x.classList.remove("on"); }); load(); }); });
   el("withTest").addEventListener("change", load);
 
+  // Источник для воронок (просьба Петрова 19.10.2026): «все» или канал, или канал|кампания
+  var FSRC = "";
+  document.addEventListener("change", function(ev){
+    if (ev.target && ev.target.classList && ev.target.classList.contains("fsrcSel")) { FSRC = ev.target.value; load(); }
+  });
+  function fsrcHtml(f){
+    var list = f.sources || [];
+    var opt = '<option value="">Все источники</option>';
+    list.forEach(function(x){
+      var n = x.site + x.bot;
+      opt += '<option value="' + esc(x.key) + '"' + (FSRC === x.key ? " selected" : "") + ">" + esc(x.name) + " · " + RU(n) + "</option>";
+      (x.camps || []).forEach(function(c){
+        var v = x.key + "|" + c[0];
+        opt += '<option value="' + esc(v) + '"' + (FSRC === v ? " selected" : "") + ">   ↳ " + esc(c[0]) + " · " + RU(c[1]) + "</option>";
+      });
+    });
+    if (FSRC && !list.some(function(x){ return x.key === FSRC || (FSRC.indexOf(x.key + "|") === 0); }))
+      opt += '<option value="' + esc(FSRC) + '" selected>' + esc(FSRC) + " · 0</option>";
+    var r = DATA._range, early = f.tagsSince && (!r.from || r.from < f.tagsSince);
+    var note = FSRC && f.filterRevenue != null ? "оплатили на " + RU(f.filterRevenue) + " ₽" : "";
+    if (early) note += (note ? " · " : "") + "источник заходов пишется с " + dShort(f.tagsSince);
+    return '<div class="fsrc"><label>Источник</label><select class="fsrcSel">' + opt + "</select>" +
+      (note ? '<span class="dim">' + note + "</span>" : "") + "</div>";
+  }
   async function load(){
     var r = range();
     var q = "/esim/api/adm/stats?x=1" + (r.from ? "&from=" + r.from : "") +
-      (r.to ? "&to=" + r.to : "") + (el("withTest").checked ? "&test=1" : "");
+      (r.to ? "&to=" + r.to : "") + (el("withTest").checked ? "&test=1" : "") + (FSRC ? "&fsrc=" + encodeURIComponent(FSRC) : "");
     var res = await fetch(q, { cache: "no-store", headers: { Authorization: "Bearer " + TOKEN } });
     if (res.status === 403 || res.status === 401) return gate("Сессия закончилась, войдите снова.");
     DATA = await res.json();
@@ -825,8 +855,8 @@
       { label: "Перешли к оплате", n: f.bot.pay || 0 },
       { label: "Оплатили", n: f.bot.paid || 0 },
     ];
-    el("fsite").innerHTML = funnelHtml(site, "посетителей") + note;
-    el("fbot").innerHTML = funnelHtml(bot, "чатов") + note;
+    el("fsite").innerHTML = fsrcHtml(f) + funnelHtml(site, "посетителей") + note;
+    el("fbot").innerHTML = fsrcHtml(f) + funnelHtml(bot, "чатов") + note;
     var sc = conv(site[5].n, site[0].n), bc = conv(bot[4].n, bot[0].n);
     renderAb();
     renderBlog();

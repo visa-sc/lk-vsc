@@ -682,6 +682,7 @@
         lang: step === "visit" ? ((navigator.languages && navigator.languages[0]) || navigator.language || "") : undefined,
         ad: step === "visit" ? /[?&](gclid|gbraid|wbraid|gad_source|yclid|fbclid|utm_source)=/.test(location.search) : undefined,
         ig: step === "visit" ? igLinkOf() : undefined,
+        tag: step === "visit" ? tagOf() : undefined,   // откуда пришёл: воронка по источнику в панели (19.10.2026)
         tgch: step === "visit" ? tgchLinkOf() : undefined,
         // переход из рекламы Meta (13.10.2026): отчёт по тесту считает по этим посетителям
         fb: step === "visit" && /[?&](fbclid=|utm_source=(facebook|instagram|fb|ig)\b)/i.test(location.search) ? (new URLSearchParams(location.search).get("utm_campaign") || "fb") : undefined
@@ -696,6 +697,17 @@
       var q = new URLSearchParams(location.search);
       if(!/^tg_channel$/i.test(q.get("utm_source") || "")) return undefined;
       return (q.get("utm_content") || q.get("utm_campaign") || "").slice(0, 40);
+    }catch(e){ return undefined; }
+  }
+  function tagOf(){
+    try{
+      var q = new URLSearchParams(location.search), rh = "";
+      try{ rh = document.referrer ? new URL(document.referrer).hostname : ""; }catch(e){}
+      if(rh === location.hostname || /(^|\.)(voyotravel\.ru|voyovoyo\.ru|voyomobile\.(ru|com))$/.test(rh)) rh = "";
+      return { s: (q.get("utm_source") || "").slice(0, 40), m: (q.get("utm_medium") || "").slice(0, 40),
+        c: (q.get("utm_campaign") || "").slice(0, 60), r: q.get("ref") ? 1 : 0,
+        k: q.get("yclid") ? "y" : (q.get("gclid") || q.get("gbraid") || q.get("wbraid")) ? "g" : q.get("fbclid") ? "f" : "",
+        rh: rh.slice(0, 60) };
     }catch(e){ return undefined; }
   }
   function igLinkOf(){

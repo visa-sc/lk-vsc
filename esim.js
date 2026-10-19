@@ -4890,6 +4890,54 @@ function mount(app, opts) {
     if (list.indexOf(vid) < 0 && list.length < 50000) { list.push(vid); _funnelDirty = true; }
     return true;
   }
+  // ── Источник захода для воронки (просьба Петрова 19.10.2026) ──
+  // «Сколько перешли из SMS с 16 по 18 октября, сколько выбрали страну, пакет,
+  // оплатили». Витрина присылает метку захода, здесь она сводится к каналу
+  // (те же ключи, что в «Рекламе и окупаемости») и запоминается за посетителем
+  // на день: f.tags[день][vid] = "канал|кампания". Бот — по f.botSrc (?start=).
+  const SRC_NAMES = { sms: "SMS", meta: "Meta (реклама)", instagram: "Instagram", yandex: "Яндекс Директ", google: "Google Ads",
+    tgch: "Telegram-канал", telegram: "Telegram", search_yandex: "Поиск Яндекса", search_google: "Поиск Google",
+    referral: "Рекомендации", email: "Письма", direct: "Прямые заходы", other: "Другие сайты",
+    site: "Бот: кнопка на сайте", blogger: "Блогеры", sms_mass: "SMS-рассылка" };
+  function srcOfTag(t) {
+    const s = String(t.s || "").toLowerCase(), m = String(t.m || "").toLowerCase(), rh = String(t.rh || "").toLowerCase();
+    if (t.r) return "referral";
+    if (s) {
+      if (s === "sms") return "sms";
+      if (/^(facebook|fb|instagram|ig|insta)$/.test(s)) return (m === "paid" || t.k === "f") ? "meta" : "instagram";
+      if (s === "tg_channel") return "tgch";
+      if (/^(yandex|direct|ya)$/.test(s)) return "yandex";
+      if (/^google/.test(s)) return "google";
+      if (/^e-?mail$/.test(s)) return "email";
+      return s.replace(/[^a-z0-9_-]/g, "").slice(0, 30) || "other";
+    }
+    if (t.k === "y") return "yandex";
+    if (t.k === "g") return "google";
+    if (t.k === "f") return "meta";
+    if (/(^|\.)yandex\.|(^|\.)ya\.ru$/.test(rh)) return "search_yandex";
+    if (/(^|\.)google\./.test(rh)) return "search_google";
+    if (/instagram\.com$/.test(rh)) return "instagram";
+    if (/(^|\.)(t\.me|telegram\.org)$/.test(rh)) return "telegram";
+    return rh ? "other" : "direct";
+  }
+  function botSrcKey(v) {
+    v = String(v || "");
+    if (!v) return "direct";
+    if (/^ref_/.test(v)) return "referral";
+    if (/^tg(ch|_channel)?$/.test(v)) return "tgch";
+    return v.slice(0, 30);
+  }
+  function tagMark(vid, t) {
+    vid = String(vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+    if (vid.length < 6 || !t || typeof t !== "object") return;
+    const f = funnelData(), day = mskDay(Date.now());
+    f.tags = f.tags || {};
+    const d = f.tags[day] || (f.tags[day] = {});
+    if (d[vid] || Object.keys(d).length > 50000) return;
+    const camp = String(t.c || "").replace(/[|]/g, " ").trim().slice(0, 60);
+    d[vid] = srcOfTag(t) + (camp ? "|" + camp : "");
+    _funnelDirty = true;
+  }
   // A/B-тест меню фильтров (18.09.2026): какой вариант достался браузеру. Храним
   // рядом с воронкой, чтобы шаги и оплаты делились по вариантам.
   // key: "ab" — меню сайта (old/new), "abBot" — бот (days — сначала срок, list — сразу список)
@@ -5145,6 +5193,7 @@ function mount(app, opts) {
     if (b.adm) return res.json({ success: true, skipped: true });   // свои заходы с админ-кодом не считаем
     if (b.step === "visit" && b.lang) { try { langHit(b.lang, b.vid, !!b.ad); } catch (_) {} }
     if (b.step === "visit" && b.ig != null && b.src !== "bot") { try { igMark(b.vid, b.ig); } catch (_) {} }
+    if (b.step === "visit" && b.tag && b.src !== "bot") { try { tagMark(b.vid, b.tag); } catch (_) {} }
     if (b.step === "start" && b.ig != null && b.src === "bot") { try { igMark(b.vid, b.ig, "igBot"); } catch (_) {} }
     if (b.step === "visit" && b.tgch != null && b.src !== "bot") { try { igMark(b.vid, b.tgch, "tgch"); } catch (_) {} }
     // заход из рекламы Meta (13.10.2026) — для ежедневного отчёта tools/metaReport.js
@@ -5162,18 +5211,41 @@ function mount(app, opts) {
     res.json({ success: funnelHit(String(b.src || "site"), String(b.step || ""), b.vid) });
   });
 
-  function funnelFor(from, to, withTest) {
+  function funnelFor(from, to, withTest, srcFilter) {
     const f = funnelData();
     const h = readJson(FUNNEL_HISTORY_FILE, null) || { days: {} };
     const since = h.since ? Math.min(h.since, f.since) : f.since;
     const inR = (day) => (!from || day >= from) && (!to || day <= to);
     const out = { since: mskDay(since), liveSince: mskDay(f.since), restored: !!h.since, site: {}, bot: {} };
+    // источники за период — для списка в панели; с фильтром считаем только своих посетителей
+    const tagDays = Object.keys(f.tags || {}).sort();
+    out.tagsSince = tagDays[0] || null;
+    const siteSrc = new Map();
+    tagDays.filter(inR).forEach((day) => Object.entries(f.tags[day]).forEach(([v, k]) => { if (!siteSrc.has(v)) siteSrc.set(v, k); }));
+    const botVisits = new Set();
+    Object.keys(f.days).filter(inR).forEach((day) => (((f.days[day].bot || {}).start) || []).forEach((v) => botVisits.add(v)));
+    const cnt = {};
+    const bump = (key, camp, side) => {
+      const c = cnt[key] || (cnt[key] = { key, name: SRC_NAMES[key] || key, site: 0, bot: 0, camps: {} });
+      c[side]++;
+      if (camp) c.camps[camp] = (c.camps[camp] || 0) + 1;
+    };
+    siteSrc.forEach((k) => { const i = k.indexOf("|"); bump(i < 0 ? k : k.slice(0, i), i < 0 ? "" : k.slice(i + 1), "site"); });
+    botVisits.forEach((v) => bump(botSrcKey((f.botSrc || {})[v]), "", "bot"));
+    out.sources = Object.values(cnt).map((c) => Object.assign(c, { camps: Object.entries(c.camps).sort((a, b) => b[1] - a[1]).slice(0, 8) }))
+      .sort((a, b) => (b.site + b.bot) - (a.site + a.bot));
+    const flt = String(srcFilter || "").slice(0, 100);
+    out.filter = flt || null;
+    const match = (k) => k === flt || (flt.indexOf("|") < 0 && String(k).split("|")[0] === flt);
+    const siteOk = flt ? new Set([...siteSrc].filter(([, k]) => match(k)).map(([v]) => v)) : null;
+    const botOk = flt ? new Set([...botVisits].filter((v) => match(botSrcKey((f.botSrc || {})[v])))) : null;
     Object.keys(FUNNEL_STEPS).forEach((src) => {
       FUNNEL_STEPS[src].forEach((step) => {
         const u = new Set();
         [h.days, f.days].forEach((days) => Object.keys(days).filter(inR).forEach((day) => {
           ((days[day][src] || {})[step] || []).forEach((v) => {
             if (!withTest && v.indexOf("tg") === 0 && TEST_TG.indexOf(v.slice(2)) >= 0) return;   // свой чат
+            if (flt && !(src === "site" ? siteOk : botOk).has(v)) return;   // не тот источник
             u.add(v);
           });
         }));
@@ -5183,8 +5255,12 @@ function mount(app, opts) {
     // оплатившие — из заказов, начиная с первых данных воронки (иначе доля выше 100%)
     const paid = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.paidAt >= since &&
       inR(mskDay(o.paidAt)) && (withTest || !isTestOrder(o)) && !o.parentOrderId);
-    out.site.paid = new Set(paid.filter((o) => !o.tgChatId).map((o) => o.vid || o.custKey || o.email || o.id)).size;
-    out.bot.paid = new Set(paid.filter((o) => o.tgChatId).map((o) => String(o.tgChatId))).size;
+    out.site.paid = new Set(paid.filter((o) => !o.tgChatId && (!flt || (o.vid && siteOk.has(o.vid)))).map((o) => o.vid || o.custKey || o.email || o.id)).size;
+    out.bot.paid = new Set(paid.filter((o) => o.tgChatId && (!flt || botOk.has("tg" + o.tgChatId))).map((o) => String(o.tgChatId))).size;
+    if (flt) {   // выручка отфильтрованных оплат — сразу видно, сколько принёс источник
+      const mine = paid.filter((o) => (!o.tgChatId && o.vid && siteOk.has(o.vid)) || (o.tgChatId && botOk.has("tg" + o.tgChatId)));
+      out.filterRevenue = mine.reduce((a, o) => a + (o.payTotalRub || o.priceRub || 0), 0);
+    }
     return out;
   }
 
@@ -5564,7 +5640,7 @@ function mount(app, opts) {
         success: true, from: from || null, to: to || null, usdRate: rate,
         testShown: withTest, testCount,
         closedThrough: Object.keys(daily).sort().slice(-1)[0] || null,
-        funnel: funnelFor(from, to, withTest),
+        funnel: funnelFor(from, to, withTest, String(req.query.fsrc || "")),
         ig: igFor(from, to, withTest, SRC_SPECS.ig),
         tgch: igFor(from, to, withTest, SRC_SPECS.tgch),
         ab: abFor(from, to, withTest),
