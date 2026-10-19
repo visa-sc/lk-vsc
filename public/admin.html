@@ -7582,8 +7582,10 @@
             + '<div style="font-size:11.5px;color:#6b7280;margin-bottom:8px;">в месяц к чистой прибыли</div>'
             + '<div style="font-size:12.5px;color:#3a4256;line-height:1.55;">' + escapeHtml(c.now) + '<br>цель: ' + escapeHtml(c.target) + '</div>'
             + '<div style="font-size:12.5px;color:#1d2330;line-height:1.55;margin-top:8px;">' + escapeHtml(c.act) + '</div>'
-            + (c.calc ? '<div style="font-size:11.5px;color:#6b7280;line-height:1.5;margin-top:8px;">' + escapeHtml(c.calc) + '</div>' : "")
-            + (c.basis ? '<div style="font-size:11px;color:#9096a3;line-height:1.45;margin-top:6px;">Основа: ' + escapeHtml(c.basis) + '</div>' : "")
+            + (c.ai ? ((c.calc || c.basis) ? '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:11.5px;color:#6b7280;">Как посчитано</summary>'
+                + (c.calc ? '<div style="font-size:11.5px;color:#6b7280;line-height:1.5;margin-top:6px;">' + escapeHtml(c.calc) + '</div>' : "")
+                + (c.basis ? '<div style="font-size:11px;color:#9096a3;line-height:1.45;margin-top:6px;">Основа: ' + escapeHtml(c.basis) + '</div>' : "") + '</details>' : "")
+              : (c.calc ? '<div style="font-size:11.5px;color:#6b7280;line-height:1.5;margin-top:8px;">' + escapeHtml(c.calc) + '</div>' : ""))
             + (isAdm && c.key ? '<div style="display:flex;gap:8px;margin-top:auto;padding-top:12px;">'
               + '<button type="button" data-rad="applied" data-key="' + escapeHtml(c.key) + '" style="' + BTN + 'color:#1d8a55;">Применено</button>'
               + '<button type="button" data-rad="irrelevant" data-key="' + escapeHtml(c.key) + '" style="' + BTN + '">Не актуально</button></div>' : "")
