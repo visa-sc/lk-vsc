@@ -76,6 +76,23 @@ function readKate(name) {
     return buf.subarray(0, off);
   } finally { fs.closeSync(fd); }
 }
+// Закреплённые Андреем куски (между метками SMS:LOCK:START и SMS:LOCK:END, 19.10.2026): Петров их не меняет
+// и не удаляет, иначе выкладка и откат отказывают. Чтобы что-то в них поменять — через Андрея (он выкладывает сам).
+function lockedParts(buf) {
+  const s = buf ? buf.toString("utf8") : "";
+  const out = [], re = /SMS:LOCK:START[\s\S]*?SMS:LOCK:END/g;
+  let m; while ((m = re.exec(s))) out.push(m[0]);
+  return out.join("\n§\n");
+}
+function lockError(name, mine, prod) {
+  const lp = lockedParts(prod);
+  if (!lp) return null;
+  const s = String(mine || "");
+  if (lockedParts(mine) !== lp) return name + ": раздел SMS (между метками SMS:LOCK) закреплён Андреем — его нельзя менять или удалять. Сделайте esimdeploy pull, правьте вне этого раздела; правки в нём — через Андрея.";
+  const calls = (x) => (String(x).match(/loadSmsFlow\(\)/g) || []).length;
+  if (calls(s) < calls(prod)) return name + ": убран запуск раздела SMS (loadSmsFlow()) — так нельзя, раздел закреплён Андреем.";
+  return null;
+}
 function readProd(name) { try { return fs.readFileSync(path.join(PROD, name)); } catch (_) { return null; } }
 
 // Проверка перед предпросмотром и выкладкой. Возвращает список проблем (пусто — можно).
@@ -185,6 +202,8 @@ async function run(reqObj, st) {
       say(line);
       if (cmd === "check" && k && ks !== ps) {
         const errs = validate(f, k);
+        const le = lockError(f, k, p);
+        if (le) errs.push(le);
         problems += errs.length;
         say(errs.length ? "  проверка: " + errs.join("; ") : "  проверка: всё в порядке");
       }
@@ -211,6 +230,8 @@ async function run(reqObj, st) {
       if (p && sha(p) !== st.base[f]) return { ok: false, text: f + ": боевой файл изменился после вашего pull (кто-то выложил правку). Сделайте pull, перенесите свои правки в свежую версию и выкладывайте снова." };
       const errs = validate(f, k);
       if (errs.length) return { ok: false, text: f + ": не выложено — " + errs.join("; ") };
+      const le = lockError(f, k, p);
+      if (le) return { ok: false, text: le };
       todo.push({ f, k, ks: sha(k) });
     }
     if (!todo.length) return { ok: false, text: "Нечего выкладывать: ваши файлы совпадают с боевыми" };
@@ -248,6 +269,7 @@ async function run(reqObj, st) {
     if (!list.length) return { ok: false, text: f + ": сохранённых версий нет" };
     const from = path.join(BACKUP, list[list.length - 1]);
     const b = fs.readFileSync(from);
+    if (lockError(f, b, readProd(f))) return { ok: false, text: f + ": откат вернул бы старую версию закреплённого раздела SMS — так нельзя. Напишите Андрею." };
     backupProd(f);                                   // текущую тоже сохраняем — откат обратим
     // Только что сохранённая копия текущей версии — теперь последняя; её как источник не берём.
     putProd(f, b);
