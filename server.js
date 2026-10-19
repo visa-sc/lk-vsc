@@ -32,8 +32,10 @@ const app = express();
 const ESIM_SITE_HOSTS = new Set(["esim.voyotravel.ru", "voyomobile.ru", "voyomobile.com"]);
 // Кроме /esim пропускаем короткие адреса стран под рекламу: voyomobile.ru/turkey,
 // voyomobile.ru/china и далее по списку — это та же витрина, просто заголовок
-// про страну (16.09.2026; Вьетнам, Таиланд, Египет, Грузия и Япония — 17.09.2026)
-const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "georgia", "japan", "dubai"];
+// про страну (16.09.2026; Вьетнам, Таиланд, Египет, Грузия и Япония — 17.09.2026;
+// США, Италия, Франция, Испания, Англия, Индонезия и Европа — 19.10.2026 под Google Ads)
+const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "georgia", "japan", "dubai",
+  "usa", "italy", "france", "spain", "uk", "indonesia", "europe"];
 // Партнёрские кабинеты турагентств: voyomobile.ru/visazen и подобные (29.09.2026)
 const ESIM_PARTNER_PATHS = ["visazen"];
 // Ценовые страницы витрины: voyomobile.ru/67 — пакеты за 69 ₽ стоят 67 ₽ (02.10.2026)
