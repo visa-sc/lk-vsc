@@ -40,7 +40,8 @@ const SUCCESS_STATUS = 142, LOST_STATUS = 143;
 function statusLabel(id, names) {
   if (Number(id) === SUCCESS_STATUS) return "Успешно реализовано";
   if (Number(id) === LOST_STATUS) return "Закрыто и не реализовано";
-  return names[id] || "статус " + id;
+  // остальные (например, «Возврат») — SMS ушла, когда сделка была успешной, и сделку потом перевели
+  return "Успешно реализовано";
 }
 function campaignName(text, statusName) {
   const price = (String(text).match(/ESIM\s+от\s+\d[\d\s]*₽/i) || [])[0];
@@ -89,7 +90,6 @@ const campaignOf = (t) => String(t || "").replace(/##[^#]*##/g, "").replace(/htt
   }
   // старые записи (до 19.10) — то же имя по статусу их сделки
   for (const x of byId.values()) {
-    if (/^SMS на статусе/.test(x.campaign || "")) continue;
     let sid = x.statusId;
     if (sid == null && x.noteId) { const n = qNote.get(x.noteId); const l = n && n.entity_type === "leads" ? qLeadStatus.get(n.entity_id) : null; sid = l ? l.status_id : null; }
     x.statusId = sid; x.seg = sid == null || Number(sid) === SUCCESS_STATUS ? "success" : "grey";
