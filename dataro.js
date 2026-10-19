@@ -17,6 +17,9 @@
 //   • Яндекс.Директ: POST /data-api/direct/<сервис> — reports целиком, остальные
 //     сервисы только method "get".
 //   • опубликованные Google-таблицы без финансов (KPI, отзывы): список и CSV.
+//   • архив Wazzup (все сообщения и статусы, что Wazzup прислал вебхуком с 18.08.2026):
+//     каналы и сообщения за период — тоже отдельным процессом (tools/roWazzup.js).
+//     Ключа API Wazzup у нас нет, и историю переписок их API всё равно не отдаёт.
 // Чего НЕТ: финансы (P&L, «Поток», сверки и модули Кати, прибыль, ФОТ и зарплаты,
 // выкупы, возвраты, налоги, прогноз прибыли), запись куда-либо, отправка SMS.
 //
@@ -32,7 +35,7 @@ const LOG = path.join(__dirname, ".dataRoLog.json");
 const PHONETEST_STORE = path.join(__dirname, ".phonetest", "store.json");
 const SMS_LOG = path.join(__dirname, ".esim", "smslog.json");
 const AMO_GAP_MS = 700;
-const LIMITS = { amo: 6000, sql: 3000, direct: 400, pbx: 300, sms: 2000, sheets: 1000 };   // в сутки на ключ
+const LIMITS = { amo: 6000, sql: 3000, direct: 400, pbx: 300, sms: 2000, sheets: 1000, wazzup: 1500 };   // в сутки на ключ
 
 // Опубликованные таблицы без финансов. Финансовые (возвраты, выкупы, ЗП, прогноз
 // прибыли) сюда не добавлять — решение Андрея 19.10.2026.
@@ -100,6 +103,9 @@ function mount(deps) {
       "GET /data-api/pbx/trunks": "состояние номеров АТС (журнал проверок раз в 10 минут)",
       "POST /data-api/direct/<сервис>": "Яндекс.Директ API v5: reports — целиком; остальные сервисы — только {\"method\":\"get\"}",
       "GET /data-api/sheets | /data-api/sheets/<имя>/tabs | /data-api/sheets/<имя>/csv?gid=<gid>": "опубликованные Google-таблицы без финансов",
+      "GET /data-api/wazzup/channels": "Wazzup: каналы (WhatsApp, Telegram, MAX, VK, Instagram) — сообщений, входящих/исходящих, чатов, первое и последнее",
+      "GET /data-api/wazzup/messages?from=ГГГГ-ММ-ДД&to=…&chatId=&channelId=&chatType=&dir=in|out&q=текст&limit=5000": "Wazzup: сообщения за период (до 31 дня), с 18.08.2026",
+      "GET /data-api/wazzup/statuses?from=…&to=…": "Wazzup: статусы доставки и прочтения",
     },
     limitsPerDay: LIMITS
   }));
@@ -238,6 +244,31 @@ function mount(deps) {
       res.type("text/csv; charset=utf-8").send(r.data);
     } catch (e) { res.status(502).json({ ok: false, error: "Google: " + e.message }); }
     log(req.roWho, "sheets", req.params[0] + " " + req.params[1], 200, 0);
+  });
+
+  // ── архив Wazzup: отдельный процесс ──
+  const runWz = (env) => new Promise((resolve) => {
+    execFile(process.execPath, [path.join(__dirname, "tools", "roWazzup.js")], {
+      timeout: 90000, maxBuffer: 256 * 1024 * 1024, env: Object.assign({}, process.env, env)
+    }, (err, stdout, stderr) => {
+      if (err && !stdout) return resolve({ ok: false, error: err.killed ? "дольше 90 с — сузьте период или добавьте фильтр" : String(stderr || err.message).slice(0, 400) });
+      try { resolve(JSON.parse(stdout)); } catch (_) { resolve({ ok: false, error: "не разобрал ответ" }); }
+    });
+  });
+  let wzChannels = null;
+  app.get(/^\/data-api\/wazzup\/(channels|messages|statuses)$/, auth, async (req, res) => {
+    if (!quota(req, res, "wazzup")) return;
+    const mode = req.params[0], t = Date.now();
+    let r;
+    if (mode === "channels" && wzChannels && Date.now() - wzChannels.at < 3600e3) r = wzChannels.data;
+    else {
+      const qq = req.query;
+      r = await serial(req.roWho + ":wz", () => runWz({ RO_MODE: mode, RO_FROM: String(qq.from || ""), RO_TO: String(qq.to || ""), RO_CHAT: String(qq.chatId || ""),
+        RO_CHANNEL: String(qq.channelId || ""), RO_TYPE: String(qq.chatType || ""), RO_Q: String(qq.q || "").slice(0, 200), RO_DIR: String(qq.dir || ""), RO_LIMIT: String(qq.limit || "") }));
+      if (mode === "channels" && r.ok) wzChannels = { at: Date.now(), data: r };
+    }
+    log(req.roWho, "wazzup", mode + " " + JSON.stringify(req.query), r.ok ? 200 : 400, Date.now() - t);
+    res.status(r.ok ? 200 : 400).json(r);
   });
 
   console.log("DATA RO: /data-api для своих Claude — ключей " + Object.keys(keys()).length);
