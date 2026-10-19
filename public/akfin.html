@@ -327,7 +327,27 @@ function calcExpr(s) {
   try { const v = Function('"use strict";return(' + s + ")")(); return isFinite(v) ? v : NaN; } catch (e) { return NaN; }
 }
 function isExpr(s) { return /[+\-*/×÷]/.test(normExpr(s).slice(1)); } // минус первым знаком — не выражение
-function op(ch) { const a = $("amount"); a.value += ch; a.focus(); updateRub(); }
+function op(ch) { const a = $("amount"); a.value += ch; a.focus(); fmtAmountField(); updateRub(); }
+// Разделение тысяч пробелами прямо при вводе («50 000», «330×86,19») — как в личных
+// финансах (Андрей 19.10.2026). Пробел неразрывный; перед расчётом и записью пробелы
+// всегда срезаются (normExpr и parseFloat в addEntry убирают \s, а он их включает).
+function fmtAmountField() {
+  const el = $("amount");
+  const before = el.value;
+  const caret = el.selectionStart == null ? before.length : el.selectionStart;
+  let seen = 0; // значащих (не пробельных) символов до курсора
+  for (let i = 0; i < caret; i++) if (!/\s/.test(before[i])) seen++;
+  const formatted = before.replace(/\s+/g, "").replace(/\d+(?:[.,]\d*)?/g, (num) => {
+    const m = num.match(/^(\d+)([.,]\d*)?$/);
+    if (!m) return num;
+    return m[1].replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0") + (m[2] || "");
+  });
+  if (formatted === before) return;
+  let pos = 0, cnt = 0;
+  while (pos < formatted.length && cnt < seen) { if (!/\s/.test(formatted[pos])) cnt++; pos++; }
+  el.value = formatted;
+  if (document.activeElement === el) { try { el.setSelectionRange(pos, pos); } catch (e) {} }
+}
 // Доллар в РАСХОДАХ считаем по курсу USDT из калькулятора (им же считают расход
 // в /calc), в ПРИХОДАХ — по ЦБ. Евро всегда по ЦБ. Курс округлён до сотых.
 function rateFor(c) {
@@ -340,7 +360,7 @@ function opCur(c) {
   const a = $("amount");
   if (!a.value.trim()) { toast("Сначала сумма в " + (c === "USD" ? "долларах" : "евро")); a.focus(); return; }
   a.value += "×" + String(Math.round(rate * 100) / 100).replace(".", ",");
-  a.focus(); updateRub();
+  a.focus(); fmtAmountField(); updateRub();
 }
 function updateRub() {
   const el = $("rubSign");
@@ -350,7 +370,7 @@ function updateRub() {
   el.textContent = v > 0 ? "= " + fmt(Math.round(v * 100) / 100) + " ₽" : "₽";
   el.classList.add("calc");
 }
-$("amount").addEventListener("input", updateRub);
+$("amount").addEventListener("input", () => { fmtAmountField(); updateRub(); });
 
 /* ── Вкладки, категории, подсказки ── */
 function setTab(t) {
@@ -536,6 +556,7 @@ function startEdit(e) {
   editId = e.id;
   $("name").value = e.name;
   $("amount").value = e.formula ? e.formula.replace(/\*/g, "×").replace(/\//g, "÷") : String(e.rub).replace(".", ",");
+  fmtAmountField();
   $("comment").value = e.comment || "";
   $("date").value = e.date;
   selCat = e.category || ""; selFlag = e.flag || "";
