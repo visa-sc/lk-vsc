@@ -120,6 +120,7 @@
   .ig-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:17px;font-weight:700;color:#161d45;margin:0 0 16px;}
   .ig-sum{margin-left:auto;font-size:13px;font-weight:500;color:var(--mut2);}
   .ig-h{font-size:14px;font-weight:700;color:#161d45;margin:0 0 10px;}
+  .ig-h[hidden]{display:none!important}   /* подзаголовок, который повторяет заголовок раздела */
   .svc-sub{margin-top:22px;padding-top:18px;border-top:1px solid #ece7f2;}
   .svc-sub > summary{list-style:none;cursor:pointer;}
   .svc-sub > summary::-webkit-details-marker{display:none;}
@@ -361,9 +362,6 @@
     <div class="sec-h"><h2>Реклама и окупаемость</h2><span data-info="ads"></span><span class="sum" id="adsNote"></span><span class="chev">›</span></div>
     <div class="sec-b">
       <div class="scroll"><table id="tChan"></table></div>
-      <!-- SMS про eSIM по рассылкам: amoCRM (Петров) и наши «заходил на сайт, 14 дней» -->
-      <div class="ig-h" id="smsCampH" style="margin-top:22px;display:none">SMS по рассылкам</div>
-      <div class="scroll"><table id="tSmsCamp"></table></div>
       <div class="tool"><button class="btn" id="spendToggle" type="button">Расходы и комиссия</button></div>
       <div class="form" id="spendForm">
         <div><label>Канал</label><input id="sChannel" list="chanList" placeholder="yandex" style="width:120px"/>
@@ -393,6 +391,22 @@
         <div class="ig-h" style="margin-top:26px">Телеграм-бот</div>
         <div id="tgBotFunnel"></div><div class="scroll" style="margin-top:14px"><table id="tTgBot"></table></div><div class="fun-note" id="tgBotHint"></div>
       </div>
+    </div>
+  </section>
+
+  <!-- SMS отдельным разделом (Андрей 19.10.2026): всё про SMS в одном месте — путь до оплаты, по дням, по рассылкам.
+       Заголовок раздела = «SMS: от отправки до оплаты», поэтому подзаголовок smsFlowH скрыт атрибутом hidden. -->
+  <section class="sec" data-id="sms">
+    <div class="sec-h"><h2>SMS: от отправки до оплаты</h2><span class="sum" id="smsSecNote"></span><span class="chev">›</span></div>
+    <div class="sec-b">
+      <div class="ig-h" id="smsFlowH" hidden>SMS: от отправки до оплаты</div>
+      <div id="smsFlow"></div>
+      <div class="fun-note" id="smsFlowNote"></div>
+      <div class="ig-h" id="smsDaysH" style="margin-top:22px;display:none">SMS по дням</div>
+      <div class="scroll"><table id="tSmsDays"></table></div>
+      <div class="fun-note" id="smsDaysNote"></div>
+      <div class="ig-h" id="smsCampH" style="margin-top:22px;display:none">SMS по рассылкам</div>
+      <div class="scroll"><table id="tSmsCamp"></table></div>
     </div>
   </section>
 
@@ -593,6 +607,108 @@
     if (!DATA || !DATA.success) { el("meta").textContent = "не удалось загрузить данные"; return; }
     DATA._range = r;
     render();
+    loadSmsFlow();
+  }
+
+  // SMS: путь «отправлено → перешли → начали оформление → оплатили» (просьба Петрова 19.10.2026).
+  // Отправки берём из smsCampaigns, остальное — из воронки сайта по каналу SMS (тот же запрос,
+  // что страница шлёт при выборе канала «SMS», только отдельным вызовом, чтобы блок не зависел от выбора).
+  var SMSF = null, SMSF_SEQ = 0;
+  async function loadSmsFlow(){
+    var my = ++SMSF_SEQ, r = DATA._range, f = null;
+    var q = "/esim/api/adm/stats?x=1" + (r.from ? "&from=" + r.from : "") + (r.to ? "&to=" + r.to : "") +
+      (el("withTest").checked ? "&test=1" : "") + "&fsrc=sms";
+    try{
+      var res = await fetch(q, { cache: "no-store", headers: { Authorization: "Bearer " + TOKEN } });
+      var j = res.ok ? await res.json() : null;
+      if (j && j.success && j.funnel) f = j.funnel;
+    }catch(e){}
+    if (my !== SMSF_SEQ) return;   // успели выбрать другой период — этот ответ уже не нужен
+    SMSF = f; renderSmsFlow();
+    loadSmsDays();
+  }
+
+  // SMS по дням (просьба Петрова 19.10.2026): за каждый день периода — тот же запрос с fsrc=sms и from=to=день.
+  // Отправлено — сумма smsCampaigns за день; перешли и начали оформление — воронка сайта по метке SMS
+  // (пишется только с funnel.tagsSince, раньше — «нет данных»); оплаты и сумма — канал SMS из channels,
+  // как в «Клиентах» и таблице каналов (воронка за дни до tagsSince оплат по метке не знает).
+  // «За всё время» — последние 30 дней; больше SMS_DAYS_MAX дней не грузим, чтобы не делать сотни запросов.
+  var SMSD_SEQ = 0, SMS_DAYS_MAX = 62;
+  async function loadSmsDays(){
+    var my = ++SMSD_SEQ, r = DATA._range, to = r.to || today(), from = r.from || addDays(to, -29), days = [];
+    for (var d = to; d >= from && days.length < SMS_DAYS_MAX; d = addDays(d, -1)) days.push(d);
+    var cut = days.length === SMS_DAYS_MAX && addDays(days[days.length-1], -1) >= from;
+    el("smsDaysH").style.display = "";
+    el("tSmsDays").innerHTML = '<tbody><tr><td class="dim">загружаю ' + RU(days.length) + " дн.…</td></tr></tbody>";
+    el("smsDaysNote").innerHTML = "";
+    var test = el("withTest").checked ? "&test=1" : "", out = new Array(days.length), next = 0;
+    async function one(i){
+      var d = days[i], x = { day: d, ok: false };
+      try{
+        var res = await fetch("/esim/api/adm/stats?x=1&from=" + d + "&to=" + d + test + "&fsrc=sms",
+          { cache: "no-store", headers: { Authorization: "Bearer " + TOKEN } });
+        var j = res.ok ? await res.json() : null;
+        if (j && j.success) {
+          var s = (j.funnel && j.funnel.site) || {};
+          x.sent = (j.smsCampaigns || []).reduce(function(a, c){ return a + (c.sent || 0); }, 0);
+          var ts = j.funnel && j.funnel.tagsSince;
+          x.tagged = !!ts && d >= ts;
+          x.visit = s.visit || 0; x.buy = s.buy || 0;
+          var ch = (j.channels || []).filter(function(c){ return (c.key || c.channel || c.id) === "sms" || c.name === "SMS"; })[0] || {};
+          x.paid = ch.orders || 0; x.rev = ch.revenue || 0; x.ok = true;
+        }
+      }catch(e){}
+      out[i] = x;
+    }
+    async function worker(){ while (next < days.length) { if (my !== SMSD_SEQ) return; await one(next++); } }
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    if (my !== SMSD_SEQ) return;   // период сменили, пока грузили
+    renderSmsDays(out, cut);
+  }
+  function renderSmsDays(rows, cut){
+    var R = [0,1,1,1,1,1,1,1,1,1,1], T = { sent: 0, visit: 0, buy: 0, paid: 0, rev: 0, tSent: 0, tPaid: 0, tagged: false }, bad = 0, ts = null;
+    var ND = '<span class="dim">нет данных</span>';
+    var cells = function(x){ var t = x.tagged, tp = x.tPaid != null ? x.tPaid : x.paid, tsn = x.tSent != null ? x.tSent : x.sent;
+      return [RU(x.sent), t ? RU(x.visit) : ND, t ? pct1(x.visit, tsn) : DASH, t ? RU(x.buy) : ND, t ? pct1(x.buy, x.visit) : DASH,
+      RU(x.paid), t ? pct1(tp, x.buy) : DASH, x.rev ? RU(x.rev) + " ₽" : DASH, t ? pct1(tp, x.visit) : DASH, pct1(x.paid, x.sent)]; };
+    var body = rows.map(function(x){
+      if (!x.ok) { bad++; return row([dShort(x.day), '<span class="dim">не загрузилось</span>', "", "", "", "", "", "", "", "", ""], R); }
+      ["sent","visit","buy","paid","rev"].forEach(function(k){ T[k] += x[k]; });
+      if (x.tagged) { T.tagged = true; T.tSent += x.sent; T.tPaid += x.paid; ts = !ts || x.day < ts ? x.day : ts; }
+      if (!x.sent && !x.visit && !x.buy && !x.paid) return row(['<span class="dim">' + dShort(x.day) + "</span>"].concat(cells(x).map(function(c){ return '<span class="dim">' + c + "</span>"; })), R);
+      return row([dShort(x.day)].concat(cells(x)), R);
+    }).join("");
+    el("tSmsDays").innerHTML = head(["День", "Отправлено", "Перешли", "% перехода", "Начали оформление", "% от перешедших",
+      "Оплат", "% от начавших", "Сумма оплат", "Оплат от перешедших", "Оплат от отправленных"], R) + "<tbody>" + body + "</tbody>" +
+      "<tfoot>" + row(["Итого"].concat(cells(T)), R) + "</tfoot>";
+    el("smsDaysNote").innerHTML = "Перешли — заходы по ссылке с utm_source=sms; «Начали оформление» — нажали «Купить». " +
+      "Сайт записывает метку захода только" + (ts ? " с " + dShort(ts) : " с недавнего времени") + ", за дни раньше переходов и оформлений по SMS нет — «нет данных». " +
+      "Оплаты и сумма — покупки канала SMS (как в «Клиентах» и таблице каналов). Отправлено — SMS из рассылок за этот день. " +
+      "Проценты — от предыдущего шага; в «Итого» проценты по переходам считаются только за дни, где они записаны." + (cut ? " Показаны последние " + SMS_DAYS_MAX + " дней периода." : "") +
+      (bad ? " За " + bad + " дн. данные не загрузились — обновите страницу." : "");
+  }
+  function pct1(n, of){ return of ? (Math.round(n / of * 1000) / 10).toString().replace(".", ",") + "%" : "—"; }
+  function renderSmsFlow(){
+    var sc = (DATA && DATA.smsCampaigns) || [], box = el("smsFlow"), note = el("smsFlowNote");
+    var sent = 0, cost = 0, bought = 0, rev = 0;
+    sc.forEach(function(r){ sent += r.sent || 0; cost += r.cost || 0; bought += r.orders || 0; rev += r.revenue || 0; });
+    if (!sc.length && !SMSF) { el("smsFlowH").style.display = "none"; box.innerHTML = ""; note.innerHTML = ""; return; }
+    el("smsFlowH").style.display = "";
+    if (!SMSF) { box.innerHTML = '<div class="dim">Воронку по SMS не удалось загрузить.</div>'; note.innerHTML = ""; return; }
+    var s = SMSF.site || {};
+    box.innerHTML = funnelHtml([
+      { label: "Отправлено SMS", n: sent },
+      { label: "Перешли по ссылке", n: s.visit || 0 },
+      { label: "Начали оформление", n: s.buy || 0 },
+      { label: "Нажали «Оплатить»", n: s.pay || 0 },
+      { label: "Оплатили", n: s.paid || 0 },
+    ], "SMS");
+    var r = DATA._range, early = SMSF.tagsSince && (!r.from || r.from < SMSF.tagsSince);
+    note.innerHTML = "Переходы и шаги — по ссылкам с меткой SMS: из перешедших оплатили <b>" + pct1(s.paid || 0, s.visit || 0) +
+      "</b>, перешли от отправленных — <b>" + pct1(s.visit || 0, sent) + "</b>. «Начали оформление» — нажали «Купить» (появилось поле почты). " +
+      "Покупок после SMS по телефону или почте в 30 дней (таблица выше): <b>" + RU(bought) + "</b>" + (rev ? " на " + RU(rev) + " ₽" : "") +
+      (cost ? ", расход на SMS " + RU(cost) + " ₽" : "") + "." +
+      (early ? " Источник заходов пишется с " + dShort(SMSF.tagsSince) + ", до этого переходов по SMS в воронке нет." : "");
   }
 
   function render(){
