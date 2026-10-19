@@ -4934,7 +4934,8 @@ function mount(app, opts) {
     f.tags = f.tags || {};
     const d = f.tags[day] || (f.tags[day] = {});
     if (d[vid] || Object.keys(d).length > 50000) return;
-    const camp = String(t.c || "").replace(/[|]/g, " ").trim().slice(0, 60);
+    // метка: utm_campaign, а если её нет — utm_content (так можно пометить каждую SMS своей ссылкой)
+    const camp = String(t.c || t.ct || "").replace(/[|]/g, " ").trim().slice(0, 60);
     d[vid] = srcOfTag(t) + (camp ? "|" + camp : "");
     _funnelDirty = true;
   }
@@ -5232,7 +5233,7 @@ function mount(app, opts) {
     };
     siteSrc.forEach((k) => { const i = k.indexOf("|"); bump(i < 0 ? k : k.slice(0, i), i < 0 ? "" : k.slice(i + 1), "site"); });
     botVisits.forEach((v) => bump(botSrcKey((f.botSrc || {})[v]), "", "bot"));
-    out.sources = Object.values(cnt).map((c) => Object.assign(c, { camps: Object.entries(c.camps).sort((a, b) => b[1] - a[1]).slice(0, 8) }))
+    out.sources = Object.values(cnt).map((c) => Object.assign(c, { camps: Object.entries(c.camps).sort((a, b) => b[1] - a[1]).slice(0, 30) }))
       .sort((a, b) => (b.site + b.bot) - (a.site + a.bot));
     const flt = String(srcFilter || "").slice(0, 100);
     out.filter = flt || null;

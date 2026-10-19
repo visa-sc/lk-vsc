@@ -553,23 +553,30 @@
   document.addEventListener("change", function(ev){
     if (ev.target && ev.target.classList && ev.target.classList.contains("fsrcSel")) { FSRC = ev.target.value; load(); }
   });
+  // Канал и метка — два списка (Петров: «канал - метка, чтобы по конкретной SMS развернуть воронку»).
+  // Метка — utm_campaign (или utm_content) из ссылки; список меток появляется, когда у канала они есть.
   function fsrcHtml(f){
     var list = f.sources || [];
-    var opt = '<option value="">Все источники</option>';
+    var ch = FSRC.split("|")[0], lab = FSRC.indexOf("|") > 0 ? FSRC.slice(FSRC.indexOf("|") + 1) : "";
+    var opt = '<option value="">Все каналы</option>';
     list.forEach(function(x){
-      var n = x.site + x.bot;
-      opt += '<option value="' + esc(x.key) + '"' + (FSRC === x.key ? " selected" : "") + ">" + esc(x.name) + " · " + RU(n) + "</option>";
-      (x.camps || []).forEach(function(c){
-        var v = x.key + "|" + c[0];
-        opt += '<option value="' + esc(v) + '"' + (FSRC === v ? " selected" : "") + ">   ↳ " + esc(c[0]) + " · " + RU(c[1]) + "</option>";
-      });
+      opt += '<option value="' + esc(x.key) + '"' + (ch === x.key ? " selected" : "") + ">" + esc(x.name) + " · " + RU(x.site + x.bot) + "</option>";
     });
-    if (FSRC && !list.some(function(x){ return x.key === FSRC || (FSRC.indexOf(x.key + "|") === 0); }))
-      opt += '<option value="' + esc(FSRC) + '" selected>' + esc(FSRC) + " · 0</option>";
+    if (ch && !list.some(function(x){ return x.key === ch; })) opt += '<option value="' + esc(ch) + '" selected>' + esc(ch) + " · 0</option>";
+    var cur = list.filter(function(x){ return x.key === ch; })[0];
+    var labs = '';
+    if (ch && cur && cur.camps && cur.camps.length) {
+      labs = '<label>Метка</label><select class="fsrcSel" data-ch="' + esc(ch) + '"><option value="' + esc(ch) + '">Все метки</option>';
+      cur.camps.forEach(function(c){
+        var v = ch + "|" + c[0];
+        labs += '<option value="' + esc(v) + '"' + (lab === c[0] ? " selected" : "") + ">" + esc(c[0]) + " · " + RU(c[1]) + "</option>";
+      });
+      labs += "</select>";
+    }
     var r = DATA._range, early = f.tagsSince && (!r.from || r.from < f.tagsSince);
     var note = FSRC && f.filterRevenue != null ? "оплатили на " + RU(f.filterRevenue) + " ₽" : "";
     if (early) note += (note ? " · " : "") + "источник заходов пишется с " + dShort(f.tagsSince);
-    return '<div class="fsrc"><label>Источник</label><select class="fsrcSel">' + opt + "</select>" +
+    return '<div class="fsrc"><label>Канал</label><select class="fsrcSel">' + opt + "</select>" + labs +
       (note ? '<span class="dim">' + note + "</span>" : "") + "</div>";
   }
   async function load(){

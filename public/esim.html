@@ -705,7 +705,7 @@
       try{ rh = document.referrer ? new URL(document.referrer).hostname : ""; }catch(e){}
       if(rh === location.hostname || /(^|\.)(voyotravel\.ru|voyovoyo\.ru|voyomobile\.(ru|com))$/.test(rh)) rh = "";
       return { s: (q.get("utm_source") || "").slice(0, 40), m: (q.get("utm_medium") || "").slice(0, 40),
-        c: (q.get("utm_campaign") || "").slice(0, 60), r: q.get("ref") ? 1 : 0,
+        c: (q.get("utm_campaign") || "").slice(0, 60), ct: (q.get("utm_content") || "").slice(0, 60), r: q.get("ref") ? 1 : 0,
         k: q.get("yclid") ? "y" : (q.get("gclid") || q.get("gbraid") || q.get("wbraid")) ? "g" : q.get("fbclid") ? "f" : "",
         rh: rh.slice(0, 60) };
     }catch(e){ return undefined; }
