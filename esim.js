@@ -5699,7 +5699,8 @@ function mount(app, opts) {
   }
   const _roHits = {};
   function roGate(req, res) {
-    const who = roWho(req);
+    // вход в админку eSIM тоже открывает эти выгрузки — страница админки может строить по ним отчёты (19.10.2026)
+    const who = roWho(req) || (isAdm(req) ? "admin" : null);
     if (!who) { res.status(403).json({ success: false, message: "Нет доступа: нужен ключ (заголовок X-Key или ?key=)." }); return null; }
     const m = Math.floor(Date.now() / 60000), h = _roHits[who] = (_roHits[who] && _roHits[who].m === m) ? _roHits[who] : { m, n: 0 };
     if (++h.n > 60) { res.status(429).json({ success: false, message: "Не чаще 60 запросов в минуту." }); return null; }
@@ -5707,7 +5708,10 @@ function mount(app, opts) {
     return who;
   }
   const roMaskEmail = (s) => s.replace(/([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, "$1***@$2");
-  const roMaskStr = (s) => roMaskEmail(s).replace(/\+?\d[\d\s()-]{8,}\d/g, (m) => { const d = m.replace(/\D/g, ""); return d.length >= 10 ? "***" + d.slice(-2) : m; })
+  // телефон: +7/8 с любыми разделителями или 10–15 цифр подряд; даты «2026-10-17 13:07» не трогаем (19.10.2026)
+  const roMaskStr = (s) => roMaskEmail(s)
+    .replace(/(?<![\d-])(?:\+7|8|7)[\s(-]*\d{3}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?![\d-])/g, (m) => "***" + m.replace(/\D/g, "").slice(-2))
+    .replace(/(?<!\d)\d{10,15}(?!\d)/g, (m) => "***" + m.slice(-2))
     .replace(/\btg:(\d+)/g, (_, d) => "tg:***" + d.slice(-2));
   function roMask(v, k) {
     if (v == null) return v;
@@ -5726,6 +5730,11 @@ function mount(app, opts) {
       endpoints: {
         "/esim/api/ro/stats?from=&to=&test=1&fsrc=": "fsrc — воронка только по источнику (sms, meta, yandex, google, direct… или канал|кампания), список источников за период — в funnel.sources. Всё, что видно в панели: итоги (выручка, себестоимость, комиссия, реклама, прибыль), по дням, каналы и их окупаемость, воронка сайта и бота, промокоды, SMS-рассылки, сервис и поддержка, клиенты (почты и телефоны скрыты), балансы поставщиков. from/to — период, без них за всё время; test=1 — вместе с тестовыми покупками.",
         "/esim/api/ro/orders?from=&to=": "Список оплат: дата, пакет, сумма, себестоимость, промокод, скидка, канал, сайт или бот, бренд, количество eSIM. Возвраты — в stats.service.",
+        "/esim/api/ro/raw/orders?from=&to=": "Все заказы любых статусов (done — оплачен, pending/failed — «корзины»: начали оплату и не завершили) с метками перехода, vid посетителя, каналом и полем sms: засчитана по ссылке или по номеру/почте.",
+        "/esim/api/ro/raw/funnel?from=&to=": "Воронка как есть: по дням списки посетителей на каждом шаге, метки заходов (канал|метка) и источники бота — для любых своих разрезов.",
+        "/esim/api/ro/raw/sms?from=&to=": "Каждая отправленная SMS: кампания (статус сделки и текст), стоимость, статус доставки.",
+        "/esim/api/ro/raw/visits?from=&to=": "Открытия витрины по журналу сервера (14 дней) с метками из адреса — переходы до 19.10.",
+        "/esim/api/ro/raw/promos | raw/spend | raw/daily": "Промокоды, расходы на рекламу, закрытые дни.",
         "/esim/api/ro/seo": "51 страница под поиск (/esim/турция и т.д.): заходы людей и переходы из Яндекса/Google по журналу сервера (хранится 14 дней), покупки с посадкой на странице.",
       } });
   });
@@ -5759,6 +5768,110 @@ function mount(app, opts) {
       res.json({ success: true, count: list.length, orders: list });
     } catch (er) { res.status(500).json({ success: false, message: er.message }); }
   });
+
+  // ── Сырые данные (19.10.2026): всё, из чего строятся отчёты, — только чтение ──
+  // Почты и телефоны клиентов замаскированы; посетители — случайные id браузера (vid), без личных данных.
+  // чат бота (vid «tg123…») — постоянный обезличенный код: одинаковый в воронке и в заказах
+  const roTgSalt = crypto.createHash("sha256").update(String(process.env.ESIM_RO_KEYS || "") + ":tg").digest("hex").slice(0, 16);
+  const roTg = (v) => { const m = /^tg:?(\d+)$/.exec(String(v || "")); return m ? "tg_" + crypto.createHash("sha256").update(roTgSalt + m[1]).digest("hex").slice(0, 10) : v; };
+  const roRange = (req) => {
+    const from = String(req.query.from || "").slice(0, 10), to = String(req.query.to || "").slice(0, 10);
+    return { from, to, inR: (day) => (!from || day >= from) && (!to || day <= to) };
+  };
+  // Заказы всех статусов: оплаченные, «корзины» (начали оплату и бросили — pending/failed), с метками
+  // перехода (ads.first/last), vid посетителя, каналом и тем, как засчитана SMS (по ссылке или по номеру/почте).
+  app.get("/esim/api/ro/raw/orders", async (req, res) => {
+    if (!roGate(req, res)) return;
+    try {
+      const { inR } = roRange(req);
+      const rate = await usdRate();
+      const attr = smsAttr();
+      const list = readJson(ORDERS_FILE, []).filter((o) => !o.groupOf && inR(mskDay(o.paidAt || o.ts)))
+        .map((o) => {
+          const a = o.ads || {};
+          const viaLink = [a.first, a.last].some((x) => x && String(x.utm_source || "").toLowerCase() === "sms");
+          return {
+            id: o.id, status: o.status, createdAt: o.ts ? new Date(o.ts + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ") : null,
+            paidAt: o.paidAt ? new Date(o.paidAt + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ") : null,
+            test: isTestOrder(o), package: o.label || "", productId: o.productId, qty: o.qty || 1, renewal: !!o.parentOrderId,
+            listPriceRub: o.listPriceRub || null, priceRub: o.priceRub || null, paidRub: o.payTotalRub || o.priceRub || 0,
+            balanceUsedRub: o.balanceUsed || 0, costRub: o.costUsd ? Math.round(tsimCostRub(o.costUsd, rate)) : null,
+            promo: o.promoCode || null, discountKind: o.discountKind || null, ref: o.refBy ? "есть" : null,
+            channel: o.paidAt ? channelOf(o) : channelOfBase(o), via: o.tgChatId ? "бот" : "сайт", brand: o.brand || "voyo",
+            vid: o.vid || (o.tgChatId ? roTg("tg" + o.tgChatId) : null), buyer: o.custKey || o.email || o.phone || (o.tgChatId ? "tg:" + o.tgChatId : null),
+            sms: viaLink ? "по ссылке" : attr.byOrder.has(o.id) ? "по номеру/почте: " + attr.byOrder.get(o.id) : null,
+            ads: { first: a.first || null, last: a.last || null },
+          };
+        });
+      res.json(roMask({ success: true, count: list.length, statuses: { done: "оплачен", pending: "начал оплату и не завершил", failed: "оплата не прошла" }, orders: list }));
+    } catch (er) { res.status(500).json({ success: false, message: er.message }); }
+  });
+  // Воронка как есть: по дням — какие посетители (vid) дошли до каждого шага, метка захода (канал|метка), источник бота.
+  app.get("/esim/api/ro/raw/funnel", (req, res) => {
+    if (!roGate(req, res)) return;
+    const { inR } = roRange(req);
+    const f = funnelData(), h = readJson(FUNNEL_HISTORY_FILE, null) || { days: {} };
+    const anonDay = (d) => { const o = {}; for (const [src, steps] of Object.entries(d || {})) { o[src] = {}; for (const [st, list] of Object.entries(steps || {})) o[src][st] = Array.isArray(list) ? list.map(roTg) : list; } return o; };
+    const pick = (days) => Object.fromEntries(Object.keys(days || {}).filter(inR).map((d) => [d, anonDay(days[d])]));
+    res.json({ success: true, steps: FUNNEL_STEPS, liveSince: mskDay(f.since),
+      note: "days[день][site|bot][шаг] — список vid; tags[день][vid] — «канал|метка» захода сайта (с 19.10.2026); botSrc[vid] — откуда открыли бота; restored — дни, восстановленные по журналу сервера (до счётчика)",
+      days: pick(f.days), restored: pick(h.days), tags: Object.fromEntries(Object.keys(f.tags || {}).filter(inR).map((d) => [d, f.tags[d]])),
+      botSrc: Object.fromEntries(Object.entries(f.botSrc || {}).map(([k, v]) => [roTg(k), v])) });
+  });
+  // SMS: наши (Питер/Москва, 14 дней после захода) и из amoCRM — каждая отправка с кампанией, стоимостью и статусом.
+  app.get("/esim/api/ro/raw/sms", (req, res) => {
+    if (!roGate(req, res)) return;
+    const { inR } = roRange(req);
+    const strip = (x) => ({ at: new Date(x.at + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " "), campaign: x.campaign, text: x.text || null,
+      cost: x.cost != null ? Number(x.cost) : null, status: x.status || null, seg: x.seg || null,
+      phone: x.phone10 ? "***" + String(x.phone10).slice(-2) : null, hasEmail: !!(x.emails && x.emails.length), link: x.link || null });
+    const attr = smsAttr();
+    const sends = attr.sends.filter((x) => inR(mskDay(x.at))).map(strip);
+    res.json({ success: true, note: "покупка засчитывается SMS, если тот же номер или почта оплатили в течение 30 дней после отправки (или перешли по ссылке с utm_source=sms — см. raw/orders, поле sms)",
+      count: sends.length, sends });
+  });
+  // Заходы на витрину по журналу nginx (хранится 14 дней) — с метками из адреса. Нужны для дат до 19.10, когда
+  // метка захода ещё не писалась в воронку. ip — обезличенный хеш.
+  let _roVisits = null;
+  app.get("/esim/api/ro/raw/visits", async (req, res) => {
+    if (!roGate(req, res)) return;
+    try {
+      if (!_roVisits || Date.now() - _roVisits.at > 1800e3) _roVisits = { at: Date.now(), rows: roVisitsBuild() };
+      const { inR } = roRange(req);
+      const rows = _roVisits.rows.filter((r) => inR(r.day));
+      res.json(roMask({ success: true, note: "одна строка — открытие страницы витрины человеком (роботы отсеяны); ip — хеш; query — метки из адреса",
+        count: rows.length, rows }));
+    } catch (er) { res.status(500).json({ success: false, message: er.message }); }
+  });
+  function roVisitsBuild() {
+    const zlib = require("zlib"), D = "/var/log/nginx/";
+    const BOT = /bot|crawl|spider|slurp|bing|ahrefs|semrush|mj12|petal|python|curl|wget|go-http|headless|lighthouse|preview|facebookexternalhit|telegram|whatsapp|vkshare|deno|node/i;
+    const re = /^(\S+) \S+ \S+ \[(\d+)\/(\w+)\/(\d+):(\d+:\d+):\d+[^\]]*\] "GET (\S+) [^"]*" (\d{3}) \S+ "([^"]*)" "([^"]*)"/;
+    const MON = { Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06", Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12" };
+    const PAGE = /^\/(esim\/?|vsc\/?|turkey\/?|67\/?|esim\/[a-z-]+)?(\?|$)/;
+    const salt = crypto.createHash("sha256").update(String(process.env.ESIM_RO_KEYS || "") + ":visits").digest("hex").slice(0, 16);
+    const rows = [];
+    for (const f of fs.readdirSync(D).filter((x) => /^access\.log(\.\d+)?(\.gz)?$/.test(x))) {
+      let buf = fs.readFileSync(D + f); if (f.endsWith(".gz")) buf = zlib.gunzipSync(buf);
+      for (const line of buf.toString("utf8").split("\n")) {
+        if (line.indexOf("GET /") < 0) continue;
+        const m = re.exec(line); if (!m || m[7] !== "200") continue;
+        const url = m[6];
+        if (!PAGE.test(url) || /^\/esim\/(api|my|account|pay|help|case)/.test(url) || BOT.test(m[9])) continue;
+        const q = url.indexOf("?") >= 0 ? url.slice(url.indexOf("?") + 1) : "";
+        let rh = ""; try { rh = m[8] && m[8] !== "-" ? new URL(m[8]).hostname : ""; } catch (_) {}
+        rows.push({ day: m[4] + "-" + MON[m[3]] + "-" + m[2], time: m[5], ip: crypto.createHash("sha256").update(salt + m[1]).digest("hex").slice(0, 12),
+          path: url.split("?")[0], query: q.slice(0, 300), referer: rh, mobile: /Mobile|Android|iPhone/i.test(m[9]) });
+      }
+    }
+    return rows.sort((a, b) => (a.day + a.time < b.day + b.time ? -1 : 1));
+  }
+  // Справочники и учёт: промокоды, ручные расходы на рекламу, закрытые дни (выручка/себестоимость по курсу дня).
+  const RO_FILES = { promos: PROMOS_FILE, spend: ADSPEND_FILE, daily: path.join(DIR, "daily.json") };
+  Object.keys(RO_FILES).forEach((name) => app.get("/esim/api/ro/raw/" + name, (req, res) => {
+    if (!roGate(req, res)) return;
+    res.json(roMask({ success: true, data: readJson(RO_FILES[name], {}) }));
+  }));
 
   // SEO: журнал nginx читается не чаще раза в час
   let _roSeo = null;
