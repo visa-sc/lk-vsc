@@ -867,6 +867,9 @@ const esimaccess = {
       status: e.esimStatus || e.smdpStatus || null, iccid: e.iccid || null,
       suspended: String(e.esimStatus || "").toUpperCase() === "SUSPENDED",
       canceled: String(e.esimStatus || "").toUpperCase() === "CANCEL",
+      // профиль стёрт с телефона; по справке eSIM Access его можно поставить заново
+      // по тому же QR на том же телефоне (на другой — нельзя). 19.10.2026
+      deleted: st === "DELETED" && String(e.esimStatus || "").toUpperCase() !== "CANCEL",
       daily: /\/\s*day/i.test(String(pk.packageName || "")),
       packages: totalMb ? [{
         name: pk.packageName || "", totalMb, usedMb, remainingMb: Math.max(0, totalMb - usedMb),
@@ -2645,6 +2648,16 @@ function mount(app, opts) {
     const all = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.mmOrderId);
     const mm = (/[?&]o=([A-Za-z0-9_-]+)/.exec(String(page || "")) || [])[1];
     if (mm) { const hit = all.filter((o) => String(o.mmOrderId) === mm); if (hit.length) return hit; }
+    // страница «Мои eSIM» по ссылке из письма: почта подписана, ей можно верить (19.10.2026:
+    // клиент писал оттуда «не работает», а робот не нашёл покупок и двое суток ждал человека)
+    const pe = /[?&]e=([^&#]+)/.exec(String(page || "")), pt = /[?&]t=([a-f0-9]+)/.exec(String(page || ""));
+    if (pe && pt) {
+      let em = ""; try { em = normEmail(decodeURIComponent(pe[1])); } catch (_) {}
+      if (em && pt[1] === signEmail(em)) {
+        const hit = all.filter((o) => normEmail(o.email) === em);
+        if (hit.length) return hit.sort((a, b) => (b.paidAt || b.ts || 0) - (a.paidAt || a.ts || 0));
+      }
+    }
     // чат без контакта: покупки того же браузера (12.10.2026)
     if (!contact && vid) {
       const v = all.filter((o) => o.vid && o.vid === vid);
@@ -3355,14 +3368,37 @@ function mount(app, opts) {
         return;
       }
       if (chat.autoDiag && Date.now() - chat.autoDiag < 6 * 3600e3) return;   // один разбор на историю
+      // Просили прислать почту или телефон покупки — человек прислал: ищем по ним (19.10.2026).
+      // Контакт из чата не проверен, поэтому ссылку с QR в чат не даём — она уходит
+      // письмом на почту покупки.
+      let given = null;
+      if (chat.askContactAt && !chat.autoDiag) {
+        const em = (String(last.text).match(/[^\s,;:<>()]+@[^\s,;:<>()]+\.[a-z]{2,}/i) || [])[0];
+        const ph = String(last.text).replace(/[^\d+]/g, "").replace(/^\+/, "");
+        given = em ? normEmail(em) : (ph.length >= 10 && ph.length <= 13 ? ph : null);
+      }
       // Вопрос не про поломку («а физическая симка есть?», «какой телефон нужен?»):
       // на такие отвечает та же первая линия, оператора зовём, только если она пас.
-      if (!TROUBLE_RE.test(last.text)) {
+      if (!given && !TROUBLE_RE.test(last.text)) {
         const ok = await doctorReply(chat, "вопрос о продукте").catch(() => false);
         if (!ok) callOperator(chat, "вопрос не про неполадку с eSIM, нужен живой ответ");
         return;
       }
-      const o = await chatOrder(chat);
+      let o = given ? ((await ordersByContact(given, null, null))[0] || null) : await chatOrder(chat);
+      if (!o && !chat.askContactAt) {
+        // покупку не нашли: прежде чем звать человека, спрашиваем, на какой контакт покупали
+        // (часто покупают на сайте, а пишут из бота или с другой почты) — 19.10.2026
+        support.botMessage(chat.id, "Чтобы проверить вашу eSIM, пришлите одним сообщением почту или телефон, которые указывали при покупке.", "askContactAt");
+        return;
+      }
+      if (o && given) {
+        // контакт не проверен: ссылку на eSIM отправляем на почту покупки, а не в чат
+        if (o.email && opts && opts.sendMail) {
+          opts.sendMail({ to: o.email, subject: "Ваша eSIM: ссылка на страницу с QR-кодом",
+            text: "Здравствуйте! Вы написали в поддержку VOYO mobile. Ваша eSIM «" + (o.label || "") + "» и QR-код для установки — на этой странице:\n" + o.myUrl + "\n\nVOYO mobile" }).catch(() => {});
+        }
+        o = Object.assign({}, o, { myUrl: o.email ? "(ссылку только что отправили на почту, указанную при покупке)" : "(ссылка в письме, которое пришло после покупки)" });
+      }
       if (!o) {
         // покупок у нас нет: отвечаем по сути вопроса, а не отпиской
         const ok = await doctorReply(chat, "покупок у человека не нашли").catch(() => false);
@@ -3395,6 +3431,15 @@ function mount(app, opts) {
         text = head + "Трафик израсходован полностью, поэтому интернет и пропал. Продлить можно на вашей странице в один тап: " + o.myUrl +
           (idleTops.length ? "\n\nЕсть ещё не начатое продление «" + (idleTops[0].name || "") + "». Если оно на другую страну, " +
             "в вашей поездке оно не заработает: напишите сюда, разберёмся." : "");
+      } else if (u.deleted) {
+        text = head + "С пакетом всё в порядке: осталось " + GB(left) + " ГБ" +
+          (all[0] && all[0].expiresAt ? ", срок до " + String(all[0].expiresAt).slice(8, 10) + "." + String(all[0].expiresAt).slice(5, 7) : "") +
+          ". Но eSIM сейчас удалена с телефона, поэтому интернета нет.\n\n" +
+          "Её можно поставить заново по тому же QR-коду на этом же телефоне, ничего покупать не нужно:\n" +
+          "1. Откройте страницу eSIM и установите по кнопке или QR (нужен Wi-Fi): " + o.myUrl + "\n" +
+          "2. Включите для этой линии «Роуминг данных» и выберите её для мобильного интернета. iPhone: Настройки → Сотовая связь. Android: Настройки → Подключения → Диспетчер SIM-карт.\n" +
+          "3. Включите режим полёта на 15 секунд и выключите.\n\n" +
+          "На другой телефон её поставить нельзя: только на тот, где она стояла. Напишите, что получилось.";
       } else if (!active) {
         text = head + "Профиль ещё не установлен на телефон — по данным оператора пакет не активирован.\n" +
           "Установите его по QR со своей страницы (нужен Wi-Fi): " + o.myUrl + "\n" +

@@ -148,7 +148,8 @@ function dossier({ messages, orders, states, ua, ip, country, tried }) {
       ", куплен " + new Date(o.paidAt || o.ts || Date.now()).toLocaleDateString("ru-RU") +
       ", поставщик " + (o.src || "?") +
       "; профиль скачан на телефон: " + (s.installed ? "да" + (s.u && s.u.eid ? " (" + dev(s.u.eid) + ")" : "") : "нет") +
-      (s.u && s.u.suspended ? "; ПРИОСТАНОВЛЕН У ПОСТАВЩИКА" : ""));
+      (s.u && s.u.suspended ? "; ПРИОСТАНОВЛЕН У ПОСТАВЩИКА" : "") +
+      (s.u && s.u.deleted ? "; статус профиля DELETED: eSIM удалена с телефона, пакет цел, ставится заново по тому же QR на том же телефоне" : ""));
     // каждый пакет на профиле отдельно: основной и продления бывают на разные страны
     packs.forEach((p) => {
       L.push("     • " + (p.name || "пакет") + ": " +
