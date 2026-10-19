@@ -394,7 +394,6 @@
     </div>
   </section>
 
-  <!-- SMS:LOCK:START — раздел SMS закреплён Андреем 19.10.2026: правки только через Андрея (esimdeploy их не примет) -->
   <!-- SMS отдельным разделом (Андрей 19.10.2026): всё про SMS в одном месте — путь до оплаты, по дням, по рассылкам.
        Заголовок раздела = «SMS: от отправки до оплаты», поэтому подзаголовок smsFlowH скрыт атрибутом hidden. -->
   <section class="sec" data-id="sms">
@@ -438,7 +437,6 @@
       <div class="scroll"><table id="tSmsCamp"></table></div>
     </div>
   </section>
-  <!-- SMS:LOCK:END -->
 
   <section class="sec" data-id="days">
     <div class="sec-h"><h2>По дням</h2><span data-info="days"></span><span class="sp"></span><span class="chev">›</span></div>
@@ -640,7 +638,6 @@
     loadSmsFlow();
   }
 
-  // SMS:LOCK:START — код раздела SMS закреплён Андреем 19.10.2026: правки только через Андрея (esimdeploy их не примет)
   // SMS: весь раздел (воронка сверху, «SMS по дням», итоги) строится по одним сырым данным за свой период раздела.
   function loadSmsFlow(){ loadSmsDays(); }
   var SMS_D = 14;   // 7 / 14 / 30 дней или "g" — как период вверху страницы; свои даты — в smsFrom/smsTo
@@ -853,7 +850,6 @@
     box.innerHTML = funnelHtml(steps, "SMS");
     el("smsSecNote").textContent = dShort(from) + " — " + dShort(to) + " · " + RU(A.paid) + " оплат · " + RU(A.rev) + " ₽";
   }
-  // SMS:LOCK:END
 
 
   function render(){
