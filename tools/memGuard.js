@@ -9,7 +9,9 @@
  *   swap  — сервер постоянно гоняет файл подкачки: больше 100 страниц/с туда-обратно
  *           (≈0,4 МБ/с) три проверки подряд;
  *   swapfull — подкачка занята больше чем на 85% И при этом свободно меньше 800 МБ или идёт обмен;
- *   oom   — система убила процесс из-за нехватки памяти (сразу, без ожидания).
+ *   oom   — система убила процесс из-за нехватки памяти (сразу, без ожидания);
+ *   disk  — на диске свободно меньше 4 ГБ или занято больше 90% (с 20.10.2026, план переезда visa-sc.ru);
+ *   cpu   — средняя загрузка процессора за 5 минут выше 1,5 × число ядер три проверки подряд (~15 мин).
  * Письмо о проблеме — не чаще раза в 12 часов на одну проблему; когда всё прошло — одно
  * письмо «в норме». В письме — сколько свободно и кто сколько занимает.
  * Состояние — /var/lib/mem-guard/state.json.
@@ -33,6 +35,9 @@ const LOW_MB = Number(process.env.MEM_GUARD_LOW_MB || 500);
 const SWAP_RATE = Number(process.env.MEM_GUARD_SWAP_RATE || 100); // страниц в секунду
 const SWAP_FULL = 0.85;
 const SWAP_FULL_LOW_MB = 800;
+const DISK_LOW_GB = Number(process.env.MEM_GUARD_DISK_GB || 4);
+const DISK_FULL = 0.9;
+const CPU_K = 1.5; // загрузка (loadavg 5 мин) на ядро
 const STREAK = 3;
 const REPEAT_MS = 12 * 3600 * 1000;
 
@@ -72,7 +77,13 @@ async function send(subject, lines) {
   const newOom = st.oomSeen !== undefined && ooms > st.oomSeen ? ooms - st.oomSeen : 0;
   st.oomSeen = ooms;
 
+  // диск и процессор (20.10.2026: «мониторинг RAM, диск, CPU с письмом Петрову»)
+  const df = sh("df -B1 --output=size,avail / | tail -1").split(/\s+/).map(Number);
+  const diskTotGb = df[0] / 1e9, diskFreeGb = df[1] / 1e9, diskShare = df[0] ? 1 - df[1] / df[0] : 0;
+  const cores = require("os").cpus().length, load5 = require("os").loadavg()[1];
   const cond = {
+    disk: diskFreeGb < DISK_LOW_GB || diskShare > DISK_FULL,
+    cpu: load5 > cores * CPU_K,
     low: availMb < LOW_MB,
     swap: rate > SWAP_RATE,
     // заполненная подкачка сама по себе не беда: Linux выносит туда давно не нужное и при
@@ -80,11 +91,13 @@ async function send(subject, lines) {
     swapfull: swapShare > SWAP_FULL && (availMb < SWAP_FULL_LOW_MB || rate > SWAP_RATE / 4)
   };
   for (const k of Object.keys(cond)) st.streak[k] = cond[k] ? (st.streak[k] || 0) + 1 : 0;
-  const active = Object.keys(cond).filter((k) => st.streak[k] >= STREAK);
+  const active = Object.keys(cond).filter((k) => st.streak[k] >= (k === "disk" ? 1 : STREAK));
   if (newOom) active.push("oom");
 
   const facts = [
     `Свободно памяти: <b>${availMb} МБ</b> из ${totalMb} МБ (порог ${LOW_MB} МБ).`,
+    `Диск: свободно <b>${diskFreeGb.toFixed(1)} ГБ</b> из ${diskTotGb.toFixed(0)} ГБ (занято ${Math.round(diskShare * 100)}%, порог: меньше ${DISK_LOW_GB} ГБ или больше ${DISK_FULL * 100}%).`,
+    `Процессор: загрузка за 5 минут ${load5.toFixed(2)} при ${cores} ядрах (порог ${(cores * CPU_K).toFixed(1)}).`,
     `Файл подкачки: занят ${mb(swapUsed)} из ${mb(swapTot)} МБ (${Math.round(swapShare * 100)}%), обмен сейчас ${Math.round(rate)} стр/с (порог ${SWAP_RATE}).`,
     `<p>Больше всего занимают:</p><pre style="font-size:12px">${topProcs().join("\n")}</pre>`
   ];
@@ -92,21 +105,30 @@ async function send(subject, lines) {
     low: `свободной памяти меньше ${LOW_MB} МБ уже 15 минут`,
     swap: "сервер постоянно обращается к файлу подкачки — сайты начинают тормозить",
     swapfull: "файл подкачки почти заполнен",
-    oom: `система закрыла процесс из-за нехватки памяти (${newOom} раз за 5 минут)`
+    oom: `система закрыла процесс из-за нехватки памяти (${newOom} раз за 5 минут)`,
+    disk: `на диске мало места: свободно ${diskFreeGb.toFixed(1)} ГБ`,
+    cpu: "процессор перегружен уже 15 минут — сайты могут отвечать медленно"
   };
-  console.log(new Date().toISOString(), `свободно ${availMb} МБ, подкачка ${Math.round(swapShare * 100)}% ${Math.round(rate)} стр/с, oom ${ooms}`, active.length ? "ПРОБЛЕМА: " + active.join(",") : "норма");
+  console.log(new Date().toISOString(), `свободно ${availMb} МБ, диск ${diskFreeGb.toFixed(1)} ГБ, нагрузка ${load5.toFixed(2)}/${cores}, подкачка ${Math.round(swapShare * 100)}% ${Math.round(rate)} стр/с, oom ${ooms}`, active.length ? "ПРОБЛЕМА: " + active.join(",") : "норма");
 
   if (TEST) {
-    await send("Сторож памяти сервера: пробное письмо", ["Сторож памяти включён. Так будет выглядеть письмо, если памяти перестанет хватать.", ...facts]);
+    await send("Сторож сервера: пробное письмо", ["Сторож памяти, диска и процессора включён. Так будет выглядеть письмо, если ресурсов перестанет хватать.", ...facts]);
     save(st);
     return;
   }
   const fresh = active.filter((k) => !st.alerted[k] || now - st.alerted[k] > REPEAT_MS);
   if (fresh.length) {
-    await send("Сервер: не хватает оперативной памяти — нужно увеличить RAM", [
+    const memIssue = fresh.some((k) => ["low", "swap", "swapfull", "oom"].includes(k));
+    const subj = memIssue ? "Сервер: не хватает оперативной памяти — нужно увеличить RAM"
+      : fresh.includes("disk") ? "Сервер: заканчивается место на диске" : "Сервер: процессор перегружен";
+    const todo = [];
+    if (memIssue) todo.push("память — добавить RAM (сейчас " + Math.round(totalMb / 1024) + " ГБ)");
+    if (fresh.includes("disk")) todo.push("диск — почистить старые журналы и резервные копии или увеличить диск");
+    if (fresh.includes("cpu")) todo.push("процессор — посмотреть, какой процесс грузит (top), при постоянной нагрузке добавить ядро");
+    await send(subj, [
       `<b>Что случилось:</b> ${active.map((k) => WHAT[k]).join("; ")}.`,
       ...facts,
-      "<b>Что сделать:</b> Рег.облако → Виртуальные серверы → VOYO (ID 7303919) → карандаш у «Характеристик сервера» → добавить память (например, до 6 ГБ). Если в панели «Нет доступных тарифов» — заявка в поддержку. Сервер перезагрузится на несколько минут.",
+      "<b>Что сделать:</b> " + todo.join("; ") + ". Рег.облако → Виртуальные серверы → VOYO (ID 7303919) → карандаш у «Характеристик сервера». Если в панели «Нет доступных тарифов» — заявка в поддержку. Сервер перезагрузится на несколько минут.",
       "Повторю письмо не раньше чем через 12 часов, если проблема останется."
     ]);
     for (const k of fresh) st.alerted[k] = now;
@@ -114,7 +136,7 @@ async function send(subject, lines) {
   // «oom» — разовое событие: «в норме» по нему не шлём, отметка лишь сдерживает повтор 12 часов
   const gone = Object.keys(st.alerted).filter((k) => k !== "oom" && !active.includes(k));
   if (gone.length) {
-    await send("Сервер: с памятью снова в норме", [`Прошло: ${gone.map((k) => WHAT[k]).join("; ")}.`, ...facts]);
+    await send("Сервер: ресурсы снова в норме", [`Прошло: ${gone.map((k) => WHAT[k]).join("; ")}.`, ...facts]);
     for (const k of gone) delete st.alerted[k];
   }
   save(st);
