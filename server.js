@@ -9425,10 +9425,12 @@ app.get("/admin/api/vsc/recon-summary", requireVscRecon, (req, res) => res.json(
 // ?site=msk — то же для Москвы (visa-sc.ru на нашем коде; Андрей 09.10.2026). У Москвы считаем
 // только с переезда домена (stat/start.json): до него в журнале лишь проверочные отправки копии.
 app.get("/admin/api/vsc/spb-forms", requireVscRecon, (req, res) => {
-  const MSK = req.query.site === "msk";
-  const STAT = MSK ? "/var/www/mskcopy/stat" : (process.env.SPBCOPY_STAT || "/var/www/spbcopy/stat");
-  const LEADS = MSK ? "/var/www/mskcopy/leads.json" : (process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json");
-  const HOST_RE = MSK ? /^(www\.)?visa-sc\.ru$/i : /^(www\.)?spb\.visa-sc\.ru$/i;
+  // ?site=ekb — Екатеринбург (ekb.visa-sc.ru на нашем коде; Андрей 20.10.2026), как Москва — с переезда
+  const EKB = req.query.site === "ekb";
+  const MSK = req.query.site === "msk" || EKB; // «не Питер»: считаем только с переезда домена (start.json)
+  const STAT = EKB ? "/var/www/ekbcopy/stat" : MSK ? "/var/www/mskcopy/stat" : (process.env.SPBCOPY_STAT || "/var/www/spbcopy/stat");
+  const LEADS = EKB ? "/var/www/ekbcopy/leads.json" : MSK ? "/var/www/mskcopy/leads.json" : (process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json");
+  const HOST_RE = EKB ? /^ekb\.visa-sc\.ru$/i : MSK ? /^(www\.)?visa-sc\.ru$/i : /^(www\.)?spb\.visa-sc\.ru$/i;
   const msk = (iso) => new Date(new Date(iso).getTime() + 3 * 3600e3).toISOString();
   const since = msk(new Date(Date.now() - 31 * 864e5).toISOString()).slice(0, 10);
   const days = {};

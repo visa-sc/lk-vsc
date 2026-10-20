@@ -111,12 +111,12 @@ function store() {
   if (!c.pbx || typeof c.pbx !== "object") c.pbx = { domain: "", key: "" };
   // URL из раздела Flexbe «Настройки → API» (скрин Андрея 31.08): /mod/api/
   const FLEXBE_DEFAULTS = [
-    { id: "visa-sc", label: "visa-sc.ru", apiUrl: "https://visa-sc.ru/mod/api/", apiKey: "" },
+    { id: "visa-sc", label: "visa-sc.ru", apiUrl: "https://lp53856.myflexbe.ru/mod/api/", apiKey: "" }, // технический адрес Flexbe: visa-sc.ru переезжает к нам (20.10.2026)
     // spb.visa-sc.ru 02.10.2026 переехал на наш сервер; Flexbe-версия живёт по техадресу
     // и её API доступно там же. Пока на Flexbe ещё кто-то может отправить заявку —
     // сверяем и её («СПБ Flexbe»), а наш сайт — отдельной строкой «СПБ».
     { id: "spb", label: "spb.visa-sc.ru (Flexbe)", apiUrl: "https://lp130957.myflexbe.ru/mod/api/", apiKey: "" },
-    { id: "ekb", label: "ekb.visa-sc.ru", apiUrl: "https://ekb.visa-sc.ru/mod/api/", apiKey: "" },
+    { id: "ekb", label: "ekb.visa-sc.ru (Flexbe)", apiUrl: "https://lp737627.myflexbe.ru/mod/api/", apiKey: "" },
   ];
   if (!Array.isArray(c.flexbe)) c.flexbe = [];
   for (const d of FLEXBE_DEFAULTS) { // дозаполняем новые сайты в уже созданном конфиге
@@ -846,6 +846,8 @@ function mount(app, deps) {
       const OWN_SITES = [
         { id: "spbnew", label: "spb.visa-sc.ru (наш сайт)", file: process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json", host: /^(www\.)?spb\.visa-sc\.ru$/i },
         { id: "msknew", label: "visa-sc.ru (наш сайт)", file: process.env.MSKCOPY_LEADS || "/var/www/mskcopy/leads.json", host: /^(www\.)?visa-sc\.ru$/i },
+        // Екатеринбург на нашем коде (после переноса ekb.visa-sc.ru с Flexbe; просьба Андрея 20.10.2026)
+        { id: "ekbnew", label: "ekb.visa-sc.ru (наш сайт)", file: process.env.EKBCOPY_LEADS || "/var/www/ekbcopy/leads.json", host: /^ekb\.visa-sc\.ru$/i },
       ];
       for (const own of OWN_SITES) {
         const fr = { id: own.id, label: own.label };
