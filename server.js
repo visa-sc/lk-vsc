@@ -38,7 +38,8 @@ const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "geo
   "usa", "italy", "france", "spain", "uk", "indonesia", "europe",
   // ещё 18 стран под Google Ads (20.10.2026)
   "germany", "czech", "greece", "cyprus", "montenegro", "serbia", "hungary", "portugal", "netherlands",
-  "maldives", "srilanka", "india", "philippines", "singapore", "dominicana", "southafrica", "tanzania", "korea"];
+  "maldives", "srilanka", "india", "philippines", "singapore", "dominicana", "southafrica", "tanzania", "korea",
+  "saudi", "morocco", "jordan", "nepal", "cambodia", "malaysia", "australia", "newzealand", "brazil", "argentina", "peru", "canada"];
 // Партнёрские кабинеты турагентств: voyomobile.ru/visazen и подобные (29.09.2026)
 const ESIM_PARTNER_PATHS = ["visazen"];
 // Ценовые страницы витрины: voyomobile.ru/67 — пакеты за 69 ₽ стоят 67 ₽ (02.10.2026)
