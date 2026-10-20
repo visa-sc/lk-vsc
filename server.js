@@ -6602,7 +6602,8 @@ async function ydFetchSpendNet(dateFrom, dateTo) {
     const uh = r.headers && (r.headers.units || r.headers.Units);
     if (uh) { const p = String(uh).split("/").map((x) => parseInt(x, 10)); if (p.length === 3 && p.every(Number.isFinite)) _ydUnits = { spent: p[0], balance: p[1], limit: p[2], ts: Date.now() }; }
     if (r.status === 200) { const n = parseFloat(String(r.data).trim().replace(/\s+/g, "").replace(",", ".")); return Number.isFinite(n) ? n : null; }
-    if (r.status === 201 || r.status === 202) { const ri = parseInt((r.headers && (r.headers.retryin || r.headers.RetryIn)) || 5, 10); await new Promise((s) => setTimeout(s, (ri || 5) * 1000 + 1000)); continue; }
+    // Директ: отчёт можно запрашивать не чаще раза в 10 с (иначе 400 «Превышен лимит запросов метода»).
+    if (r.status === 201 || r.status === 202) { const ri = parseInt((r.headers && (r.headers.retryin || r.headers.RetryIn)) || 5, 10); await new Promise((s) => setTimeout(s, Math.max(11, (ri || 5) + 1) * 1000)); continue; }
     console.error("YD SPEND report error:", r.status, String(r.data).slice(0, 200)); return null;
   }
   return null;
@@ -6751,7 +6752,7 @@ async function runYdDaily(trigger) {
       const uh = r.headers && r.headers.units;
       if (uh) { const u = String(uh).split("/").map((x) => parseInt(x, 10)); if (u.length === 3 && u.every(Number.isFinite)) _ydUnits = { spent: u[0], balance: u[1], limit: u[2], ts: Date.now() }; }
       if (r.status === 200) { text = String(r.data || ""); break; }
-      if (r.status === 201 || r.status === 202) { const ri = parseInt((r.headers && r.headers.retryin) || 5, 10); await new Promise((x) => setTimeout(x, (ri || 5) * 1000 + 1000)); continue; }
+      if (r.status === 201 || r.status === 202) { const ri = parseInt((r.headers && r.headers.retryin) || 5, 10); await new Promise((x) => setTimeout(x, Math.max(11, (ri || 5) + 1) * 1000)); continue; }   // не чаще раза в 10 с
       // 204 без тела и без заголовков Директа — так API отвечает во время сбоя Яндекса
       // (12.10.2026 так отвечал всем, даже на заведомо неверный токен).
       lastErr = "HTTP " + r.status + (r.status === 204 ? " (пустой ответ — сбой на стороне Яндекса)" : " " + String(r.data || "").slice(0, 200));
@@ -8056,7 +8057,9 @@ async function vscSpbAdByMonth() {
       headers, timeout: 120000, validateStatus: () => true, responseType: "text", transformResponse: [(d) => d],
     });
     if (r.status === 200) { text = String(r.data); break; }
-    if (r.status === 201 || r.status === 202) { await new Promise((s) => setTimeout(s, 5000)); continue; }
+    // Директ: отчёт можно запрашивать не чаще раза в 10 с — 20.10.2026 опрос раз в 5 с давал
+    // 400 «Превышен лимит запросов метода» (16 раз за день). Ждём retryIn, но не меньше 11 с.
+    if (r.status === 201 || r.status === 202) { const ri = parseInt((r.headers && r.headers.retryin) || 0, 10); await new Promise((s) => setTimeout(s, Math.max(11, (ri || 0) + 1) * 1000)); continue; }
     console.error("spb ad report: HTTP " + r.status + " " + String(r.data).slice(0, 150));
     return _spbAdCache.data || {};
   }
