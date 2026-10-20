@@ -35,7 +35,7 @@ const LOG = path.join(__dirname, ".dataRoLog.json");
 const PHONETEST_STORE = path.join(__dirname, ".phonetest", "store.json");
 const SMS_LOG = path.join(__dirname, ".esim", "smslog.json");
 const AMO_GAP_MS = 700;
-const LIMITS = { amo: 6000, sql: 3000, direct: 400, pbx: 300, sms: 2000, sheets: 1000, wazzup: 1500 };   // в сутки на ключ
+const LIMITS = { amo: 6000, sql: 3000, direct: 400, pbx: 300, sms: 2000, sheets: 1000, wazzup: 1500, meta: 2000 };   // в сутки на ключ
 
 // Опубликованные таблицы без финансов. Финансовые (возвраты, выкупы, ЗП, прогноз
 // прибыли) сюда не добавлять — решение Андрея 19.10.2026.
@@ -53,6 +53,7 @@ function keys() {
   return out;
 }
 const mskDay = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+const mskDayOf = (at) => new Date(Date.parse(at) + 3 * 3600e3).toISOString().slice(0, 10);
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (_) { return d; } };
 
 function mount(deps) {
@@ -106,6 +107,7 @@ function mount(deps) {
       "GET /data-api/wazzup/channels": "Wazzup: каналы (WhatsApp, Telegram, MAX, VK, Instagram) — сообщений, входящих/исходящих, чатов, первое и последнее",
       "GET /data-api/wazzup/messages?from=ГГГГ-ММ-ДД&to=…&chatId=&channelId=&chatType=&dir=in|out&q=текст&limit=5000": "Wazzup: сообщения за период (до 31 дня), с 18.08.2026",
       "GET /data-api/wazzup/statuses?from=…&to=…": "Wazzup: статусы доставки и прочтения",
+      "GET /data-api/meta/vnj?from=ГГГГ-ММ-ДД&to=ГГГГ-ММ-ДД": "реклама ВНЖ в Facebook/Instagram: заявки и воронка по дням со страницы spain.visa-sc.com/fb, расход Meta по кампаниям (вносится вручную)",
     },
     limitsPerDay: LIMITS
   }));
@@ -269,6 +271,34 @@ function mount(deps) {
     }
     log(req.roWho, "wazzup", mode + " " + JSON.stringify(req.query), r.ok ? 200 : 400, Date.now() - t);
     res.status(r.ok ? 200 : 400).json(r);
+  });
+
+  // ── Реклама ВНЖ в Facebook/Instagram (20.10.2026): заявки и воронка страницы spain.visa-sc.com/fb ──
+  // Заявки и клики — из журналов лендинга (.vscomLeads.json, .vscomClicks.json); расход Meta API не отдаёт
+  // без токена агентства — его вносим руками в .metaSpend.json, отдаём как есть с датой «по состоянию на».
+  const vnjForm = (f) => /^spain-fb/.test(String(f || ""));
+  const isTest = (x) => /тест|test/i.test(String(x.name || "")) || /test/i.test(String((x.utm || {}).utm_campaign || ""));
+  app.get("/data-api/meta/vnj", auth, (req, res) => {
+    if (!quota(req, res, "meta")) return;
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || "")) ? req.query.from : "2026-10-13";
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || "")) ? req.query.to : "2099-12-31";
+    const day = (at) => mskDayOf(at);
+    const inR = (at) => { const d = day(at); return d >= from && d <= to; };
+    const leadsRaw = readJson(path.join(__dirname, ".vscomLeads.json"), []);
+    const leads = (Array.isArray(leadsRaw) ? leadsRaw : leadsRaw.leads || []).filter((l) => vnjForm(l.form) && !isTest(l) && inR(l.at))
+      .map((l) => ({ at: l.at, day: day(l.at), form: l.form, name: l.name || "", phone: l.phoneDisplay || l.phoneDigits || "",
+        network: /instagram/i.test(String(l.referrer || "") + JSON.stringify(l.utm || {})) ? "Instagram" : "Facebook",
+        utm: l.utm || {}, referrer: l.referrer || "" }));
+    const clicks = readJson(path.join(__dirname, ".vscomClicks.json"), []).filter((x) => vnjForm(x.form) && inR(x.at));
+    const byDay = {};
+    clicks.forEach((x) => { const d = day(x.at); const r = byDay[d] = byDay[d] || { day: d, views: 0, formStarts: 0, phone: 0, whatsapp: 0, telegram: 0, leads: 0 };
+      if (x.messenger === "view") r.views++; else if (x.messenger === "form_start") r.formStarts++; else if (r[x.messenger] != null) r[x.messenger]++; });
+    leads.forEach((l) => { const r = byDay[l.day] = byDay[l.day] || { day: l.day, views: 0, formStarts: 0, phone: 0, whatsapp: 0, telegram: 0, leads: 0 }; r.leads++; });
+    log(req.roWho, "meta", "vnj " + from + ".." + to, 200, 0);
+    res.json({ ok: true, from, to,
+      note: "Заявки и клики со страницы spain.visa-sc.com/fb (реклама ВНЖ в Facebook/Instagram). Каждая заявка сразу заводится в amoCRM: сделка «Заявка на ВНЖ Испании (Facebook|Instagram)», тег Facebook/Instagram, utm_campaign=vnj_ru — искать в /data-api/crm/sql или /data-api/amo по телефону. Заходы считаются раз в сессию; роботы Meta при модерации тоже попадают в заходы.",
+      spend: readJson(path.join(__dirname, ".metaSpend.json"), { note: "расход ещё не вносили" }),
+      days: Object.values(byDay).sort((a, b) => (a.day < b.day ? -1 : 1)), leads });
   });
 
   console.log("DATA RO: /data-api для своих Claude — ключей " + Object.keys(keys()).length);
