@@ -570,6 +570,15 @@ tail = """<script>
     a.addEventListener("click", function () {
       track("card", { event: "card_referral_click",
         params: { form_id: "card-ga", link_text: (a.textContent || "").trim() } });
+      // Конверсия Google Ads для кампании Anakondos (20.10.2026): уход в кабинет
+      // партнёра за картой. Действие то же, что цель кампании («Отправка формы»);
+      // один раз за визит, чтобы повторные нажатия не раздували счёт.
+      try {
+        if (typeof window.gtag === "function" && !sessionStorage.getItem("vsc_card_conv")) {
+          sessionStorage.setItem("vsc_card_conv", "1");
+          gtag("event", "conversion", { send_to: "AW-18409333270/8l3UCJzmqOccEJbEoMpE", value: 1.0, currency: "RUB" });
+        }
+      } catch (e) {}
     });
   });
 })();
