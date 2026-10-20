@@ -51,6 +51,9 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-grad
 .curr{display:flex;gap:7px;margin-bottom:10px;justify-content:flex-end}
 .mathbtn{width:44px;height:34px;border-radius:17px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:19px;font-weight:600;flex:0 0 auto;box-shadow:var(--shadow)}
 .mathbtn:active{background:var(--bg)}
+/* $ — умножение на фиксированный курс 86 (Андрей, 20.10): зелёная, стоит левее операторов */
+.mathbtn.usd{color:#1f9d55;border-color:#bfe6cf;background:#effaf3}
+.mathbtn.usd:active{background:#dcf3e5}
 .amount-row .rub{white-space:nowrap}
 .amount-row .rub.calc{font-size:15px;font-weight:600;color:var(--muted)}
 .amount-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:10px 20px;box-shadow:var(--shadow-hi)}
@@ -145,6 +148,7 @@ input.pill::placeholder{color:var(--faint)}
     </div>
 
     <div class="curr" id="currRow">
+      <button class="mathbtn usd" onmousedown="event.preventDefault()" onclick="insMath('*86')" title="× 86">$</button>
       <button class="mathbtn" onmousedown="event.preventDefault()" onclick="insMath('-')">−</button>
       <button class="mathbtn" onmousedown="event.preventDefault()" onclick="insMath('+')">+</button>
       <button class="mathbtn" onmousedown="event.preventDefault()" onclick="insMath('*')">×</button>
