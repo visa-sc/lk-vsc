@@ -6032,40 +6032,91 @@ function mount(app, opts) {
   });
   // Заходы на витрину по журналу nginx (хранится 14 дней) — с метками из адреса. Нужны для дат до 19.10, когда
   // метка захода ещё не писалась в воронку. ip — обезличенный хеш.
-  let _roVisits = null;
+  // Журнал nginx за 14 дней — это ~860 МБ: разбирать его целиком на каждый запрос значило держать весь
+  // сервер секунды (20.10.2026: блок «SMS: от отправки до оплаты» грузился дольше остальных). Теперь:
+  // каждый файл журнала разбирается один раз и запоминается по inode (ротация лишь переименовывает файл,
+  // .gz появляется один раз в сутки), из текущего access.log дочитываются только новые строки, а разбор
+  // идёт в фоне каждые 5 минут, кусками, с паузами — запросы отдают готовое сразу.
+  const VIS_DIR = "/var/log/nginx/";
+  const VIS_BOT = /bot|crawl|spider|slurp|bing|ahrefs|semrush|mj12|petal|python|curl|wget|go-http|headless|lighthouse|preview|facebookexternalhit|telegram|whatsapp|vkshare|deno|node/i;
+  const VIS_RE = /^(\S+) \S+ \S+ \[(\d+)\/(\w+)\/(\d+):(\d+:\d+):\d+[^\]]*\] "GET (\S+) [^"]*" (\d{3}) \S+ "([^"]*)" "([^"]*)"/;
+  const VIS_MON = { Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06", Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12" };
+  const VIS_PAGE = /^\/(esim\/?|vsc\/?|turkey\/?|67\/?|esim\/[a-z-]+)?(\?|$)/;
+  const visSalt = () => crypto.createHash("sha256").update(String(process.env.ESIM_RO_KEYS || "") + ":visits").digest("hex").slice(0, 16);
+  function visParse(text, rows, salt) {
+    for (const line of text.split("\n")) {
+      if (line.indexOf("GET /") < 0) continue;
+      const m = VIS_RE.exec(line); if (!m || m[7] !== "200") continue;
+      const url = m[6];
+      if (!VIS_PAGE.test(url) || /^\/esim\/(api|my|account|pay|help|case)/.test(url) || VIS_BOT.test(m[9])) continue;
+      const q = url.indexOf("?") >= 0 ? url.slice(url.indexOf("?") + 1) : "";
+      let rh = ""; try { rh = m[8] && m[8] !== "-" ? new URL(m[8]).hostname : ""; } catch (_) {}
+      rows.push({ day: m[4] + "-" + VIS_MON[m[3]] + "-" + m[2], time: m[5], ip: crypto.createHash("sha256").update(salt + m[1]).digest("hex").slice(0, 12),
+        path: url.split("?")[0], query: q.slice(0, 300), referer: rh, mobile: /Mobile|Android|iPhone/i.test(m[9]) });
+    }
+  }
+  const _visFiles = new Map();   // inode → { gz, off, rest, rows }
+  let _roVisits = null, _visBusy = null;
+  const visYield = () => new Promise((r) => setImmediate(r));
+  async function roVisitsBuild() {
+    const zlib = require("zlib"), salt = visSalt(), seen = new Set();
+    const CHUNK = 8 * 1024 * 1024;
+    for (const f of fs.readdirSync(VIS_DIR).filter((x) => /^access\.log(\.\d+)?(\.gz)?$/.test(x))) {
+      let st; try { st = fs.statSync(VIS_DIR + f); } catch (_) { continue; }
+      const gz = f.endsWith(".gz"), key = st.ino + (gz ? ":gz" : "");
+      seen.add(key);
+      let e = _visFiles.get(key);
+      if (gz) {
+        if (e && e.off === st.size) continue;                          // этот архив уже разобран
+        await visYield();
+        const text = zlib.gunzipSync(fs.readFileSync(VIS_DIR + f)).toString("utf8"), rows = [];
+        for (let i = 0; i < text.length;) {                             // кусками по ~4 МБ, с паузами
+          let j = text.indexOf("\n", i + 4e6); if (j < 0) j = text.length;
+          visParse(text.slice(i, j), rows, salt); i = j + 1;
+          await visYield();
+        }
+        _visFiles.set(key, { gz: true, off: st.size, rest: "", rows });
+        continue;
+      }
+      if (!e || st.size < e.off) { e = { gz: false, off: 0, rest: "", rows: [] }; _visFiles.set(key, e); }   // новый файл или обрезан
+      if (st.size === e.off) continue;
+      const fd = fs.openSync(VIS_DIR + f, "r");
+      try {
+        while (e.off < st.size) {
+          const len = Math.min(CHUNK, st.size - e.off), buf = Buffer.alloc(len);
+          const got = fs.readSync(fd, buf, 0, len, e.off); if (!got) break;
+          e.off += got;
+          const text = e.rest + buf.subarray(0, got).toString("utf8");
+          const cut = text.lastIndexOf("\n");
+          e.rest = cut >= 0 ? text.slice(cut + 1) : text;           // недописанная строка — до следующего раза
+          if (cut >= 0) visParse(text.slice(0, cut), e.rows, salt);
+          await visYield();                                           // не держим сервер: между кусками отвечаем другим
+        }
+      } finally { fs.closeSync(fd); }
+    }
+    for (const k of Array.from(_visFiles.keys())) if (!seen.has(k)) _visFiles.delete(k);   // ушедшие из журнала дни
+    const rows = [];
+    for (const e of _visFiles.values()) for (const r of e.rows) rows.push(r);
+    return rows.sort((a, b) => (a.day + a.time < b.day + b.time ? -1 : 1));
+  }
+  function visRefresh() {
+    if (!_visBusy) _visBusy = roVisitsBuild().then((rows) => { _roVisits = { at: Date.now(), rows }; })
+      .catch((e) => console.error("esim ro visits:", e.message)).finally(() => { _visBusy = null; });
+    return _visBusy;
+  }
+  setTimeout(visRefresh, 20 * 1000);              // первый разбор — сразу после старта, в фоне
+  setInterval(visRefresh, 5 * 60 * 1000);
   app.get("/esim/api/ro/raw/visits", async (req, res) => {
     if (!roGate(req, res)) return;
     try {
-      if (!_roVisits || Date.now() - _roVisits.at > 1800e3) _roVisits = { at: Date.now(), rows: roVisitsBuild() };
+      if (!_roVisits) await visRefresh();          // только самый первый запрос после перезапуска ждёт разбора
+      else if (Date.now() - _roVisits.at > 5 * 60 * 1000) visRefresh();
       const { inR } = roRange(req);
-      const rows = _roVisits.rows.filter((r) => inR(r.day));
+      const rows = (_roVisits ? _roVisits.rows : []).filter((r) => inR(r.day));
       res.json(roMask({ success: true, note: "одна строка — открытие страницы витрины человеком (роботы отсеяны); ip — хеш; query — метки из адреса",
         count: rows.length, rows }));
     } catch (er) { res.status(500).json({ success: false, message: er.message }); }
   });
-  function roVisitsBuild() {
-    const zlib = require("zlib"), D = "/var/log/nginx/";
-    const BOT = /bot|crawl|spider|slurp|bing|ahrefs|semrush|mj12|petal|python|curl|wget|go-http|headless|lighthouse|preview|facebookexternalhit|telegram|whatsapp|vkshare|deno|node/i;
-    const re = /^(\S+) \S+ \S+ \[(\d+)\/(\w+)\/(\d+):(\d+:\d+):\d+[^\]]*\] "GET (\S+) [^"]*" (\d{3}) \S+ "([^"]*)" "([^"]*)"/;
-    const MON = { Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06", Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12" };
-    const PAGE = /^\/(esim\/?|vsc\/?|turkey\/?|67\/?|esim\/[a-z-]+)?(\?|$)/;
-    const salt = crypto.createHash("sha256").update(String(process.env.ESIM_RO_KEYS || "") + ":visits").digest("hex").slice(0, 16);
-    const rows = [];
-    for (const f of fs.readdirSync(D).filter((x) => /^access\.log(\.\d+)?(\.gz)?$/.test(x))) {
-      let buf = fs.readFileSync(D + f); if (f.endsWith(".gz")) buf = zlib.gunzipSync(buf);
-      for (const line of buf.toString("utf8").split("\n")) {
-        if (line.indexOf("GET /") < 0) continue;
-        const m = re.exec(line); if (!m || m[7] !== "200") continue;
-        const url = m[6];
-        if (!PAGE.test(url) || /^\/esim\/(api|my|account|pay|help|case)/.test(url) || BOT.test(m[9])) continue;
-        const q = url.indexOf("?") >= 0 ? url.slice(url.indexOf("?") + 1) : "";
-        let rh = ""; try { rh = m[8] && m[8] !== "-" ? new URL(m[8]).hostname : ""; } catch (_) {}
-        rows.push({ day: m[4] + "-" + MON[m[3]] + "-" + m[2], time: m[5], ip: crypto.createHash("sha256").update(salt + m[1]).digest("hex").slice(0, 12),
-          path: url.split("?")[0], query: q.slice(0, 300), referer: rh, mobile: /Mobile|Android|iPhone/i.test(m[9]) });
-      }
-    }
-    return rows.sort((a, b) => (a.day + a.time < b.day + b.time ? -1 : 1));
-  }
   // Справочники и учёт: промокоды, ручные расходы на рекламу, закрытые дни (выручка/себестоимость по курсу дня).
   const RO_FILES = { promos: PROMOS_FILE, spend: ADSPEND_FILE, daily: path.join(DIR, "daily.json") };
   Object.keys(RO_FILES).forEach((name) => app.get("/esim/api/ro/raw/" + name, (req, res) => {
