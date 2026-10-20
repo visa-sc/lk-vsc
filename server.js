@@ -39,7 +39,9 @@ const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "geo
   // ещё 18 стран под Google Ads (20.10.2026)
   "germany", "czech", "greece", "cyprus", "montenegro", "serbia", "hungary", "portugal", "netherlands",
   "maldives", "srilanka", "india", "philippines", "singapore", "dominicana", "southafrica", "tanzania", "korea",
-  "saudi", "morocco", "jordan", "nepal", "cambodia", "malaysia", "australia", "newzealand", "brazil", "argentina", "peru", "canada"];
+  "saudi", "morocco", "jordan", "nepal", "cambodia", "malaysia", "australia", "newzealand", "brazil", "argentina", "peru", "canada"]
+  // все остальные страны каталога (≈150) — одним списком, его же читает витрина (20.10.2026)
+  .concat((() => { try { return Object.keys(require("./public/esim-lands.json")).map((p) => p.slice(1)); } catch (_) { return []; } })());
 // Партнёрские кабинеты турагентств: voyomobile.ru/visazen и подобные (29.09.2026)
 const ESIM_PARTNER_PATHS = ["visazen"];
 // Ценовые страницы витрины: voyomobile.ru/67 — пакеты за 69 ₽ стоят 67 ₽ (02.10.2026)
@@ -48,7 +50,7 @@ const ESIM_PRICE_PATHS = ["67"];
 const ESIM_BRAND_PATHS = ["vsc"];
 const ESIM_HOST_ALLOW = new RegExp(
   "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.concat(ESIM_PARTNER_PATHS, ESIM_PRICE_PATHS, ESIM_BRAND_PATHS).join("|") + ")\\/?$|" +
-  "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|esim-support\\.js$|esim-a2hs\\.js$|esim-brand\\.js$|vsc-icon[^/]*\\.png$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
+  "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|esim-support\\.js$|esim-a2hs\\.js$|esim-brand\\.js$|esim-lands\\.json$|vsc-icon[^/]*\\.png$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
 // dev.voyomobile.ru — панель показателей eSIM (18.09.2026): выручка и пакеты
 // по дням, реклама и её окупаемость, клиенты, промокоды, итог. Отдельное имя,
 // чтобы не мешать витрине; вход по админ-коду, страница закрыта от поисковиков.

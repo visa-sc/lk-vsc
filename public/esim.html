@@ -1641,6 +1641,12 @@
     try{
       // на /turkey и /china просим и короткие сроки (3, 5 и 10 дней)
       var qsCat = [];
+      // Остальные страны каталога (≈150) лежат одним списком в /esim-lands.json,
+      // их тянем только на незнакомом адресе вида /bulgaria (20.10.2026)
+      var lpath = location.pathname.replace(/\/+$/, "").toLowerCase();
+      if(!LANDINGS[lpath] && /^\/[a-z]+$/.test(lpath)){
+        try{ var lr = await fetch("/esim-lands.json"); if(lr.ok){ var lj = await lr.json(); for(var lk in lj) if(!LANDINGS[lk]) LANDINGS[lk] = lj[lk]; } }catch(e){}
+      }
       if(ADM) qsCat.push("adm="+encodeURIComponent(ADM));
       if(TIER) qsCat.push("tier="+TIER);
       if(LANDINGS[location.pathname.replace(/\/+$/, "").toLowerCase()]) qsCat.push("land=1");

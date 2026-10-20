@@ -1543,11 +1543,13 @@ function checkSig(orderId, t) {
 // Письмо клиенту VSC mobile (карточка с brand: "vsc"): знак VSC вместо VOYO, ссылки
 // на страницы eSIM с ?b=vsc, витрина — voyomobile.ru/vsc. Письма директору не трогаем.
 const OUR_URL_RE = /https?:\/\/(?:[a-z0-9-]+\.)?(?:voyotravel\.ru|voyomobile\.ru|voyomobile\.com|voyovoyo\.ru)(\/[^\s"'<>]*)?/g;
+// остальные страницы стран (≈150) — общим списком с витриной, см. public/esim-lands.json
+const ESIM_EXTRA_LANDS = new Set((() => { try { return Object.keys(require("./public/esim-lands.json")); } catch (_) { return []; } })());
 function vscUrl(u) {
   const m = /^(https?:\/\/[^/]+)(\/[^?#]*)?(\?[^#]*)?/.exec(u);
   if (!m) return u;
   const p = m[2] || "/", q = m[3] || "";
-  if (/^\/(esim\/?)?$/.test(p) || /^\/(turkey|china|vietnam|thailand|egypt|georgia|japan|dubai|usa|italy|france|spain|uk|indonesia|europe|germany|czech|greece|cyprus|montenegro|serbia|hungary|portugal|netherlands|maldives|srilanka|india|philippines|singapore|dominicana|southafrica|tanzania|korea|saudi|morocco|jordan|nepal|cambodia|malaysia|australia|newzealand|brazil|argentina|peru|canada)\/?$/.test(p)) return "https://voyomobile.ru/vsc" + q;
+  if (/^\/(esim\/?)?$/.test(p) || ESIM_EXTRA_LANDS.has(p.replace(/\/+$/, "")) || /^\/(turkey|china|vietnam|thailand|egypt|georgia|japan|dubai|usa|italy|france|spain|uk|indonesia|europe|germany|czech|greece|cyprus|montenegro|serbia|hungary|portugal|netherlands|maldives|srilanka|india|philippines|singapore|dominicana|southafrica|tanzania|korea|saudi|morocco|jordan|nepal|cambodia|malaysia|australia|newzealand|brazil|argentina|peru|canada)\/?$/.test(p)) return "https://voyomobile.ru/vsc" + q;
   if (/^\/esim\//.test(p) && !/[?&]b=vsc/.test(q)) return m[1] + p + (q ? q + "&" : "?") + "b=vsc";
   return u;
 }
