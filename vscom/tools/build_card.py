@@ -116,6 +116,8 @@ extra_css = """
   .limit{display:flex;align-items:center;justify-content:space-between;text-align:left}
   .limit span{margin:0}
 }
+/* перенос строки в подзаголовке первого экрана нужен только на широком экране */
+@media (max-width:640px){ .hero__sub br.hb{display:none} }
 </style>"""
 head = head.replace("</style>", extra_css, 1)
 
@@ -248,8 +250,8 @@ body = f"""<body>
         <span class="hl">Выпуск за 5 минут, без визита в офис.</span>
       </h1>
       <p class="hero__sub">
-        Откройте карту онлайн, пополните рублями по СБП или в USDT и оплачивайте подписки,<br>
-        поездки и покупки в 180+ странах.<br>
+        Откройте карту онлайн, пополните рублями по СБП или в USDT<br class="hb">
+        и оплачивайте подписки, поездки и покупки в 180+ странах.<br>
         Карты МИР и Visa работают с Apple Pay и Google Pay.<br>
         Выпускает партнёрская кредитная организация с банковской лицензией.
       </p>
