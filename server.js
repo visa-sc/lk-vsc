@@ -3464,6 +3464,8 @@ app.use("/fin", (req, res) => res.redirect(301, "https://ak-co.ru/fin"));
 // директору с noreply (не чаще 1 раза в сутки, маркер .diskAlert.json).
 const DISK_ALERT_GB = Number(process.env.DISK_ALERT_GB || 1);
 const DISK_ALERT_STATE = path.join(__dirname, ".diskAlert.json");
+// С 20.10.2026 письмо дублируется Андрею Петрову — как и у сторожа памяти (tools/memGuard.js).
+const DISK_ALERT_TO = process.env.DISK_ALERT_TO || "director@visa-sc.ru, ap@spt1.ru";
 async function checkDiskSpace() {
   try {
     const st = fs.statfsSync("/");
@@ -3474,7 +3476,7 @@ async function checkDiskSpace() {
     try { last = JSON.parse(fs.readFileSync(DISK_ALERT_STATE, "utf8")).lastAt || 0; } catch (_) {}
     if (Date.now() - last < 24 * 3600 * 1000) return;
     const r = await mail.sendMail({
-      to: "director@visa-sc.ru",
+      to: DISK_ALERT_TO,
       subject: `⚠️ VOYO сервер: заканчивается место на диске (${freeGb.toFixed(2)} ГБ свободно)`,
       html: `<p>На сервере ЛК (89.108.88.59) осталось <b>${freeGb.toFixed(2)} ГБ</b> из ${totalGb.toFixed(0)} ГБ.</p>
 <p>Что можно сделать:</p>
@@ -3490,7 +3492,7 @@ async function checkDiskSpace() {
 }
 setInterval(checkDiskSpace, 6 * 3600 * 1000);
 setTimeout(checkDiskSpace, 90 * 1000);
-console.log("DISK WATCH: проверка места каждые 6 ч, порог " + DISK_ALERT_GB + " ГБ → письмо директору");
+console.log("DISK WATCH: проверка места каждые 6 ч, порог " + DISK_ALERT_GB + " ГБ → письмо: " + DISK_ALERT_TO);
 
 // ═════════════════════════════════════════════════════════════════════════
 // Остановки рекламных кампаний Яндекс.Директа (item 2). API v5 НЕ отдаёт ленту

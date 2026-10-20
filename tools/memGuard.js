@@ -24,7 +24,9 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env"), quiet: true
 
 const DRY = process.argv.includes("--dry");
 const TEST = process.argv.includes("--test");
-const TO = process.env.MEM_GUARD_TO || "director@visa-sc.ru";
+// С 20.10.2026 письмо дублируется Андрею Петрову (просьба Андрея: при упоре в потолок по
+// памяти или диску знать должны оба).
+const TO = process.env.MEM_GUARD_TO || "director@visa-sc.ru, ap@spt1.ru";
 const STATE_DIR = "/var/lib/mem-guard";
 const STATE = path.join(STATE_DIR, "state.json");
 const LOW_MB = Number(process.env.MEM_GUARD_LOW_MB || 500);
