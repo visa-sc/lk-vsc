@@ -10829,15 +10829,42 @@ function getEntityCustomFieldValue(entity, fieldId) {
 }
 
 // ── Авто-обнаружение элементов amoCRM (id'шники, которые могут отличаться у разных аккаунтов) ──
-// Кешируем в памяти на время жизни процесса. Sentinel undefined = ещё не искали.
-let _cachedTaskTypeProveritDokiId = undefined;
-let _cachedKtoPrinyalFieldId = undefined;
-let _cachedVscUserId = undefined;
-let _cachedPacketsCountFieldId = undefined;
+// Помним найденное на время жизни процесса — через amoDiscover (ниже).
+// Раньше сбой запроса (например, DNS на миг не нашёл amo — EAI_AGAIN) запоминался как
+// «не найдено» до перезапуска, и всё, что зависит от id, ломалось на часы: 20.10.2026 блок
+// «Конверсия авторизаций по оплаченным сделкам» показывал «Не найдено поле «Дата оплаты»»,
+// хотя поле на месте. Теперь:
+//   - найдено — помним до перезапуска;
+//   - не найдено (amo ответила, но такого нет) — перепроверяем раз в час;
+//   - сбой запроса — НЕ запоминаем, новая попытка не раньше чем через минуту (amo не дёргаем
+//     в цикле); одновременные вызовы ждут один и тот же запрос.
+// Любой новый поиск id полей/типов/пользователей amo — только через amoDiscover.
+const AMO_DISCOVER_NOTFOUND_TTL_MS = 3600 * 1000;
+const AMO_DISCOVER_RETRY_MS = 60 * 1000;
+const _amoDiscover = {};
+async function amoDiscover(key, lookup) {
+  const s = _amoDiscover[key] || (_amoDiscover[key] = { val: undefined, at: 0, failAt: 0, inflight: null });
+  const now = Date.now();
+  if (s.val) return s.val;
+  if (s.val === null && now - s.at < AMO_DISCOVER_NOTFOUND_TTL_MS) return null;
+  if (s.failAt && now - s.failAt < AMO_DISCOVER_RETRY_MS) return null;
+  if (s.inflight) return s.inflight;
+  s.inflight = (async () => {
+    try {
+      const v = await lookup();
+      s.val = v || null; s.at = Date.now(); s.failAt = 0;
+      return s.val;
+    } catch (e) {
+      s.failAt = Date.now();
+      console.error("amoDiscover «" + key + "»: сбой, повтор через минуту:", (e.response && e.response.data) || e.message);
+      return null;
+    } finally { s.inflight = null; }
+  })();
+  return s.inflight;
+}
 
 async function getProveritDokiTaskTypeId() {
-  if (_cachedTaskTypeProveritDokiId !== undefined) return _cachedTaskTypeProveritDokiId;
-  try {
+  return amoDiscover("тип задачи «Проверить доки»", async () => {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const r = await amoGet(`${baseUrl}/api/v4/account`, { with: "task_types" });
     const taskTypes = (r && r._embedded && r._embedded.task_types) || [];
@@ -10845,87 +10872,49 @@ async function getProveritDokiTaskTypeId() {
       const name = String(t.name || "").toLowerCase().trim();
       return name === "проверить доки" || name.startsWith("проверить док");
     });
-    if (found) {
-      _cachedTaskTypeProveritDokiId = found.id;
-      console.log(`AMO TASK TYPE «Проверить доки»: id=${found.id} name="${found.name}"`);
-    } else {
-      _cachedTaskTypeProveritDokiId = null;
-      console.log(`AMO TASK TYPE «Проверить доки» NOT FOUND. Available: ${taskTypes.map((t) => `"${t.name}"(id=${t.id})`).join(", ")}`);
-    }
-  } catch (e) {
-    console.error("getProveritDokiTaskTypeId error:", e.response?.data || e.message);
-    _cachedTaskTypeProveritDokiId = null;
-  }
-  return _cachedTaskTypeProveritDokiId;
+    if (found) { console.log(`AMO TASK TYPE «Проверить доки»: id=${found.id} name="${found.name}"`); return found.id; }
+    console.log(`AMO TASK TYPE «Проверить доки» NOT FOUND. Available: ${taskTypes.map((t) => `"${t.name}"(id=${t.id})`).join(", ")}`);
+    return null;
+  });
 }
 
 async function getKtoPrinyalFieldId() {
-  if (_cachedKtoPrinyalFieldId !== undefined) return _cachedKtoPrinyalFieldId;
-  try {
+  return amoDiscover("поле «Кто принял клиента»", async () => {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
-    const found = (fields || []).find((f) => {
-      const name = String(f.name || "").toLowerCase().trim();
-      return name.indexOf("кто принял") === 0;
-    });
-    if (found) {
-      _cachedKtoPrinyalFieldId = found.id;
-      console.log(`AMO FIELD «Кто принял клиента»: id=${found.id} name="${found.name}" type="${found.type}"`);
-    } else {
-      _cachedKtoPrinyalFieldId = null;
-      console.log("AMO FIELD «Кто принял клиента» NOT FOUND — задачи будут падать на Visa Services Center");
-    }
-  } catch (e) {
-    console.error("getKtoPrinyalFieldId error:", e.response?.data || e.message);
-    _cachedKtoPrinyalFieldId = null;
-  }
-  return _cachedKtoPrinyalFieldId;
+    const found = (fields || []).find((f) => String(f.name || "").toLowerCase().trim().indexOf("кто принял") === 0);
+    if (found) { console.log(`AMO FIELD «Кто принял клиента»: id=${found.id} name="${found.name}" type="${found.type}"`); return found.id; }
+    console.log("AMO FIELD «Кто принял клиента» NOT FOUND — задачи будут падать на Visa Services Center");
+    return null;
+  });
 }
 
 async function getPacketsCountFieldId() {
-  if (_cachedPacketsCountFieldId !== undefined) return _cachedPacketsCountFieldId;
-  try {
+  return amoDiscover("поле «Количество пакетов»", async () => {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
     const found = (fields || []).find((f) => {
       const name = String(f.name || "").toLowerCase().trim();
       return name === "количество пакетов" || name.indexOf("количество пакетов") >= 0;
     });
-    if (found) {
-      _cachedPacketsCountFieldId = found.id;
-      console.log(`AMO FIELD «Количество пакетов»: id=${found.id} name="${found.name}" type="${found.type}"`);
-    } else {
-      _cachedPacketsCountFieldId = null;
-      console.log("AMO FIELD «Количество пакетов» NOT FOUND — кнопка «Заполнить ещё опросник» на «Подготовке документов» не будет ограничиваться");
-    }
-  } catch (e) {
-    console.error("getPacketsCountFieldId error:", e.response?.data || e.message);
-    _cachedPacketsCountFieldId = null;
-  }
-  return _cachedPacketsCountFieldId;
+    if (found) { console.log(`AMO FIELD «Количество пакетов»: id=${found.id} name="${found.name}" type="${found.type}"`); return found.id; }
+    console.log("AMO FIELD «Количество пакетов» NOT FOUND — кнопка «Заполнить ещё опросник» на «Подготовке документов» не появится");
+    return null;
+  });
 }
 
 async function getVscUserId() {
-  if (_cachedVscUserId !== undefined) return _cachedVscUserId;
-  try {
+  return amoDiscover("пользователь «Visa Services Center»", async () => {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const users = await amoGetAllPages(`${baseUrl}/api/v4/users`);
     const found = (users || []).find((u) => {
       const name = String(u.name || "").toLowerCase().trim();
       return name === "visa services center" || name.indexOf("visa services center") >= 0;
     });
-    if (found) {
-      _cachedVscUserId = found.id;
-      console.log(`AMO USER «Visa Services Center»: id=${found.id} name="${found.name}"`);
-    } else {
-      _cachedVscUserId = null;
-      console.log("AMO USER «Visa Services Center» NOT FOUND — fallback не сработает, задачи будут без responsible");
-    }
-  } catch (e) {
-    console.error("getVscUserId error:", e.response?.data || e.message);
-    _cachedVscUserId = null;
-  }
-  return _cachedVscUserId;
+    if (found) { console.log(`AMO USER «Visa Services Center»: id=${found.id} name="${found.name}"`); return found.id; }
+    console.log("AMO USER «Visa Services Center» NOT FOUND — fallback не сработает, задачи будут без responsible");
+    return null;
+  });
 }
 
 // Возвращает {pipelineName, statusName} для (pipeline_id, status_id) сделки.
@@ -16181,42 +16170,32 @@ function paidConvIsJapan(countryValue) {
 }
 
 // Кеш id кастомных полей сделок (отдельные слоты, не зависят от воронки).
-let _cachedPaymentDateFieldId = undefined;
-let _cachedCountryServiceFieldId = undefined;
 async function getCustomFieldIdByPredicate(baseUrl, predicate) {
   const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
   const found = (fields || []).find(predicate);
   return found ? found.id : null;
 }
 async function getPaymentDateFieldId() {
-  if (_cachedPaymentDateFieldId !== undefined) return _cachedPaymentDateFieldId;
-  try {
+  return amoDiscover("поле «Дата оплаты»", async () => {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
-    _cachedPaymentDateFieldId = await getCustomFieldIdByPredicate(baseUrl, (f) => {
+    const id = await getCustomFieldIdByPredicate(baseUrl, (f) => {
       const name = String(f.name || "").trim().toLowerCase();
       return name === "дата оплаты" || name.startsWith("дата оплат");
     });
-    console.log(`AMO FIELD «Дата оплаты»: id=${_cachedPaymentDateFieldId || "NOT FOUND"}`);
-  } catch (e) {
-    console.error("getPaymentDateFieldId error:", e.response?.data || e.message);
-    _cachedPaymentDateFieldId = null;
-  }
-  return _cachedPaymentDateFieldId;
+    console.log(`AMO FIELD «Дата оплаты»: id=${id || "NOT FOUND"}`);
+    return id;
+  });
 }
 async function getCountryServiceFieldId() {
-  if (_cachedCountryServiceFieldId !== undefined) return _cachedCountryServiceFieldId;
-  try {
+  return amoDiscover("поле «Страна оформления/услуга»", async () => {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
-    _cachedCountryServiceFieldId = await getCustomFieldIdByPredicate(baseUrl, (f) => {
+    const id = await getCustomFieldIdByPredicate(baseUrl, (f) => {
       const name = String(f.name || "").trim().toLowerCase();
       return name === "страна оформления/услуга" || name.startsWith("страна оформления");
     });
-    console.log(`AMO FIELD «Страна оформления/услуга»: id=${_cachedCountryServiceFieldId || "NOT FOUND"}`);
-  } catch (e) {
-    console.error("getCountryServiceFieldId error:", e.response?.data || e.message);
-    _cachedCountryServiceFieldId = null;
-  }
-  return _cachedCountryServiceFieldId;
+    console.log(`AMO FIELD «Страна оформления/услуга»: id=${id || "NOT FOUND"}`);
+    return id;
+  });
 }
 
 // Кеш результата вычисления — 20 минут. Должен быть с запасом длиннее интервала
