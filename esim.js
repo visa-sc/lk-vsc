@@ -1547,7 +1547,7 @@ function vscUrl(u) {
   const m = /^(https?:\/\/[^/]+)(\/[^?#]*)?(\?[^#]*)?/.exec(u);
   if (!m) return u;
   const p = m[2] || "/", q = m[3] || "";
-  if (/^\/(esim\/?)?$/.test(p) || /^\/(turkey|china|vietnam|thailand|egypt|georgia|japan|dubai|usa|italy|france|spain|uk|indonesia|europe)\/?$/.test(p)) return "https://voyomobile.ru/vsc" + q;
+  if (/^\/(esim\/?)?$/.test(p) || /^\/(turkey|china|vietnam|thailand|egypt|georgia|japan|dubai|usa|italy|france|spain|uk|indonesia|europe|germany|czech|greece|cyprus|montenegro|serbia|hungary|portugal|netherlands|maldives|srilanka|india|philippines|singapore|dominicana|southafrica|tanzania|korea)\/?$/.test(p)) return "https://voyomobile.ru/vsc" + q;
   if (/^\/esim\//.test(p) && !/[?&]b=vsc/.test(q)) return m[1] + p + (q ? q + "&" : "?") + "b=vsc";
   return u;
 }

@@ -1115,6 +1115,25 @@
     "/uk":        { iso: "GB", where: "Великобритании" },
     "/indonesia": { iso: "ID", where: "Индонезии"      },
     "/europe":    { iso: "EU-REGION", where: "Европе"  },
+    // ещё 18 стран под группы Google Ads (20.10.2026); pre — предлог, если не «в»
+    "/germany":     { iso: "DE", where: "Германии"    },
+    "/czech":       { iso: "CZ", where: "Чехии"       },
+    "/greece":      { iso: "GR", where: "Греции"      },
+    "/cyprus":      { iso: "CY", where: "Кипре",      pre: "на" },
+    "/montenegro":  { iso: "ME", where: "Черногории"  },
+    "/serbia":      { iso: "RS", where: "Сербии"      },
+    "/hungary":     { iso: "HU", where: "Венгрии"     },
+    "/portugal":    { iso: "PT", where: "Португалии"  },
+    "/netherlands": { iso: "NL", where: "Нидерландах" },
+    "/maldives":    { iso: "MV", where: "Мальдивах",  pre: "на" },
+    "/srilanka":    { iso: "LK", where: "Шри-Ланке",  pre: "на" },
+    "/india":       { iso: "IN", where: "Индии"       },
+    "/philippines": { iso: "PH", where: "Филиппинах", pre: "на" },
+    "/singapore":   { iso: "SG", where: "Сингапуре"   },
+    "/dominicana":  { iso: "DO", where: "Доминикане"  },
+    "/southafrica": { iso: "ZA", where: "ЮАР"         },
+    "/tanzania":    { iso: "TZ", where: "Танзании"    },
+    "/korea":       { iso: "KR", where: "Южной Корее" },
   };
   function landingCountry(){
     var byPath = LANDINGS[location.pathname.replace(/\/+$/, "").toLowerCase()];
@@ -1123,12 +1142,13 @@
     if(byPath){
       var mine = byCountry[iso] || (iso === "EU-REGION" ? packsFor(iso) : []);
       var min = mine.length ? Math.min.apply(null, mine.map(function(p){ return p.priceRub; })) : 0;
+      var pre = byPath.pre || "в";
       document.querySelector(".hero h1").innerHTML =
-        "Интернет в&nbsp;" + esc(byPath.where) + "&nbsp;—<br/><em>eSIM за одну минуту</em>" +
+        "Интернет " + pre + "&nbsp;" + esc(byPath.where) + "&nbsp;—<br/><em>eSIM за одну минуту</em>" +
         (min ? "<br/>от " + RU(min) + "&nbsp;₽" : "");
       document.querySelector(".hero .sub").textContent =
         "Выбираете пакет, сканируете QR-код — пользуетесь интернетом без роуминга.";
-      try{ document.title = "Интернет в " + byPath.where + " от " + RU(min) + " ₽ — VOYO mobile"; }catch(e){}
+      try{ document.title = "Интернет " + pre + " " + byPath.where + " от " + RU(min) + " ₽ — VOYO mobile"; }catch(e){}
     }
     choose(iso);
     try{ window.scrollTo({ top: 0 }); }catch(e){}
