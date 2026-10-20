@@ -9430,7 +9430,7 @@ app.get("/admin/api/vsc/spb-forms", requireVscRecon, (req, res) => {
   const MSK = req.query.site === "msk" || EKB; // «не Питер»: считаем только с переезда домена (start.json)
   const STAT = EKB ? "/var/www/ekbcopy/stat" : MSK ? "/var/www/mskcopy/stat" : (process.env.SPBCOPY_STAT || "/var/www/spbcopy/stat");
   const LEADS = EKB ? "/var/www/ekbcopy/leads.json" : MSK ? "/var/www/mskcopy/leads.json" : (process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json");
-  const HOST_RE = EKB ? /^ekb\.visa-sc\.ru$/i : MSK ? /^(www\.)?visa-sc\.ru$/i : /^(www\.)?spb\.visa-sc\.ru$/i;
+  const HOST_RE = EKB ? /^ekb\.visa-sc\.ru$/i : MSK ? /^(www\.)?visa-sc\.ru$|^visa-gum\.ru$/i : /^(www\.)?spb\.visa-sc\.ru$/i; // visa-gum.ru — двойник visa-sc.ru
   const msk = (iso) => new Date(new Date(iso).getTime() + 3 * 3600e3).toISOString();
   const since = msk(new Date(Date.now() - 31 * 864e5).toISOString()).slice(0, 10);
   const days = {};

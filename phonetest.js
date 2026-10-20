@@ -845,7 +845,7 @@ function mount(app, deps) {
       //    по телефону в amoCRM. До переноса у Москвы боевых заявок нет — строка 0/0.
       const OWN_SITES = [
         { id: "spbnew", label: "spb.visa-sc.ru (наш сайт)", file: process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json", host: /^(www\.)?spb\.visa-sc\.ru$/i },
-        { id: "msknew", label: "visa-sc.ru (наш сайт)", file: process.env.MSKCOPY_LEADS || "/var/www/mskcopy/leads.json", host: /^(www\.)?visa-sc\.ru$/i },
+        { id: "msknew", label: "visa-sc.ru (наш сайт)", file: process.env.MSKCOPY_LEADS || "/var/www/mskcopy/leads.json", host: /^(www\.)?visa-sc\.ru$|^visa-gum\.ru$/i }, // visa-gum.ru — двойник visa-sc.ru, как во Flexbe
         // Екатеринбург на нашем коде (после переноса ekb.visa-sc.ru с Flexbe; просьба Андрея 20.10.2026)
         { id: "ekbnew", label: "ekb.visa-sc.ru (наш сайт)", file: process.env.EKBCOPY_LEADS || "/var/www/ekbcopy/leads.json", host: /^ekb\.visa-sc\.ru$/i },
       ];
