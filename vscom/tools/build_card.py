@@ -248,7 +248,7 @@ body = f"""<body>
         <span class="hl">Выпуск за 5 минут, без визита в офис.</span>
       </h1>
       <p class="hero__sub">
-        Откройте карту онлайн, пополните рублями по СБП и оплачивайте подписки,<br>
+        Откройте карту онлайн, пополните рублями по СБП или в USDT и оплачивайте подписки,<br>
         поездки и покупки в 180+ странах.<br>
         Карты МИР и Visa работают с Apple Pay и Google Pay.<br>
         Выпускает партнёрская кредитная организация с банковской лицензией.
@@ -257,7 +257,7 @@ body = f"""<body>
         <div class="fact"><span>Выпуск</span><b>за 5 минут</b></div>
         <div class="fact"><span>География</span><b>180+ стран</b></div>
         <div class="fact"><span>Обслуживание</span><b>бесплатно</b></div>
-        <div class="fact"><span>Пополнение</span><b>по СБП</b></div>
+        <div class="fact"><span>Пополнение</span><b>СБП и USDT</b></div>
         <div class="fact"><span>Кошелёк</span><b>Apple и Google Pay</b></div>
         <div class="fact"><span>Поддержка</span><b>24/7</b></div>
       </div>
@@ -306,7 +306,7 @@ body = f"""<body>
   <div class="container">
     <h2>Выберите свою карту</h2>
     <p style="color:var(--muted);max-width:760px;margin:-16px 0 30px">Обе карты выпускаются онлайн,
-    без комиссии за обслуживание. Пополнение рублями по СБП.</p>
+    без комиссии за обслуживание. Пополнение рублями по СБП или в USDT.</p>
     <div class="grid grid--2">
 
       <div class="prog">
