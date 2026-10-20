@@ -29,6 +29,10 @@ function mount(deps) {
     return !(dow === 5 && h >= 15);
   };
   const TO = process.env.REGRU_ALERT_EMAIL || "director@visa-sc.ru";
+  // Письма о самом балансе (предупреждение и «срочно пополнить») с 20.10.2026 дублируются
+  // Андрею Петрову — просьба Андрея. Письмо «проверка не удалась» (нужен новый токен в .env)
+  // остаётся только директору: Петров с ним ничего сделать не может.
+  const TO_BALANCE = process.env.REGRU_ALERT_EMAIL_BALANCE || (TO + ", ap@spt1.ru");
 
   const load = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch (_) { return {}; } };
   const save = (o) => { try { fs.writeFileSync(STATE, JSON.stringify(o)); } catch (e) { console.error("regru-watch save:", e.message); } };
@@ -86,7 +90,7 @@ function mount(deps) {
       if (st.alertDay !== mskDay() && mailOk()) {
         st.alertDay = mskDay(); st.warnSent = true; save(st);
         sendMail({
-          to: TO,
+          to: TO_BALANCE,
           subject: "🔴 Баланс Рег.облака " + Math.round(bal) + " ₽ — срочно пополнить",
           text: "На балансе Рег.облака осталось " + bal + " ₽ — меньше " + LIMIT() + " ₽." +
             "\n\nНа этом облаке работает прод-сервер voyotravel.ru (ЛК, /vsc, сайты): если баланс уйдёт в ноль," +
@@ -99,7 +103,7 @@ function mount(deps) {
       if (!st.warnSent && mailOk()) {
         st.warnSent = true; save(st);
         sendMail({
-          to: TO,
+          to: TO_BALANCE,
           subject: "⚠️ Баланс Рег.облака " + Math.round(bal) + " ₽ — ниже " + WARN() + " ₽",
           text: "На балансе Рег.облака осталось " + bal + " ₽ — меньше " + WARN() + " ₽." +
             "\n\nПока не критично, но лучше пополнить заранее: https://cloud.reg.ru (раздел «Баланс»)." +
