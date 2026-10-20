@@ -6764,6 +6764,9 @@ scheduleYdSpendCompare();
 // это не касается — у них остаётся цифра листа.
 const YD_DAILY_FILE = path.join(__dirname, ".vscYdDaily.json");
 const YD_DAILY_WINDOW = 14;
+// Кампании, расход которых в CPL визового центра НЕ входит: всё со словом eSIM / есим
+// в названии (реклама VOYO mobile; Андрей 20.10.2026). Остальные — все, с любым статусом.
+const YD_DAILY_EXCLUDE_RE = /e-?sim|есим/i;
 let _ydDaily, _ydDailyRunning = false;
 function loadYdDaily() { if (_ydDaily !== undefined) return _ydDaily; try { _ydDaily = JSON.parse(fs.readFileSync(YD_DAILY_FILE, "utf8")); } catch (_) { _ydDaily = null; } return _ydDaily; }
 async function runYdDaily(trigger) {
@@ -6796,18 +6799,21 @@ async function runYdDaily(trigger) {
       break;
     }
     if (text == null) throw new Error(lastErr || "отчёт не построился");
-    const days = {}, camps = {};
+    const days = {}, camps = {}, excl = {};
     for (const line of text.trim().split("\n")) {
       const [date, id, name, cost] = line.split("\t");
       if (!/^\d{4}-\d\d-\d\d$/.test(date || "")) continue;
       const c = parseFloat(String(cost || "").replace(",", "."));
       if (!Number.isFinite(c)) continue;
+      // Кампании eSIM в CPL визового центра не идут (Андрей 20.10.2026): своя реклама VOYO mobile.
+      if (YD_DAILY_EXCLUDE_RE.test(name || "")) { excl[name] = (excl[name] || 0) + c; continue; }
       days[date] = (days[date] || 0) + c;
       const k = id + "";
       if (!camps[k]) camps[k] = { name: name || "", cost: 0 };
       camps[k].cost += c;
     }
     const out = { from, to, ts: Date.now(), trigger: trigger || "", vat: YD_VAT_RATE, days: {}, campaigns: Object.keys(camps).length,
+      excluded: Object.keys(excl).map((n) => ({ name: n, cost: Math.round(excl[n] * (1 + YD_VAT_RATE)) })),
       top: Object.keys(camps).map((k) => ({ id: +k, name: camps[k].name, cost: Math.round(camps[k].cost * (1 + YD_VAT_RATE)) })).sort((a, b) => b.cost - a.cost).slice(0, 40) };
     for (const d in days) out.days[d] = { net: Math.round(days[d] * 100) / 100, withVat: Math.round(days[d] * (1 + YD_VAT_RATE) * 100) / 100 };
     // Старые дни (за окном) сохраняем — пригодятся для сверки задним числом.
