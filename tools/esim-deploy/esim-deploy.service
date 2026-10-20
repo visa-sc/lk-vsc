@@ -2,15 +2,19 @@
 # Заявки бывают пачкой (pull, check, deploy за секунды) — без этого systemd после 5 запусков за 10 с
 # перестаёт их принимать (19.10.2026: откат не обработался).
 StartLimitIntervalSec=0
-Description=Выкладка админки eSIM Андреем Петровым: обработка заявки
+Description=Выкладка сайтов eSIM Андреем Петровым: обработка заявки
 
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/node /usr/local/lib/esim-deploy/esim-deploy.js
-TimeoutStartSec=120
+TimeoutStartSec=300
 Nice=5
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/lib/esim-deploy /var/www/voyo/public /var/www/voyo/.esim-deploy-backups /var/www/voyo/.esimAdmChangelogPetrov.json
+# Только файлы eSIM, которые ему отданы (20.10.2026): страницы и скрипты в esim-site/ (отдаются только на
+# доменах eSIM), значки public/vm, статьи, инструкции и тексты бота в корне. Код сервера, .env и данные — недоступны.
+# «-» перед путём: если файла нет, служба всё равно запустится (иначе молчали бы все команды, включая откат).
+ReadWritePaths=/var/lib/esim-deploy /var/www/voyo/esim-site /var/www/voyo/public/vm /var/www/voyo/.esim-deploy-backups -/var/www/voyo/.esimAdmChangelogPetrov.json
+ReadWritePaths=-/var/www/voyo/esim-articles.json -/var/www/voyo/esim-articles-2.json -/var/www/voyo/esim-articles-3.json -/var/www/voyo/esim-guides.json -/var/www/voyo/esim-bot-texts.json
 PrivateTmp=true
 NoNewPrivileges=true

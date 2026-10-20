@@ -141,13 +141,13 @@ function clientMessage({ id, text, page, ua, ip, contact, tgChatId, vid }) {
 // Ответ оператора (из письма или из панели)
 let _onOperator = null;
 function onOperator(fn) { _onOperator = fn; }
-function operatorMessage(id, text) {
+function operatorMessage(id, text, by) {   // by — кто ответил через ручки поддержки (Андрей Петров, 20.10.2026)
   const list = loadChats();
   const chat = list.find((c) => c.id === String(id || ""));
   if (!chat) return null;
   const clean = String(text || "").slice(0, 4000).trim();
   if (!clean) return null;
-  chat.messages.push({ from: "operator", text: clean, ts: Date.now() });
+  chat.messages.push(Object.assign({ from: "operator", text: clean, ts: Date.now() }, by ? { by: String(by).slice(0, 40) } : {}));
   chat.lastAt = Date.now();
   saveChats(list);
   console.log("esim support: ответ оператора в чат", chat.id);
@@ -248,7 +248,10 @@ async function pollMailbox() {
         if (!raw) continue;
         const parsed = await simpleParser(raw);
         const body2 = stripReply(parsed.text || "");
-        if (body2) { operatorMessage(m[1], body2); done++; }
+        // кто ответил: письма о проблемах с 20.10.2026 приходят и Андрею Петрову (ESIM_SUPPORT_TO)
+        const fromAddr = String(((parsed.from && parsed.from.value && parsed.from.value[0]) || {}).address || "").toLowerCase();
+        const by = fromAddr === "ap@spt1.ru" ? "Андрей Петров" : null;
+        if (body2) { operatorMessage(m[1], body2, by); done++; }
       }
       writeJson(IMAP_STATE, { ids: Array.from(ids).slice(-1000) });
     } finally { lock.release(); }

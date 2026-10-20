@@ -1544,7 +1544,11 @@ function checkSig(orderId, t) {
 // на страницы eSIM с ?b=vsc, витрина — voyomobile.ru/vsc. Письма директору не трогаем.
 const OUR_URL_RE = /https?:\/\/(?:[a-z0-9-]+\.)?(?:voyotravel\.ru|voyomobile\.ru|voyomobile\.com|voyovoyo\.ru)(\/[^\s"'<>]*)?/g;
 // остальные страницы стран (≈150) — общим списком с витриной, см. public/esim-lands.json
-const ESIM_EXTRA_LANDS = new Set((() => { try { return Object.keys(require("./public/esim-lands.json")); } catch (_) { return []; } })());
+// список правит Андрей Петров (esimdeploy) — читаем на лету
+const esimContent = require("./esim-content");
+const esimPage = esimContent.pageFile;   // на доменах eSIM — версия Петрова (esim-site/), на voyotravel.ru — public/
+const esimLands = esimContent.jsonWatch(esimContent.landsFile(), {});
+const ESIM_EXTRA_LANDS = { has: (k) => Object.prototype.hasOwnProperty.call(esimLands(), k) };
 function vscUrl(u) {
   const m = /^(https?:\/\/[^/]+)(\/[^?#]*)?(\?[^#]*)?/.exec(u);
   if (!m) return u;
@@ -1578,7 +1582,7 @@ function mount(app, opts) {
 
   app.get("/esim", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.sendFile(path.join(__dirname, "public", "esim.html"));
+    res.sendFile(esimPage(req, "esim.html"));
   });
 
   // Ценовые страницы: voyomobile.ru/67 — те же пакеты, но вместо 69 ₽ стоят 67 ₽.
@@ -1706,7 +1710,7 @@ function mount(app, opts) {
   // ═══ «Моя eSIM» — страница клиента: остаток, срок, QR, продление ═══
   app.get("/esim/my", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.sendFile(path.join(__dirname, "public", "esim-my.html"));
+    res.sendFile(esimPage(req, "esim-my.html"));
   });
 
   // Данные eSIM клиента: заказ (QR/LPA) + живой остаток + совместимые топапы в ₽
@@ -2618,7 +2622,7 @@ function mount(app, opts) {
 
   app.get("/esim/pay/ok", (req, res) => {
     res.set("Cache-Control", "no-store");
-    res.sendFile(path.join(__dirname, "public", "esim-pay-ok.html"));
+    res.sendFile(esimPage(req, "esim-pay-ok.html"));
   });
   app.get("/esim/pay/fail", (req, res) => {
     try {
@@ -2626,7 +2630,7 @@ function mount(app, opts) {
       if (gfl && gfl.order && gfl.order.status !== "done") logPayFail("returned_fail", gfl.order, "вернулся со страницы банка без оплаты");
     } catch (_) {}
     res.set("Cache-Control", "no-store");
-    res.sendFile(path.join(__dirname, "public", "esim-pay-fail.html"));
+    res.sendFile(esimPage(req, "esim-pay-fail.html"));
   });
 
   // ═══ Личный кабинет по email: все eSIM клиента ═══
@@ -2714,7 +2718,7 @@ function mount(app, opts) {
     if (!slug) return;
     app.get("/" + slug, (req, res) => {
       res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-      res.sendFile(path.join(__dirname, "public", "esim-partner.html"));
+      res.sendFile(esimPage(req, "esim-partner.html"));
     });
   });
 
@@ -3575,7 +3579,7 @@ function mount(app, opts) {
   const HELP_DIR = path.join(DIR, "help");
   app.get("/esim/help", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.sendFile(path.join(__dirname, "public", "esim-help.html"));
+    res.sendFile(esimPage(req, "esim-help.html"));
   });
   app.post("/esim/api/help", express.json({ limit: "7mb" }), async (req, res) => {
     try {
@@ -3679,7 +3683,7 @@ function mount(app, opts) {
   // кнопка возврата. Подбор инструкции — по тексту обращения (22.09.2026).
   app.get("/esim/case/:id", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.sendFile(path.join(__dirname, "public", "esim-case.html"));
+    res.sendFile(esimPage(req, "esim-case.html"));
   });
   function caseFix(one) {
     const t = String((one && one.error) || "").toLowerCase();
@@ -3948,7 +3952,7 @@ function mount(app, opts) {
 
   app.get("/esim/account", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.sendFile(path.join(__dirname, "public", "esim-account.html"));
+    res.sendFile(esimPage(req, "esim-account.html"));
   });
   // Клиент, вошедший в кабинет по телефону, не должен вводить почту второй раз.
   // Держим связку телефон → почты локально: один раз узнали (из покупки или из
@@ -4141,7 +4145,7 @@ function mount(app, opts) {
   // ═══ Админка промокодов и рефералки: /esim_ref_admin ═══
   app.get("/esim_ref_admin", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.sendFile(path.join(__dirname, "public", "esim-ref-admin.html"));
+    res.sendFile(esimPage(req, "esim-ref-admin.html"));
   });
   app.get("/esim/api/ref-admin", (req, res) => {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
@@ -5725,6 +5729,200 @@ function mount(app, opts) {
   }
   const roPort = () => process.env.PORT || 3000;
 
+  // ═══ Поддержка для Андрея Петрова (20.10.2026, решение Андрея: «поддержку тоже ему передай,
+  // пусть через свой Claude решает проблемы с клиентами»). Ключ ESIM_SUP_KEYS="petrov:<ключ>",
+  // заголовок X-Sup-Key. Здесь контакты клиентов видны (без них не ответить), но денег и
+  // поставщиков эти ручки не трогают: возврат, замена за наш счёт, бонусы — только Андрей.
+  // Письма «нужен ответ» уходят на ESIM_SUPPORT_TO (Андрей и Петров), отвечать можно и
+  // обычным ответом на письмо — см. esimchat.js.
+  function supWho(req) {
+    const k = String(req.headers["x-sup-key"] || "").trim();   // только заголовок: адреса запросов пишутся в журналы
+    if (k.length >= 20) {
+      for (const pair of String(process.env.ESIM_SUP_KEYS || "").split(",")) {
+        const i = pair.indexOf(":"); if (i < 1) continue;
+        const key = pair.slice(i + 1).trim();
+        if (key.length >= 20 && crypto.timingSafeEqual(crypto.createHash("sha256").update(key).digest(), crypto.createHash("sha256").update(k).digest())) return pair.slice(0, i).trim();
+      }
+    }
+    return isAdm(req) ? "admin" : null;
+  }
+  const _supHits = {};
+  function supGate(req, res) {
+    const who = supWho(req);
+    if (!who) { res.status(403).json({ success: false, message: "Нет доступа: нужен ключ поддержки (заголовок X-Sup-Key)." }); return null; }
+    const m = Math.floor(Date.now() / 60000), h = _supHits[who] = (_supHits[who] && _supHits[who].m === m) ? _supHits[who] : { m, n: 0 };
+    if (++h.n > 60) { res.status(429).json({ success: false, message: "Не чаще 60 запросов в минуту." }); return null; }
+    console.log("esim sup: " + who + " " + req.method + " " + req.path);
+    return who;
+  }
+  const SUP_NAME = { petrov: "Андрей Петров", admin: "Андрей" };
+  const supOrder = (o) => ({ id: o.id, paidAt: o.paidAt ? new Date(o.paidAt + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ") : null,
+    label: o.label, email: o.email || null, phone: o.phone || null, priceRub: o.payTotalRub || o.priceRub, promo: o.promoCode || null,
+    via: o.tgChatId ? "бот" : "сайт", brand: o.brand || "voyo", supplier: o.src || null, iccid: o.iccid || null,
+    qrPage: !!o.myUrl, refunded: !!(o.refundedAt || o.refund), replacedFrom: (o.replacedFrom || []).length || 0 });
+  async function supStates(mine, raw) {
+    const st = raw || await orderStates(mine).catch(() => []);
+    return st.map((x) => ({ order: x.o.id, installed: x.installed, active: x.active, expired: x.expired,
+      totalGb: Math.round(x.total / 102.4) / 10, leftGb: Math.round(x.left / 102.4) / 10,
+      deleted: !!(x.u && x.u.deleted), profile: (x.u && (x.u.profileStatus || x.u.status)) || null }));
+  }
+  const waitingChat = (c) => {
+    const ms = c.messages || [];
+    const lastClient = ms.filter((x) => x.from === "client").slice(-1)[0];
+    const lastOp = ms.filter((x) => x.from === "operator").slice(-1)[0];
+    return !!(lastClient && !c.resolvedAt && (!lastOp || lastOp.ts < lastClient.ts) && (c.mailedAt || 0) >= (lastOp ? lastOp.ts : 0) && c.mailedAt);
+  };
+  const supChatShort = (c) => ({ id: c.id, started: c.ts, lastAt: c.lastAt || c.ts, contact: c.contact || null,
+    where: c.tgChatId ? "телеграм-бот" : "чат на сайте", page: c.page || null, waiting: waitingChat(c),
+    escalatedAt: c.mailedAt || null, resolvedAt: c.resolvedAt || null,
+    last: ((c.messages || []).slice(-1)[0] || {}).text || "" });
+  const caseLink = (id) => "https://voyomobile.ru/esim/case/" + id;
+
+  app.get("/esim/api/sup", (req, res) => {
+    if (!supGate(req, res)) return;
+    res.json({ success: true, about: "Поддержка VOYO mobile / VSC mobile: чаты (сайт и телеграм-бот) и обращения с формы «Не получается подключить». Контакты клиентов видны — никому их не передавать.",
+      auth: "Заголовок X-Sup-Key: <ключ>. Не чаще 60 запросов в минуту.",
+      endpoints: {
+        "GET /esim/api/sup/inbox": "Что ждёт человека: чаты, где робот не справился и клиенту ещё не ответили, и необработанные обращения.",
+        "GET /esim/api/sup/chats?days=14": "Все чаты за период, коротко.",
+        "GET /esim/api/sup/chat?id=": "Чат целиком + покупки клиента + живое состояние каждой eSIM у поставщика (установлена, активна, остаток, удалена) + досье, по которому отвечает робот.",
+        "POST /esim/api/sup/reply {id, text}": "Ответ клиенту в чат. Из бота ответ уходит человеку в телеграм, на сайте появляется в окне чата. Длинные тире заменяются.",
+        "POST /esim/api/sup/done {id}": "Отметить чат или обращение решённым (из «ждёт ответа» уходит).",
+        "GET /esim/api/sup/cases?days=30": "Обращения с формы: контакт, модель телефона, текст ошибки, что уже сделано.",
+        "GET /esim/api/sup/case?id=": "Обращение целиком + покупки + состояние eSIM + ссылка на личную страницу обращения клиента.",
+        "POST /esim/api/sup/case-note {id, text}": "Личный ответ на странице обращения клиента (" + caseLink("<id>") + ").",
+        "POST /esim/api/sup/mail {id, text}": "Письмо клиенту по обращению или чату на почту из обращения или из покупки; ответ клиента придёт Андрею и вам.",
+        "POST /esim/api/sup/resend {order}": "Ещё раз отправить письмо «eSIM готова» с QR на почту покупки (только на неё). Ссылки на QR в ответах нет нарочно: контакт в чате не проверен.",
+        "GET /esim/api/sup/find?q=": "Покупки по почте, телефону, номеру заказа, ICCID или номеру у поставщика + состояние eSIM.",
+        "GET /esim/api/sup/kb": "Справочник поддержки: частые проблемы и как их решать (по нему отвечает робот первой линии).",
+      },
+      rules: "Возврат денег, замена eSIM за наш счёт, бонусы и промокоды — только Андрей: напишите ему на director@visa-sc.ru с номером заказа и сутью." });
+  });
+
+  // справочник, по которому отвечает робот первой линии (собирается из прошлых обращений)
+  app.get("/esim/api/sup/kb", (req, res) => {
+    if (!supGate(req, res)) return;
+    let kb = ""; try { kb = fs.readFileSync(path.join(DIR, "support-kb.md"), "utf8"); } catch (_) {}
+    res.type("text/plain; charset=utf-8").send(kb || "справочника пока нет");
+  });
+  app.get("/esim/api/sup/inbox", (req, res) => {
+    if (!supGate(req, res)) return;
+    const since = Date.now() - 14 * 864e5;
+    const chats = support.loadChats().filter((c) => (c.lastAt || c.ts) > since && waitingChat(c)).map(supChatShort);
+    const cases = readJson(HELP_FILE, []).filter((x) => x.ts > Date.now() - 30 * 864e5 && !x.answered && x.result !== "ok")
+      .map((x) => ({ id: x.id, ts: x.ts, contact: x.contact, model: x.model, error: x.error, link: caseLink(x.id) }));
+    res.json({ success: true, chats, cases });
+  });
+  app.get("/esim/api/sup/chats", (req, res) => {
+    if (!supGate(req, res)) return;
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 14));
+    const since = Date.now() - days * 864e5;
+    res.json({ success: true, chats: support.loadChats().filter((c) => (c.lastAt || c.ts) > since).map(supChatShort) });
+  });
+  app.get("/esim/api/sup/chat", async (req, res) => {
+    if (!supGate(req, res)) return;
+    const c = support.findChat(req.query.id);
+    if (!c) return res.status(404).json({ success: false, message: "чат не найден" });
+    const mine = await ordersByContact(c.contact, c.page, c.vid).catch(() => []);
+    const raw = mine.length ? await orderStates(mine).catch(() => []) : [];
+    const states = await supStates(mine, raw);
+    let dossier = null;
+    try { dossier = doctor.dossier({ messages: c.messages, orders: mine, states: raw, ua: c.ua, ip: c.ip }); } catch (_) {}
+    res.json({ success: true, chat: Object.assign(supChatShort(c), { ua: c.ua || null,
+      messages: (c.messages || []).map((m) => ({ from: m.from === "client" ? "клиент" : m.from === "operator" ? "оператор" + (m.by ? " (" + m.by + ")" : "") : "робот", text: m.text, ts: m.ts })) }),
+      staffNotes: c.staffNotes || [], orders: mine.slice(0, 10).map(supOrder), states, dossier,
+      note: mine.length ? null : "Покупок по контакту не нашли. Попросите почту или телефон, на которые оформляли eSIM, или ссылку со страницы «Мои eSIM»." });
+  });
+  app.post("/esim/api/sup/reply", express.json({ limit: "32kb" }), (req, res) => {
+    const who = supGate(req, res); if (!who) return;
+    const b = req.body || {};
+    const text = doctor.clean(String(b.text || "")).slice(0, 4000);
+    if (!text) return res.status(400).json({ success: false, message: "пустой ответ" });
+    const chat = support.operatorMessage(String(b.id || ""), text, SUP_NAME[who] || who);
+    if (!chat) return res.status(404).json({ success: false, message: "чат не найден" });
+    res.json({ success: true, sentTo: chat.tgChatId ? "телеграм" : "чат на сайте", text });
+  });
+  app.post("/esim/api/sup/done", express.json({ limit: "8kb" }), (req, res) => {
+    const who = supGate(req, res); if (!who) return;
+    const id = String((req.body || {}).id || "");
+    const list = support.loadChats(), c = list.find((x) => x.id === id);
+    if (c) { c.resolvedAt = Date.now(); c.resolvedBy = SUP_NAME[who] || who; support.saveChats(list); return res.json({ success: true, chat: id }); }
+    const all = readJson(HELP_FILE, []), one = all.find((x) => x.id === id);
+    if (one) { one.answered = one.answered || Date.now(); one.resolvedBy = SUP_NAME[who] || who; writeJson(HELP_FILE, all); return res.json({ success: true, case: id }); }
+    res.status(404).json({ success: false, message: "нет такого чата или обращения" });
+  });
+  app.get("/esim/api/sup/cases", (req, res) => {
+    if (!supGate(req, res)) return;
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    res.json({ success: true, cases: readJson(HELP_FILE, []).filter((x) => x.ts > Date.now() - days * 864e5).map((x) => ({
+      id: x.id, ts: x.ts, contact: x.contact, model: x.model, tried: x.tried, error: x.error, answered: !!x.answered,
+      result: x.result || null, note: x.note || null, refundAsked: !!x.refundAsked, reissuedAt: x.reissuedAt || null,
+      screenshot: !!x.shot, link: caseLink(x.id) })) });
+  });
+  app.get("/esim/api/sup/case", async (req, res) => {
+    if (!supGate(req, res)) return;
+    const one = readJson(HELP_FILE, []).find((x) => x.id === String(req.query.id || ""));
+    if (!one) return res.status(404).json({ success: false, message: "обращение не найдено" });
+    const mine = await ordersByContact(one.contact, "").catch(() => []);
+    res.json({ success: true, case: Object.assign({}, one, { ip: undefined, link: caseLink(one.id) }),
+      orders: mine.slice(0, 10).map(supOrder), states: mine.length ? await supStates(mine) : [] });
+  });
+  app.post("/esim/api/sup/case-note", express.json({ limit: "32kb" }), (req, res) => {
+    const who = supGate(req, res); if (!who) return;
+    const b = req.body || {};
+    const all = readJson(HELP_FILE, []), one = all.find((x) => x.id === String(b.id || ""));
+    if (!one) return res.status(404).json({ success: false, message: "обращение не найдено" });
+    one.note = doctor.clean(String(b.text || "")).slice(0, 2000);
+    one.answered = Date.now(); one.humanAt = one.humanAt || one.answered; one.noteBy = SUP_NAME[who] || who;
+    writeJson(HELP_FILE, all);
+    res.json({ success: true, link: caseLink(one.id), note: one.note });
+  });
+  app.post("/esim/api/sup/mail", express.json({ limit: "32kb" }), async (req, res) => {
+    const who = supGate(req, res); if (!who) return;
+    const b = req.body || {};
+    const id = String(b.id || ""), text = doctor.clean(String(b.text || "")).slice(0, 4000);
+    if (!text) return res.status(400).json({ success: false, message: "пустое письмо" });
+    const one = readJson(HELP_FILE, []).find((x) => x.id === id);
+    const chat = one ? null : support.findChat(id);
+    if (!one && !chat) return res.status(404).json({ success: false, message: "нет такого чата или обращения" });
+    const contact = one ? one.contact : chat.contact;
+    let to = normEmail((String(contact || "").match(/[^\s]+@[^\s]+/) || [])[0] || "");
+    if (!to) {
+      const mine = await ordersByContact(contact, one ? "" : chat.page, one ? null : chat.vid).catch(() => []);
+      to = normEmail((mine.find((o) => o.email) || {}).email || "");
+    }
+    if (!to) return res.json({ success: false, message: "почты клиента нет ни в обращении, ни в покупках — ответьте в чат" });
+    const body = text + (one ? "\n\nВаше обращение: " + caseLink(one.id) : "") + "\n\nVOYO mobile";
+    const r = await opts.sendMail({ to, subject: "VOYO mobile: ответ по вашему вопросу", text: body, replyTo: support.TO }).catch((e) => ({ ok: false, error: e.message }));
+    if (!r || r.ok === false) return res.json({ success: false, message: "письмо не ушло: " + ((r && r.error) || "ошибка почты") });
+    if (chat) {   // служебная пометка — в staffNotes, клиент в окне чата её не видит
+      const list = support.loadChats(), c2 = list.find((x) => x.id === chat.id);
+      if (c2) { c2.staffNotes = (c2.staffNotes || []).concat([{ ts: Date.now(), by: SUP_NAME[who] || who, text: "Письмо клиенту на " + to + ": " + text }]).slice(-50); support.saveChats(list); }
+    }
+    console.log("esim sup: письмо клиенту", to, "от", who);
+    res.json({ success: true, to });
+  });
+  app.post("/esim/api/sup/resend", express.json({ limit: "8kb" }), async (req, res) => {
+    const who = supGate(req, res); if (!who) return;
+    const id = String((req.body || {}).order || "");
+    const o = readJson(ORDERS_FILE, []).find((x) => x.id === id && x.status === "done");
+    if (!o || !o.email || !o.myUrl) return res.status(404).json({ success: false, message: "оплаченный заказ с почтой не найден" });
+    const cust = getCustomer(o.custKey || o.email, false);
+    const L = readyLetter(o, [{ myUrl: o.myUrl }], cust && cust.refCode);
+    const r = await opts.sendMail({ to: o.email, subject: L.subject, html: L.html, text: L.text }).catch((e) => ({ ok: false, error: e.message }));
+    console.log("esim sup: повтор письма с QR", o.id, "от", who);
+    res.json({ success: !!(r && r.ok !== false), to: o.email });
+  });
+  app.get("/esim/api/sup/find", async (req, res) => {
+    if (!supGate(req, res)) return;
+    const q = String(req.query.q || "").trim();
+    if (q.length < 4) return res.status(400).json({ success: false, message: "q — почта, телефон, номер заказа, ICCID" });
+    const all = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.mmOrderId);
+    let mine = all.filter((o) => [o.id, o.mmOrderId, o.iccid, o.parentOrderId].some((v) => v && String(v) === q));
+    if (!mine.length) mine = await ordersByContact(q, "").catch(() => []);
+    res.json({ success: true, orders: mine.slice(0, 20).map(supOrder), states: mine.length ? await supStates(mine) : [] });
+  });
+
   app.get("/esim/api/ro", (req, res) => {
     if (!roGate(req, res)) return;
     res.json({ success: true, about: "Аналитика eSIM (VOYO mobile и VSC mobile: voyomobile.ru/.com, voyotravel.ru/esim, телеграм-бот @esimvoyo_bot). Только чтение. Деньги в рублях, даты по МСК (ГГГГ-ММ-ДД).",
@@ -5949,7 +6147,7 @@ function mount(app, opts) {
   // Сама страница панели. Отдаём и по адресу /esim/adm, и в корне dev-домена.
   app.get(["/esim/adm", "/esim/adm/"], (req, res) => {
     res.set("Cache-Control", "no-store");
-    res.sendFile(path.join(__dirname, "public", "esim-adm.html"));
+    res.sendFile(esimPage(req, "esim-adm.html"));
   });
 
   // ═══ Приглашение друзей: письмо через сутки после первой оплаты ═══

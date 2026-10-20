@@ -14,11 +14,19 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 
-// Статьи разложены по файлам, чтобы каждый оставался обозримым при правке
-const ARTICLES = Object.assign({},
-  require("./esim-articles.json"), require("./esim-articles-2.json"), require("./esim-articles-3.json"));
+// Статьи разложены по файлам, чтобы каждый оставался обозримым при правке. С 20.10.2026 их
+// правит и выкладывает Андрей Петров (esimdeploy) — файлы перечитываются на лету, без перезапуска.
+const { jsonWatch } = require("./esim-content");
+const ART_FILES = ["esim-articles.json", "esim-articles-2.json", "esim-articles-3.json"]
+  .map((f) => jsonWatch(path.join(__dirname, f), {}));
 // Инструкции и сравнения: другой шаблон, другие запросы, но тот же раздел
-const GUIDES = require("./esim-guides.json");
+const GUIDES_FILE = jsonWatch(path.join(__dirname, "esim-guides.json"), {});
+let ARTICLES = {}, GUIDES = {};
+function freshContent() {
+  ARTICLES = Object.assign({}, ...ART_FILES.map((g) => g()));
+  GUIDES = GUIDES_FILE();
+}
+freshContent();
 const SELF = process.env.ESIM_SELF_BASE || "http://127.0.0.1:3000";
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 // С 18.09.2026 статьи живут на voyomobile.ru — там бренд eSIM и вся реклама
@@ -199,7 +207,11 @@ function page(slug, a, data) {
 <meta property="og:url" content="${url}" />
 <meta property="og:site_name" content="VOYO mobile" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-<link rel="icon" type="image/png" href="/apple-touch-icon.png" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
 <script type="application/ld+json">${JSON.stringify(faqLd)}</script>
 <script type="application/ld+json">${JSON.stringify(productLd)}</script>
 ${STYLE}</head><body>
@@ -319,7 +331,11 @@ function guidePage(slug, g, minPrice) {
 <meta property="og:url" content="${url}" />
 <meta property="og:site_name" content="VOYO mobile" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-<link rel="icon" type="image/png" href="/apple-touch-icon.png" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
 <script type="application/ld+json">${JSON.stringify(faqLd)}</script>
 <script type="application/ld+json">${JSON.stringify(howLd)}</script>
 ${STYLE}
@@ -366,35 +382,37 @@ ${STYLE}
 }
 
 function mount(app) {
-  const slugs = Object.keys(ARTICLES);
-  const guideSlugs = Object.keys(GUIDES);
-
-  guideSlugs.forEach((slug) => {
-    app.get("/esim/" + slug, async (req, res) => {
+  // Один маршрут на все статьи: новая статья из выкладки открывается сразу. Чужие адреса
+  // (/esim/my, /esim/account …) идут дальше — выкладка не пускает статьи с такими именами.
+  app.get("/esim/:slug", async (req, res, next) => {
+    freshContent();
+    const slug = String(req.params.slug || "");
+    const own = Object.prototype.hasOwnProperty;
+    if (own.call(GUIDES, slug)) {
       if (!onSeoHost(req)) return res.redirect(301, SEO_BASE + req.originalUrl);
       const products = await catalog();
       const min = products.length ? Math.min(...products.map((p) => p.priceRub)) : 590;
       res.set("Cache-Control", "public, max-age=1800");
-      res.type("html").send(guidePage(slug, GUIDES[slug], min));
-    });
-  });
-
-  slugs.forEach((slug) => {
-    app.get("/esim/" + slug, async (req, res) => {
+      return res.type("html").send(guidePage(slug, GUIDES[slug], min));
+    }
+    if (own.call(ARTICLES, slug)) {
       if (!onSeoHost(req)) return res.redirect(301, SEO_BASE + req.originalUrl);
       const a = ARTICLES[slug];
       const products = await catalog();
       const data = pickPackages(products, a.iso);
       if (!data.all.length) return res.redirect(302, "/esim");
       res.set("Cache-Control", "public, max-age=1800");
-      res.type("html").send(page(slug, a, data));
-    });
+      return res.type("html").send(page(slug, a, data));
+    }
+    return next();
   });
 
   // Карта сайта и роботы: без них робот про эти страницы просто не узнает
   app.get("/sitemap.xml", async (req, res) => {
     // В карту не попадают страны, по которым у поставщика нет пакетов:
     // такая ссылка уводила бы робота на редирект
+    freshContent();
+    const slugs = Object.keys(ARTICLES), guideSlugs = Object.keys(GUIDES);
     const products = await catalog();
     const live = slugs.filter((s) => products.some((p) => (p.countries || []).indexOf(ARTICLES[s].iso) >= 0));
     // Статьи — только в карте voyomobile.ru. Сама витрина закрыта от индекса
@@ -418,7 +436,7 @@ function mount(app) {
       "Allow: /esim\n\nSitemap: " + (onSeoHost(req) ? SEO_BASE : BASE_URL) + "/sitemap.xml\n");
   });
 
-  console.log("esimseo: страниц направлений " + slugs.length + ", инструкций " + guideSlugs.length);
+  console.log("esimseo: страниц направлений " + Object.keys(ARTICLES).length + ", инструкций " + Object.keys(GUIDES).length);
 }
 
-module.exports = { mount, slugs: Object.keys(ARTICLES), guides: Object.keys(GUIDES) };
+module.exports = { mount };

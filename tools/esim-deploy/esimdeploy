@@ -1,27 +1,34 @@
 #!/usr/bin/env bash
-# esimdeploy — выкладка админки eSIM (esim-adm.html, dev.voyomobile.ru) для Андрея Петрова.
+# esimdeploy — выкладка сайтов eSIM (voyomobile.ru, .com, voyotravel.ru/esim, админка, тексты бота) для Андрея Петрова.
 #
-#   esimdeploy pull                     взять свежий боевой esim-adm.html в ~/esim-deploy
-#   esimdeploy status                   отличается ли ваш файл от боевого
-#   esimdeploy check                    проверить свой файл, ничего не выкладывая
-#   esimdeploy deploy                   выложить на боевой (нужен ~/esim-deploy/CHANGELOG.md)
-#   esimdeploy rollback esim-adm.html   вернуть предыдущую версию
-#   esimdeploy log                      последние выкладки
+#   esimdeploy pull               взять свежие боевые файлы в ~/esim-deploy
+#   esimdeploy files              какой файл за что отвечает
+#   esimdeploy status             какие ваши файлы отличаются от боевых
+#   esimdeploy check              проверить свои правки, ничего не выкладывая
+#   esimdeploy deploy             выложить на боевой (нужен ~/esim-deploy/CHANGELOG.md)
+#   esimdeploy rollback ФАЙЛ      вернуть предыдущую версию одного файла
+#   esimdeploy snapshot ИМЯ       слепок: сохранить боевое состояние всех файлов разом
+#   esimdeploy snapshots          список слепков
+#   esimdeploy restore ИМЯ        вернуть все файлы к слепку (текущее состояние сохранится слепком)
+#   esimdeploy log                последние выкладки
 #
 # Сама команда ничего на боевом не меняет: она кладёт заявку ~/esim-deploy/REQUEST, а служба
-# сервера (esim-deploy) проверяет файл и выкладывает. Подробно — ~/esim-deploy/README.md.
+# сервера (esim-deploy) проверяет файлы и выкладывает. Подробно — ~/esim-deploy/README.md.
 set -u
 W="$HOME/esim-deploy"; OUT=/var/lib/esim-deploy/out; CUR=/var/lib/esim-deploy/current
-FILES="esim-adm.html"
 [ "$(id -un)" = "spbadmin" ] || { echo "Запускать от пользователя spbadmin"; exit 1; }
 mkdir -p "$W/.base" "$W/.changelog-archive"
 
 cmd="${1:-help}"; arg="${2:-}"
 case "$cmd" in
-  pull|status|check|deploy|log) ;;
-  rollback) case "$arg" in esim-adm.html) ;; *) echo "Укажите файл: esimdeploy rollback esim-adm.html"; exit 1;; esac ;;
-  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  pull|files|status|check|deploy|log|snapshots) ;;
+  rollback) [ -n "$arg" ] || { echo "Укажите файл: esimdeploy rollback esim.html (список — esimdeploy files)"; exit 1; } ;;
+  snapshot|restore) [ -n "$arg" ] || { echo "Укажите имя слепка: esimdeploy $cmd исходное-2026-10-20 (список — esimdeploy snapshots)"; exit 1; } ;;
+  *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
+case "$arg" in *[\"\\/]*) echo "В имени не должно быть кавычек и слешей"; exit 1;; esac
+
+FILES="$(ls "$CUR" 2>/dev/null)"
 
 # Неразобранная свежая боевая версия (после pull при своих правках) — выкладывать рано:
 # иначе ваш файл на старой основе затрёт чужие правки, пришедшие с pull.
@@ -38,32 +45,36 @@ fi
 id="$(date +%s)-$$-$RANDOM"
 printf '{"id":"%s","cmd":"%s","file":"%s"}\n' "$id" "$cmd" "$arg" > "$W/REQUEST"
 
-# Ждём ответ службы (обычно 1–3 секунды, выкладка с проверкой — до 30).
-for _ in $(seq 1 90); do
+# Ждём ответ службы (обычно 1–3 секунды, выкладка с проверкой — до минуты).
+for _ in $(seq 1 150); do
   [ -f "$OUT/$id.txt" ] && break
   sleep 1
 done
 if [ ! -f "$OUT/$id.txt" ]; then
-  echo "Служба выкладки не ответила за 90 секунд. Повторите команду; если снова тишина — напишите Андрею."
+  echo "Служба выкладки не ответила за 150 секунд. Повторите команду; если снова тишина — напишите Андрею."
   exit 1
 fi
 cat "$OUT/$id.txt"
 ok=0; head -1 "$OUT/$id.txt" | grep -q '^OK' && ok=1
+FILES="$(ls "$CUR" 2>/dev/null)"
 
 if [ "$cmd" = "pull" ] && [ "$ok" = 1 ]; then
+  upd=0; kept=""
   for f in $FILES; do
     [ -f "$CUR/$f" ] || continue
     # Ваш файл без правок (совпадает с прошлым pull) — просто обновляем.
     # С правками — не трогаем, свежую боевую кладём рядом как ФАЙЛ.prod.
     if [ ! -f "$W/$f" ] || cmp -s "$W/$f" "$W/.base/$f"; then
+      cmp -s "$CUR/$f" "$W/$f" 2>/dev/null || upd=$((upd+1))
       cp "$CUR/$f" "$W/$f"
-      echo "  $f: обновлён до боевого"
-    else
+    elif ! cmp -s "$CUR/$f" "$W/$f"; then
       cp "$CUR/$f" "$W/$f.prod"
-      echo "  $f: у вас есть свои правки — боевая версия положена рядом как $f.prod, перенесите правки в неё"
+      kept="$kept $f"
     fi
     cp "$CUR/$f" "$W/.base/$f"
   done
+  echo "  обновлено файлов: $upd"
+  [ -n "$kept" ] && echo "  с вашими правками (боевая версия положена рядом как ФАЙЛ.prod, перенесите правки в неё):$kept"
 fi
 
 if [ "$cmd" = "deploy" ] && [ "$ok" = 1 ]; then

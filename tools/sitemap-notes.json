@@ -107,6 +107,12 @@
       "access": "личный ключ из .env ESIM_RO_KEYS (с 15.10.2026 — Петров, для его Claude); только чтение, ключ не пускает ни в админку, ни на запись",
       "desc": "Аналитика eSIM для запросов из Claude: /ro (справка), /ro/stats (всё из панели, почты, телефоны и чаты клиентов скрыты), /ro/orders (список оплат), /ro/seo (51 страница под поиск по журналу nginx за 14 дней). Не чаще 60 запросов в минуту, каждый вызов пишется в журнал pm2 «esim ro: имя путь»."
     },
+    "/esim/api/sup": {
+      "group": "Управление",
+      "access": "ключ поддержки из .env ESIM_SUP_KEYS (с 20.10.2026 — Андрей Петров, для его Claude) или вход админки",
+      "desc": "Поддержка eSIM для Claude Петрова: что ждёт ответа, чат целиком с покупками и состоянием eSIM у поставщика, ответ в чат (сайт или телеграм), письмо клиенту, повтор письма с QR, поиск покупок, справочник. Контакты видны; возвраты, замены, бонусы — только Андрей. Письма «нужен ответ» идут на ESIM_SUPPORT_TO (Андрей и Петров)."
+    },
+    "/esim/api/sup/*": { "group": "Управление", "access": "ключ поддержки ESIM_SUP_KEYS или вход админки", "desc": "Ручки поддержки: inbox, chats, chat, reply, done, cases, case, case-note, mail, resend, find, kb" },
     "/esim/*": {
       "group": "Поиск",
       "desc": "Статьи по странам и инструкции (44 + 7): живые цены и покрытие из боевого каталога, текст пишется руками. С 18.09.2026 живут только на voyomobile.ru (там и карта сайта); с voyotravel.ru и других доменов — 301 туда же."
@@ -1073,9 +1079,9 @@
       "note": "Служба lk-deploy (systemd, заявка ~kateadmin/lk-deploy/REQUEST) выкладывает только cabinet.html и index.html: проверка файлов, защита от затирания, копии для отката (30 на файл), записи журнала изменений ЛК от Екатерины."
     },
     {
-      "what": "Выкладка админки eSIM Андреем Петровым",
-      "where": "/var/lib/esim-deploy, /var/www/voyo/.esim-deploy-backups, /var/www/voyo/.esimAdmChangelogPetrov.json",
-      "note": "Служба esim-deploy (systemd, заявка ~spbadmin/esim-deploy/REQUEST, команда esimdeploy) выкладывает только public/esim-adm.html (dev.voyomobile.ru): те же проверки и откат, что у lk-deploy. Сервер eSIM, витрина и бот Петрову не выданы (с 19.10.2026)."
+      "what": "Выкладка сайтов eSIM и текстов бота Андреем Петровым",
+      "where": "/var/lib/esim-deploy (слепки — snapshots/, «исходное-2026-10-20» защищён), /var/www/voyo/.esim-deploy-backups, /var/www/voyo/.esimAdmChangelogPetrov.json",
+      "note": "Служба esim-deploy (systemd, заявка ~spbadmin/esim-deploy/REQUEST, команда esimdeploy). С 20.10.2026 — 29 файлов того, что видит клиент: страницы eSIM (витрина, кабинет, оплата, помощь, админка), скрипты страниц, public/esim-lands.json (страны), статьи и инструкции (esim-articles*.json, esim-guides.json), тексты бота (esim-bot-texts.json, подмена при отправке в tgbot.js), значки voyomobile (public/vm/). Проверка по виду файла, защита от затирания, проверка сайта после выкладки с автооткатом, слепки и restore. Код сервера, оплата, выдача, цены и логика бота Петрову не выданы."
     }
   ]
 }

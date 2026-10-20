@@ -104,7 +104,63 @@ let _lastErr = null;
 // timeoutMs — для длинного опроса: getUpdates держит соединение 25 секунд, и
 // при HTTP-таймауте 30 секунд зазора почти нет. Через ретранслятор ответ иногда
 // не успевал, и нормальный опрос выглядел обрывом связи (21.09.2026).
+// Тексты бота правит Андрей Петров (20.10.2026): esim-bot-texts.json — пары «как написано в коде» →
+// «как показать». Подменяем в тексте сообщений, подписях и кнопках прямо перед отправкой, код бота
+// не трогаем. Файл читается на лету. Телеграм не принял подменённый текст (сломанная разметка,
+// слишком длинно) — сразу шлём исходный: клиент без ответа не останется.
+const botTexts = require("./esim-content").jsonWatch(path.join(__dirname, "esim-bot-texts.json"), {});
+let _btSrc = null, _btPairs = [];
+function btPairs() {
+  const j = botTexts();
+  if (j !== _btSrc) {
+    _btSrc = j;
+    const r = (j && j.replace) || {};
+    _btPairs = Object.keys(r).filter((k) => k.length >= 2 && typeof r[k] === "string" && r[k] !== k)
+      .sort((a, b) => b.length - a.length).map((k) => [k, r[k]]);
+  }
+  return _btPairs;
+}
+function btApply(str) {
+  if (typeof str !== "string" || !str) return str;
+  let out = str;
+  for (const [k, v] of btPairs()) if (out.indexOf(k) >= 0) out = out.split(k).join(v);
+  return out;
+}
+// обратно: правленая надпись кнопки → как в коде (только целая надпись, не кусок)
+function btBack(str) {
+  for (const [k, v] of btPairs()) if (str === v.trim()) return k.trim();
+  return str;
+}
+function btKeyboard(rm) {
+  if (!rm || typeof rm !== "object") return rm;
+  const rows = (x) => Array.isArray(x) ? x.map((row) => Array.isArray(row) ? row.map((btn) => btn && typeof btn.text === "string" ? Object.assign({}, btn, { text: btApply(btn.text) }) : btn) : row) : x;
+  const o = Object.assign({}, rm);
+  if (o.inline_keyboard) o.inline_keyboard = rows(o.inline_keyboard);
+  if (o.keyboard) o.keyboard = rows(o.keyboard);
+  return o;
+}
+const BT_METHODS = { sendMessage: 1, editMessageText: 1, editMessageReplyMarkup: 1, answerCallbackQuery: 1, editMessageCaption: 1 };
+function btPayload(method, payload) {
+  if (!BT_METHODS[method] || !payload || !btPairs().length) return null;
+  const p = Object.assign({}, payload);
+  if (typeof p.text === "string") p.text = btApply(p.text);
+  if (typeof p.caption === "string") p.caption = btApply(p.caption);
+  if (p.reply_markup) p.reply_markup = btKeyboard(p.reply_markup);
+  return JSON.stringify(p) === JSON.stringify(payload) ? null : p;
+}
 async function tg(method, payload, opts) {
+  const alt = btPayload(method, payload);
+  if (alt) {
+    const r = await tgRaw(method, alt, Object.assign({}, opts, { quiet: true }));
+    if (r !== null || !(_lastErr && _lastErr.status === 400 && /parse|entit|too long|BUTTON|button|empty|tag/i.test(_lastErr.desc))) {
+      if (r === null && !(opts && opts.quiet)) console.error("tg " + method + ":", _lastErr && _lastErr.desc);
+      return r;
+    }
+    console.error("тексты бота: телеграм не принял правленый текст (" + _lastErr.desc + ") — отправлен исходный");
+  }
+  return tgRaw(method, payload, opts);
+}
+async function tgRaw(method, payload, opts) {
   try {
     const r = await axios.post(callUrl(method), payload, { timeout: (opts && opts.timeoutMs) || 30000, headers: callHeaders() });
     return r.data && r.data.result;
@@ -127,12 +183,19 @@ const answer = (id, text) => tg("answerCallbackQuery", { callback_query_id: id, 
 // QR приходит от поставщика как data:image/png;base64 — отправляем картинкой,
 // чтобы человек мог сразу навести на неё камеру со второго телефона или
 // открыть на весь экран и отсканировать.
-async function sendQr(chatId, dataUrl, caption) {
+let _qrErr = 0;
+async function sendQr(chatId, dataUrl, caption, raw) {
   const m = /^data:image\/(png|jpeg);base64,(.+)$/i.exec(String(dataUrl || ""));
   if (!m) return null;
+  const cap = raw ? (caption || "") : btApply(caption || "");
+  // правленая подпись не принята (длиннее 1024, битая разметка) — шлём QR с исходной
+  if (!raw && cap !== (caption || "")) {
+    const r = await sendQr(chatId, dataUrl, cap, true);
+    return r || (_qrErr === 400 ? sendQr(chatId, dataUrl, caption, true) : null);
+  }
   const form = new FormData();
   form.append("chat_id", String(chatId));
-  form.append("caption", caption || "");
+  form.append("caption", cap);
   form.append("parse_mode", "HTML");
   form.append("photo", new Blob([Buffer.from(m[2], "base64")], { type: "image/" + m[1] }), "esim-qr.png");
   try {
@@ -140,6 +203,7 @@ async function sendQr(chatId, dataUrl, caption) {
     return r.data && r.data.result;
   } catch (e) {
     const d = e.response && e.response.data;
+    _qrErr = (e.response && e.response.status) || 0;
     console.error("tg sendPhoto:", (d && d.description) || e.message);
     return null;
   }
@@ -937,7 +1001,8 @@ function plural(n, forms) {
 const validEmail = (e) => /^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(String(e || "").trim());
 
 async function onText(chatId, text) {
-  const t = String(text || "").trim();
+  // кнопка нижнего меню с правленой надписью (esim-bot-texts.json) присылает новую надпись — вернём исходную
+  const t = btBack(String(text || "").trim());
   const st = getState(chatId);
 
   if (/^\/start/i.test(t)) {

@@ -39,9 +39,16 @@ const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "geo
   // ещё 18 стран под Google Ads (20.10.2026)
   "germany", "czech", "greece", "cyprus", "montenegro", "serbia", "hungary", "portugal", "netherlands",
   "maldives", "srilanka", "india", "philippines", "singapore", "dominicana", "southafrica", "tanzania", "korea",
-  "saudi", "morocco", "jordan", "nepal", "cambodia", "malaysia", "australia", "newzealand", "brazil", "argentina", "peru", "canada"]
-  // все остальные страны каталога (≈150) — одним списком, его же читает витрина (20.10.2026)
-  .concat((() => { try { return Object.keys(require("./public/esim-lands.json")).map((p) => p.slice(1)); } catch (_) { return []; } })());
+  "saudi", "morocco", "jordan", "nepal", "cambodia", "malaysia", "australia", "newzealand", "brazil", "argentina", "peru", "canada"];
+// все остальные страны каталога (≈150) — одним списком, его же читает витрина (20.10.2026).
+// Список правит Андрей Петров (esimdeploy) — читаем на лету, новая страна работает без перезапуска.
+const esimContent = require("./esim-content");
+const esimPage = esimContent.pageFile;   // страница eSIM: на доменах eSIM — версия Петрова (esim-site/), на остальных — public/
+const esimLands = esimContent.jsonWatch(esimContent.landsFile(), {});
+function isEsimLand(p) {
+  const k = String(p || "").replace(/\/+$/, "");
+  return /^\/[a-z0-9-]+$/.test(k) && Object.prototype.hasOwnProperty.call(esimLands(), k);
+}
 // Партнёрские кабинеты турагентств: voyomobile.ru/visazen и подобные (29.09.2026)
 const ESIM_PARTNER_PATHS = ["visazen"];
 // Ценовые страницы витрины: voyomobile.ru/67 — пакеты за 69 ₽ стоят 67 ₽ (02.10.2026)
@@ -60,7 +67,7 @@ app.use((req, res, next) => {
   if (!ESIM_ADM_HOSTS.has(h)) return next();
   if (req.path === "/" || req.path === "/adm") {
     res.set("Cache-Control", "no-store");
-    return res.sendFile(path.join(__dirname, "public", "esim-adm.html"));
+    return res.sendFile(esimPage(req, "esim-adm.html"));
   }
   if (req.path === "/robots.txt") return res.type("text/plain").send("User-agent: *\nDisallow: /\n");
   return next();
@@ -69,8 +76,31 @@ app.use((req, res, next) => {
   const h = String(req.hostname || "").toLowerCase();
   if (h.startsWith("www.") && ESIM_SITE_HOSTS.has(h.slice(4))) return res.redirect(301, "https://" + h.slice(4) + req.originalUrl);
   if (!ESIM_SITE_HOSTS.has(h)) return next();
-  if (ESIM_HOST_ALLOW.test(req.path)) return next();
+  if (ESIM_HOST_ALLOW.test(req.path) || isEsimLand(req.path)) return next();
   return res.redirect(301, "https://voyotravel.ru" + req.originalUrl);
+});
+// Значки сайтов eSIM (20.10.2026): на voyomobile.ru и .com свой набор — тот же знак, что встаёт
+// на экран iPhone. Лежит в public/vm/, его правит Андрей Петров (esimdeploy). Нет файла — общий.
+const ESIM_ICON_RE = /^\/(favicon(?:-\d+)?\.(?:ico|svg|png)|apple-touch-icon\.png)$/;
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const m = ESIM_ICON_RE.exec(req.path);
+  if (!m || !ESIM_SITE_HOSTS.has(String(req.hostname || "").toLowerCase())) return next();
+  const f = path.join(__dirname, "public", "vm", m[1]);
+  if (!fs.existsSync(f)) return next();
+  res.set("Cache-Control", "public, max-age=3600");
+  return res.sendFile(f);
+});
+// Скрипты и список стран, которые правит Петров, на доменах eSIM — из esim-site/ (см. esim-content.js)
+const ESIM_SITE_STATIC = /^\/(esim-brand\.js|esim-support\.js|esim-a2hs\.js|esim_country_search\.js|esim_meta\.js|esim-lands\.json|esim[a-z-]*\.html)$/;
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const m = ESIM_SITE_STATIC.exec(req.path);
+  if (!m || !esimContent.onEsimHost(req)) return next();
+  const f = path.join(esimContent.SITE_DIR, m[1]);
+  if (!fs.existsSync(f)) return next();
+  res.set("Cache-Control", "no-cache");
+  return res.sendFile(f);
 });
 // ── Мост к движку переводов: прокси /translate/api/*, страницы /translate*, шлюз Anthropic
 // с белым списком моделей и суточным бюджетом, почта для движка. ДО express.json — нужны сырые тела.
@@ -106,7 +136,7 @@ app.get("/", (req, res, next) => {
   // та же страница, что voyotravel.ru/esim. Её запросы и так ходят по /esim/*.
   if (ESIM_SITE_HOSTS.has(h)) {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    return res.sendFile(path.join(__dirname, "public", "esim.html"));
+    return res.sendFile(esimPage(req, "esim.html"));
   }
   next();
 });
@@ -115,7 +145,14 @@ app.get("/", (req, res, next) => {
 app.get(ESIM_LAND_PATHS.concat(ESIM_PRICE_PATHS, ESIM_BRAND_PATHS).map((c) => "/" + c), (req, res, next) => {
   if (!ESIM_SITE_HOSTS.has(String(req.hostname || "").toLowerCase())) return next();
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  return res.sendFile(path.join(__dirname, "public", "esim.html"));
+  return res.sendFile(esimPage(req, "esim.html"));
+});
+// …и страны из public/esim-lands.json (список меняется без перезапуска)
+app.use((req, res, next) => {
+  if ((req.method !== "GET" && req.method !== "HEAD") || !isEsimLand(req.path)) return next();
+  if (!ESIM_SITE_HOSTS.has(String(req.hostname || "").toLowerCase())) return next();
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  return res.sendFile(esimPage(req, "esim.html"));
 });
 // «Хау мач?» (/howmuch) — цена с заграничного ценника в рубли по фото.
 // Монтируется ДО express.static: адрес без слеша на конце должен уйти в 301,
