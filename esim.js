@@ -1558,7 +1558,11 @@ function publicOperator(op) { return REAL_NETWORKS[String(op || "").trim()] || "
 // Великобритании. 21.10.2026 клиентка с таким пакетом осталась во Франции без сети. Теперь витрина и бот
 // подписывают пакет «без Франции» и т. п. — по крупным странам, которых в нём нет (родительный падеж).
 const EU_MAJOR = { FR: "Франции", DE: "Германии", IT: "Италии", ES: "Испании", GB: "Великобритании", NL: "Нидерландов",
-  PT: "Португалии", GR: "Греции", CH: "Швейцарии", AT: "Австрии", CZ: "Чехии", PL: "Польши", BE: "Бельгии" };
+  PT: "Португалии", GR: "Греции", CH: "Швейцарии", AT: "Австрии", CZ: "Чехии", PL: "Польши", BE: "Бельгии",
+  // 21.10.2026, Андрей: «если в каких-то европейских пакетах нет другой страны — тоже подписывай»
+  HU: "Венгрии", HR: "Хорватии", SE: "Швеции", NO: "Норвегии", DK: "Дании", FI: "Финляндии", IE: "Ирландии",
+  RO: "Румынии", BG: "Болгарии", CY: "Кипра", MT: "Мальты", SI: "Словении", SK: "Словакии", LT: "Литвы",
+  LV: "Латвии", EE: "Эстонии", LU: "Люксембурга", IS: "Исландии" };
 function europeGaps(p) {
   const cc = (p && p.countries) || [];
   if (!/europe|европ/i.test(String((p && p.title) || "")) || cc.length < 10) return [];
@@ -2985,7 +2989,8 @@ function mount(app, opts) {
       }).catch((e) => { console.error("esim доктор:", e.message); return null; });
       if (seen && seen.reply) {
         console.log("esim доктор:", seen.diagnosis, "→", seen.action);
-        if (seen.action === "replace" && !AUTO_REPLACE) return false;   // ответ обещал замену — не отправляем, письмо оператору
+        // ответ обещал замену — не отправляем, зовём людей с причиной: решение за Петровым или Андреем
+        if (seen.action === "replace" && !AUTO_REPLACE) return { needHuman: "робот считает, что может понадобиться замена eSIM: " + String(seen.diagnosis || "").slice(0, 300) };
         if (seen.action === "replace") {
           const ok = await giftReplacement(chat, here.o, seen.reply).catch((e) => {
             console.error("esim замена:", e.message); return false;
@@ -3393,6 +3398,7 @@ function mount(app, opts) {
         const did = await secondLine(chat).catch((e) => {
           console.error("esim вторая линия:", e.message); return false;
         });
+        if (did && did.needHuman) { callOperator(chat, did.needHuman); return; }
         // вторая линия про поломку не помогла — возможно, это просто вопрос («можно через Сбер?»):
         // сначала даём ответить модели по знаниям о продукте, оператора зовём, только если она пас (12.10.2026)
         if (!did) {
@@ -4378,7 +4384,9 @@ function mount(app, opts) {
   const ABANDON_PROMO = String(process.env.ESIM_ABANDON_PROMO || "BONUS10").toUpperCase();
   const ABANDON_TO = process.env.ESIM_ABANDON_TO || "director@visa-sc.ru";
   const HELP_WA = "https://wa.me/79299435150";
-  const HELP_TG = "https://t.me/vsc_operator";
+  // Telegram помощи по eSIM — наш бот (кнопка «Поддержка»), а не @vsc_operator визового центра: там eSIM не
+  // отвечают (21.10.2026: клиентка писала туда с 9.10 без ответа). Решение Андрея.
+  const HELP_TG = "https://t.me/" + (process.env.ESIM_TG_USERNAME || "esimvoyo_bot");
 
   // Что сказал банк: NEW/FORM_SHOWED — до оплаты не дошёл, REJECTED/AUTH_FAIL —
   // карту не пропустили, DEADLINE_EXPIRED — форма протухла.
@@ -5823,8 +5831,11 @@ function mount(app, opts) {
         "POST /esim/api/sup/resend {order}": "Ещё раз отправить письмо «eSIM готова» с QR на почту покупки (только на неё). Ссылки на QR в ответах нет нарочно: контакт в чате не проверен.",
         "GET /esim/api/sup/find?q=": "Покупки по почте, телефону, номеру заказа, ICCID или номеру у поставщика + состояние eSIM.",
         "GET /esim/api/sup/kb": "Справочник поддержки: частые проблемы и как их решать (по нему отвечает робот первой линии).",
+        "GET /esim/api/sup/replace-options?order=&country=FR": "Подбор замены eSIM: исходный пакет (сколько дней и ГБ осталось, входит ли нужная страна) и подходящие пакеты eSIM Access по себестоимости.",
+        "POST /esim/api/sup/replace {order, productId, chat?, reason}": "Выдать замену за наш счёт — на ваше усмотрение. QR уходит клиенту на почту покупки и в чат (если чат его). Андрею и вам приходит письмо с себестоимостью.",
+        "POST /esim/api/sup/cancel {order, reason}": "Отменить замену, которую клиент ещё не скачал: деньги возвращаются на баланс поставщика сразу. Покупку клиента так не отменить — это возврат, его решает Андрей Комисаренко.",
       },
-      rules: "Возврат денег, замена eSIM за наш счёт, бонусы и промокоды — только Андрей: напишите ему на director@visa-sc.ru с номером заказа и сутью." });
+      rules: "Замену eSIM за наш счёт выдаёте на своё усмотрение (replace-options → replace). Возврат денег, бонусы и промокоды — только Андрей Комисаренко: напишите ему на director@visa-sc.ru с номером заказа и сутью." });
   });
 
   // справочник, по которому отвечает робот первой линии (собирается из прошлых обращений)
@@ -5940,6 +5951,118 @@ function mount(app, opts) {
     const r = await opts.sendMail({ to: o.email, subject: L.subject, html: L.html, text: L.text }).catch((e) => ({ ok: false, error: e.message }));
     console.log("esim sup: повтор письма с QR", o.id, "от", who);
     res.json({ success: !!(r && r.ok !== false), to: o.email });
+  });
+  // ── Замена eSIM за наш счёт — решение человека (21.10.2026, Андрей: «Петров пусть тоже имеет возможность
+  // менять сим-карты на своё усмотрение через свой код»). Робот замены больше не выдаёт сам (AUTO_REPLACE),
+  // поэтому подбор честный: пакеты «в день» сравниваются с «в день», срок — по оставшимся дням, страны —
+  // нужные клиенту (?country=FR). Выдаёт только eSIM Access (там 8000+ пакетов и мгновенная выдача).
+  // Неустановленную замену через трое суток гасит sweepUnusedGifts — деньги возвращаются на баланс.
+  const supFindOrder = (q) => readJson(ORDERS_FILE, []).find((x) => x.status === "done" && [x.id, x.mmOrderId].indexOf(String(q || "")) >= 0) || null;
+  async function supOriginal(o) {
+    const cat = await getCatalog(false);
+    const found = findProduct(cat, o.productId);
+    const item = (found && found.item) || null;
+    const u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId).catch(() => null);
+    const pk = ((u && u.packages) || [])[0] || {};
+    const exp = pk.expiresAt ? Date.parse(pk.expiresAt) : 0;
+    const daysLeft = exp ? Math.max(1, Math.ceil((exp - Date.now()) / 864e5)) : Number((item && item.days) || 0);
+    const countries = ((u && u.countries) && u.countries.length ? u.countries : (item && item.countries) || []);
+    return { cat, item, u, daysLeft, countries, leftGb: pk.totalMb ? Math.round((pk.totalMb - (pk.usedMb || 0)) / 102.4) / 10 : null };
+  }
+  app.get("/esim/api/sup/replace-options", async (req, res) => {
+    if (!supGate(req, res)) return;
+    try {
+      const o = supFindOrder(req.query.order);
+      if (!o) return res.status(404).json({ success: false, message: "оплаченный заказ не найден (order — наш номер или номер у поставщика)" });
+      const g = await supOriginal(o);
+      const need = String(req.query.country || "").toUpperCase().split(",").map((x) => x.trim()).filter((x) => /^[A-Z]{2}$/.test(x));
+      const want = need.length ? need : g.countries;
+      const it = g.item || {};
+      const perDay = it.daily ? Number(it.dataGb || 0) : 0;
+      const rate = await usdRate();
+      const list = (g.cat.products || []).filter((p) => isEaId(p.id) && !isTestProduct(p) &&
+        want.every((c) => (p.countries || []).indexOf(c) >= 0) && Number(p.days || 0) >= g.daysLeft &&
+        (it.daily
+          ? (p.unlimited || (p.daily ? Number(p.dataGb || 0) >= perDay : Number(p.dataGb || 0) >= perDay * g.daysLeft))
+          : (p.unlimited || Number(p.dataGb || 0) >= Math.max(1, g.leftGb != null ? g.leftGb : Number(it.dataGb || 0)))))
+        .sort((a, b) => Number(a.costUsd) - Number(b.costUsd)).slice(0, 12)
+        .map((p) => ({ productId: p.id, title: p.title, countries: (p.countries || []).length, without: europeGaps(p),
+          daily: !!p.daily, unlimited: !!p.unlimited, dataGb: p.dataGb, days: p.days, costUsd: p.costUsd, priceRub: retailFor(p, rate) }));
+      res.json({ success: true,
+        original: { order: o.id, label: o.label, paidRub: o.payTotalRub || o.priceRub, daysLeft: g.daysLeft, leftGb: g.leftGb,
+          countries: g.countries.length, covers: want.map((c) => ({ country: c, inPackage: g.countries.indexOf(c) >= 0 })),
+          installed: !!(g.u && g.u.installed), status: (g.u && g.u.status) || null },
+        need: want.length > 12 ? want.length + " стран исходного пакета" : want,
+        options: list,
+        note: "Выбор за вами (Андрей Петров или Андрей Комисаренко). Дальше: POST /esim/api/sup/replace {order, productId, chat?, reason}. " +
+          "Если страны клиента нет в исходном пакете — это не поломка: можно предложить купить пакет на эту страну или подарить его." });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+  app.post("/esim/api/sup/replace", express.json({ limit: "16kb" }), async (req, res) => {
+    const who = supGate(req, res); if (!who) return;
+    const b = req.body || {}, by = SUP_NAME[who] || who;
+    try {
+      const o = supFindOrder(b.order);
+      if (!o) return res.status(404).json({ success: false, message: "оплаченный заказ не найден" });
+      const cat = await getCatalog(false);
+      const found = findProduct(cat, String(b.productId || ""));
+      const plan = found && found.item;
+      if (!plan || !isEaId(plan.id) || isTestProduct(plan)) return res.status(400).json({ success: false, message: "productId — пакет eSIM Access из replace-options" });
+      const reason = String(b.reason || "").slice(0, 300) || "замена по решению оператора";
+      const fresh = await esimaccess.createOrder(plan.id);
+      const orders = readJson(ORDERS_FILE, []);
+      const gift = {
+        id: crypto.randomBytes(6).toString("hex"), ts: Date.now(), status: "done",
+        productId: plan.id, label: "eSIM " + (plan.title || "") + " · замена",
+        priceRub: 0, listPriceRub: 0, email: o.email || null, phone: o.phone || null,
+        custKey: o.custKey || normEmail(o.email) || null, tgChatId: o.tgChatId || null,
+        base: o.base || BASE_URL, paidAt: Date.now(), src: "esimaccess",
+        mmOrderId: fresh.orderId, iccid: fresh.iccid || null, costUsd: plan.costUsd || null,
+        giftFor: o.id, giftReason: reason, giftBy: by, brand: o.brand,
+      };
+      gift.myUrl = myUrlFor(gift, fresh.orderId);
+      orders.unshift(gift); writeJson(ORDERS_FILE, orders);
+      console.log("esim sup: " + by + " выдал замену", gift.mmOrderId, "к заказу", o.id);
+      const howTo = "Установите её по Wi-Fi: Настройки, Сотовая связь, Добавить eSIM, отсканируйте QR со страницы. " +
+        "Выберите новую линию в «Сотовые данные» и включите для неё «Роуминг данных».";
+      if (gift.email && opts && opts.sendMail) {
+        opts.sendMail({ to: gift.email, subject: "VOYO mobile: ваша новая eSIM", replyTo: support.TO,
+          text: "Здравствуйте! Выдали вам новую eSIM за наш счёт: " + (plan.title || "") + ".\n\nQR и остаток: " + gift.myUrl + "\n\n" + howTo + "\n\nVOYO mobile" })
+          .catch((e) => console.error("esim sup replace mail:", e.message));
+      }
+      // в чат ссылку кладём, только если чат точно этого покупателя (открыт со страницы его eSIM или его почта)
+      const chat = b.chat ? support.findChat(b.chat) : null;
+      let toChat = false;
+      if (chat && ((chat.page && chat.page.indexOf(o.mmOrderId) >= 0) || (chat.contact && o.email && normEmail(chat.contact) === normEmail(o.email)) || (chat.tgChatId && chat.tgChatId === o.tgChatId))) {
+        support.operatorMessage(chat.id, "Выдали вам новую eSIM за наш счёт: " + (plan.title || "") + ".\n\nQR: " + gift.myUrl + "\n\n" + howTo, by);
+        toChat = true;
+      }
+      support.queueMail({
+        subject: "VOYO eSIM: " + by + " выдал замену клиенту",
+        text: by + " выдал замену за наш счёт.\n\nКлиент: " + (o.email || "—") + "\nБыло: " + (o.label || "—") + " (" + o.mmOrderId + ")\n" +
+          "Выдали: " + (plan.title || "") + " (" + gift.mmOrderId + "), себестоимость $" + (plan.costUsd || "?") + "\nПричина: " + reason +
+          (chat ? "\nЧат: " + chat.id : ""),
+      });
+      res.json({ success: true, order: gift.id, providerOrder: gift.mmOrderId, page: gift.myUrl, costUsd: plan.costUsd, sentTo: { email: !!gift.email, chat: toChat } });
+    } catch (e) { console.error("esim sup replace:", e.message); res.status(500).json({ success: false, message: e.message }); }
+  });
+  // Отмена eSIM, которую ещё не скачали на телефон: eSIM Access сразу возвращает деньги на баланс.
+  app.post("/esim/api/sup/cancel", express.json({ limit: "8kb" }), async (req, res) => {
+    const who = supGate(req, res); if (!who) return;
+    const by = SUP_NAME[who] || who;
+    try {
+      const all = readJson(ORDERS_FILE, []);
+      const o = all.find((x) => x.status === "done" && [x.id, x.mmOrderId].indexOf(String((req.body || {}).order || "")) >= 0);
+      if (!o) return res.status(404).json({ success: false, message: "оплаченный заказ не найден" });
+      if (!isEaId(o.mmOrderId)) return res.json({ success: false, message: "отмена через ручку — только eSIM Access; остальное — Андрею" });
+      if (!o.giftFor && Number(o.payTotalRub || o.priceRub || 0) > 0)
+        return res.json({ success: false, message: "это покупка клиента за деньги: её отмена — это возврат, решает Андрей Комисаренко" });
+      await esimaccess.cancel(o.mmOrderId);   // откажет, если профиль уже скачан
+      o.status = "canceled"; o.canceledAt = Date.now(); o.cancelNote = "отменил " + by + ": " + String((req.body || {}).reason || "").slice(0, 200);
+      writeJson(ORDERS_FILE, all);
+      console.log("esim sup: " + by + " отменил", o.mmOrderId);
+      res.json({ success: true, canceled: o.mmOrderId, refund: "eSIM Access возвращает себестоимость на баланс сразу" });
+    } catch (e) { res.json({ success: false, message: e.installed ? "профиль уже скачан на телефон — отменить нельзя" : e.message }); }
   });
   app.get("/esim/api/sup/find", async (req, res) => {
     if (!supGate(req, res)) return;

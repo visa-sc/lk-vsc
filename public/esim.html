@@ -196,6 +196,9 @@
   /* Зелёная сноска: пакет советуем для российских сервисов в Китае (isRuServicesPick в esim.js) */
   /* Сноска идёт ПОД ценой и не смещает её: остаток высоты карточки уходит вниз */
   .pk .rupick{margin-top:10px;margin-bottom:0;}
+  .nogo{color:#c2410c;font-weight:600;white-space:nowrap;}
+  .nogo-m{margin:2px 0 12px;padding:8px 11px;border-radius:10px;background:#fff4e5;color:#9a3412;font-size:13.5px;line-height:1.4;}
+  .nogo-m[hidden]{display:none;}
   .pk .bot ~ .rupick{margin-bottom:0;}
   .rupick{display:flex;gap:6px;align-items:flex-start;margin-top:9px;padding:6px 10px;border-radius:10px;
     background:#e9f7ef;border:1px solid #c6e9d4;color:#1f7a4a;font-size:11.5px;font-weight:600;line-height:1.35;text-align:left;letter-spacing:-.005em;}
@@ -593,6 +596,7 @@
   <div class="modal" id="modal">
     <button class="x" id="mClose" type="button">✕</button>
     <div class="mh"><div class="fl" id="mFlag"></div><div><div class="t" id="mTitle"></div><div class="s" id="mSub"></div></div></div>
+    <div class="nogo-m" id="mNoGo" hidden></div>
     <div class="rupick" id="mRuPick" hidden>Рекомендуем для Битрикс, amoCRM и др. российских сервисов в Китае</div>
     <div class="specs" id="mSpecs"></div>
     <div class="cov" id="mCov"></div>
@@ -952,16 +956,17 @@
     if(!g || g < 0.5) return "";
     return '<span class="pgb">'+RU(p.priceRub/g)+' ₽/ГБ</span>';
   }
+  // Пакет «Europe» без какой-то страны (в «Europe (35 areas)» нет Франции) — видно сразу на карточке (21.10.2026)
+  function nogoTxt(p){ return (p.without && p.without.length) ? ' <b class="nogo">❗без '+esc(p.without.join(", "))+'</b>' : ""; }
   function pkCard(p){
     var multi = p.countries.length > 1;
     var head, sub;
     if(current === "EU-REGION" || (multi && !current)){ head = "Европа и рядом"; sub = nStran(p.countries.length); }
     else { head = cname(current||p.countries[0]); sub = multi ? ("+ ещё "+nStran(p.countries.length-1)) : (p.operator||""); }
-    if (p.without && p.without.length) sub = (sub ? sub + ", " : "") + "без " + p.without.join(", ");   // «Europe (35 areas)» без Франции (21.10.2026)
     var gb = p.unlimited ? '∞' : (p.dataGb!=null ? GBN(p.dataGb) : "—");
     var card = el('<div class="pk">'+
       '<div class="top"><span class="fl">'+flag(multi&&current!=="EU-REGION"?(current||p.countries[0]):(multi?"EU-REGION":p.countries[0]))+'</span>'+
-      '<span class="cn">'+esc(head)+'<small>'+esc(sub)+'</small></span>'+
+      '<span class="cn">'+esc(head)+'<small>'+esc(sub)+nogoTxt(p)+'</small></span>'+
       (p.fiveG?'<span class="badge5g">5G</span>':"")+'</div>'+
       '<div class="mid"><span class="gb">'+gb+'<small>'+(p.unlimited?"безлимит":(p.daily?'ГБ<span class="perday">в день</span>':"ГБ"))+'</small></span>'+
       '<span class="days">· '+RU(p.days)+' дн.</span>'+(p.topup?'<span class="ext" title="Можно докупить трафик на эту же eSIM">+ продление</span>':'')+'</div>'+
@@ -1364,7 +1369,9 @@
     var gb = p.unlimited ? "Безлимит" : (GBN(p.dataGb)+(p.daily?' ГБ<span class="perday">в день</span>':" ГБ"));
     var where = current && current!=="EU-REGION" ? cname(current) : (multi ? nStran(p.countries.length) : cname(p.countries[0]));
     document.getElementById("mTitle").innerHTML = esc(where) + " · " + gb;
-    document.getElementById("mSub").textContent = (p.title || "") + (p.without && p.without.length ? " · без "+p.without.join(", ") : "") + (p.operator ? " · сеть "+p.operator : "");
+    document.getElementById("mSub").textContent = (p.title || "") + (p.operator ? " · сеть "+p.operator : "");
+    var mng = document.getElementById("mNoGo");
+    if (mng) { mng.hidden = !(p.without && p.without.length); if (!mng.hidden) mng.textContent = "❗ Без " + p.without.join(", ") + ": там этот пакет не работает. Если едете туда, выберите пакет, где эта страна есть."; }
     var mrp = document.getElementById("mRuPick");
     mrp.hidden = !p.note; if(p.note) mrp.textContent = p.note;
     document.getElementById("mSpecs").innerHTML =
