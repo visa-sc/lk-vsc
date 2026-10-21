@@ -1543,6 +1543,14 @@ function checkSig(orderId, t) {
 // Письмо клиенту VSC mobile (карточка с brand: "vsc"): знак VSC вместо VOYO, ссылки
 // на страницы eSIM с ?b=vsc, витрина — voyomobile.ru/vsc. Письма директору не трогаем.
 const OUR_URL_RE = /https?:\/\/(?:[a-z0-9-]+\.)?(?:voyotravel\.ru|voyomobile\.ru|voyomobile\.com|voyovoyo\.ru)(\/[^\s"'<>]*)?/g;
+// Название поставщика клиенту не показываем (21.10.2026, Андрей: «на карточках видно название нашего
+// поставщика eSIM Access — убери с витрины отовсюду»). В поле operator у пакетов поставщики пишут себя
+// или перепродавца (eSIM Access, Airalo, Sparks, eSIMGo, NextLink, TSimTech…), а не сеть. Клиенту
+// уходит только настоящая сотовая сеть из белого списка, остальное — пусто (витрина, «Моя eSIM» и бот
+// пустое поле просто не выводят). Внутри сервера и в админке operator прежний.
+const REAL_NETWORKS = { "3": "Three", "Three": "Three", "Vinaphone": "Vinaphone", "Yettel": "Yettel", "Bouygues": "Bouygues",
+  "U Mobile": "U Mobile", "IIJ": "IIJ", "True": "True", "Etisalat": "Etisalat" };
+function publicOperator(op) { return REAL_NETWORKS[String(op || "").trim()] || ""; }
 // остальные страницы стран (≈150) — общим списком с витриной, см. public/esim-lands.json
 // список правит Андрей Петров (esimdeploy) — читаем на лету
 const esimContent = require("./esim-content");
@@ -1612,7 +1620,7 @@ function mount(app, opts) {
         .filter((p) => land || adm || !p.landOnly)
         .map((p) => {
         const o = {
-          id: p.id, title: p.title || "", operator: p.operator || "", countries: p.countries || [],
+          id: p.id, title: p.title || "", operator: adm ? (p.operator || "") : publicOperator(p.operator), countries: p.countries || [],
           dataGb: p.dataGb, unlimited: !!p.unlimited, daily: !!p.daily, days: p.days,
           fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: tierRub(retailFor(p, rate), req.query.tier),
           note: packNote(p), ruPick: isRuServicesPick(p), topup: canTop(p),
@@ -1731,7 +1739,7 @@ function mount(app, opts) {
         return res.json({
           success: true, pay: tbank.ready(), you: owner || readSession(req),
           conv: convPayload(orderByProviderId(o)), seat: seatOf(o), acc: owner ? { e: owner, t: signEmail(owner) } : null,
-          order: { id: o, state: "Completed", title: view.title, operator: view.operator, qrDataUrl: view.qrDataUrl,
+          order: { id: o, state: "Completed", title: view.title, operator: publicOperator(view.operator), qrDataUrl: view.qrDataUrl,
             lpa: view.lpa, activationCode: view.activationCode, smdp: view.smdp, apn: view.apn, iccid: view.iccid },
           usage: markExpiry(usage), topups: (usage && usage.expired) ? [] : topups,
         });
@@ -1785,7 +1793,7 @@ function mount(app, opts) {
         success: true, pay: tbank.ready(), you: owner || readSession(req), seat: seatOf(o),
         acc: owner ? { e: owner, t: signEmail(owner) } : null,
         order: {
-          id: o, state: (order && order.orderState) || null, title: li.title || "", operator: li.providerName || "",
+          id: o, state: (order && order.orderState) || null, title: li.title || "", operator: publicOperator(li.providerName),
           qrDataUrl: det.QR_CODE || null, lpa: det.LOCAL_PROFILE_ASSISTANT || null,
           activationCode: det.ACTIVATION_CODE || null, smdp: det.SMDP_ADDRESS || null,
           apn: det.ACCESS_POINT_NAME || null, iccid: det.ICCID || null,
