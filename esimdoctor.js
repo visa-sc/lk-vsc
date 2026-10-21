@@ -151,6 +151,13 @@ function dossier({ messages, orders, states, ua, ip, country, tried }) {
       (s.u && s.u.suspended ? "; ПРИОСТАНОВЛЕН У ПОСТАВЩИКА" : "") +
       (s.u && s.u.deleted ? "; статус профиля DELETED: eSIM удалена с телефона, пакет цел, ставится заново по тому же QR на том же телефоне" : ""));
     // каждый пакет на профиле отдельно: основной и продления бывают на разные страны
+    // где пакет работает — по данным поставщика; страны, которой нет в списке, пакет не покрывает
+    const cc = (s.u && s.u.countries) || [];
+    if (cc.length) {
+      let rn = null; try { rn = new Intl.DisplayNames(["ru"], { type: "region" }); } catch (_) {}
+      L.push("     РАБОТАЕТ ТОЛЬКО В ЭТИХ СТРАНАХ (" + cc.length + "): " + cc.map((c) => (rn ? rn.of(c) : c)).join(", ") +
+        ". Если человек сейчас в стране не из этого списка, сети не будет: дело не в настройках, а в покрытии пакета.");
+    }
     packs.forEach((p) => {
       L.push("     • " + (p.name || "пакет") + ": " +
         (p.activatedAt ? "начат " + String(p.activatedAt).slice(0, 10) : "ещё не начат") +

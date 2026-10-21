@@ -490,7 +490,8 @@ async function showPack(chatId, productId, messageId) {
   const multi = p.countries.length > 1;
   const where = multi ? p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : cname(p.countries[0]);
   let text = "<b>" + esc(where) + " · " + gbOf(p) + "</b>\n" +
-    "<i>" + esc(p.title || "") + (p.operator ? " · сеть " + esc(p.operator) : "") + "</i>\n\n" +
+    "<i>" + esc(p.title || "") + (p.operator ? " · сеть " + esc(p.operator) : "") + "</i>\n" +
+    (p.without && p.without.length ? "⚠️ Без " + esc(p.without.join(", ")) + ": там этот пакет не работает\n" : "") + "\n" +
     "Интернет: <b>" + gbOf(p) + "</b>\n" +
     "Срок: <b>" + RU(p.days) + " дн.</b> с первого выхода в интернет\n" +
     "Сеть: <b>" + (p.fiveG ? "5G / 4G LTE" : "4G LTE") + "</b>\n" +

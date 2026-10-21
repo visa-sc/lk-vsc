@@ -871,6 +871,9 @@ const esimaccess = {
       // по тому же QR на том же телефоне (на другой — нельзя). 19.10.2026
       deleted: st === "DELETED" && String(e.esimStatus || "").toUpperCase() !== "CANCEL",
       daily: /\/\s*day/i.test(String(pk.packageName || "")),
+      // страны пакета по данным поставщика: робот сверяет с тем, где человек (21.10.2026: «Europe (35 areas)»
+      // без Франции, клиентка во Франции без сети, а робот выдал замену такого же пакета)
+      countries: String(pk.locationCode || "").split(",").map((x) => x.trim()).filter((x) => /^[A-Z]{2}$/.test(x)),
       packages: totalMb ? [{
         name: pk.packageName || "", totalMb, usedMb, remainingMb: Math.max(0, totalMb - usedMb),
         // до активации expiredTime — крайний срок установки, а не конец пакета
@@ -1551,6 +1554,16 @@ const OUR_URL_RE = /https?:\/\/(?:[a-z0-9-]+\.)?(?:voyotravel\.ru|voyomobile\.ru
 const REAL_NETWORKS = { "3": "Three", "Three": "Three", "Vinaphone": "Vinaphone", "Yettel": "Yettel", "Bouygues": "Bouygues",
   "U Mobile": "U Mobile", "IIJ": "IIJ", "True": "True", "Etisalat": "Etisalat" };
 function publicOperator(op) { return REAL_NETWORKS[String(op || "").trim()] || ""; }
+// Пакеты «Europe» покрывают не всю Европу: в «Europe (35 areas)» нет Франции, в части — Швейцарии или
+// Великобритании. 21.10.2026 клиентка с таким пакетом осталась во Франции без сети. Теперь витрина и бот
+// подписывают пакет «без Франции» и т. п. — по крупным странам, которых в нём нет (родительный падеж).
+const EU_MAJOR = { FR: "Франции", DE: "Германии", IT: "Италии", ES: "Испании", GB: "Великобритании", NL: "Нидерландов",
+  PT: "Португалии", GR: "Греции", CH: "Швейцарии", AT: "Австрии", CZ: "Чехии", PL: "Польши", BE: "Бельгии" };
+function europeGaps(p) {
+  const cc = (p && p.countries) || [];
+  if (!/europe|европ/i.test(String((p && p.title) || "")) || cc.length < 10) return [];
+  return Object.keys(EU_MAJOR).filter((c) => cc.indexOf(c) < 0).map((c) => EU_MAJOR[c]);
+}
 // остальные страницы стран (≈150) — общим списком с витриной, см. public/esim-lands.json
 // список правит Андрей Петров (esimdeploy) — читаем на лету
 const esimContent = require("./esim-content");
@@ -1623,7 +1636,7 @@ function mount(app, opts) {
           id: p.id, title: p.title || "", operator: adm ? (p.operator || "") : publicOperator(p.operator), countries: p.countries || [],
           dataGb: p.dataGb, unlimited: !!p.unlimited, daily: !!p.daily, days: p.days,
           fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: tierRub(retailFor(p, rate), req.query.tier),
-          note: packNote(p), ruPick: isRuServicesPick(p), topup: canTop(p),
+          note: packNote(p), ruPick: isRuServicesPick(p), topup: canTop(p), without: europeGaps(p),
         };
         if (adm) { o.src = p.src || "mobimatter"; o.costUsd = p.costUsd; o.costRub = costFor(p, rate); o.marginRub = o.priceRub - o.costRub; }
         return o;
@@ -2946,6 +2959,11 @@ function mount(app, opts) {
   }
   setInterval(() => { sweepUnusedGifts().catch((e) => console.error("esim подарки:", e.message)); }, 6 * 3600e3);
 
+  // Автоматическая замена eSIM за наш счёт ВЫКЛЮЧЕНА (21.10.2026, Андрей: «она не просила замену… не надо
+  // такие замены делать, надо решить проблему»). Робот выдал клиентке, у которой 3 ГБ в день, пакет 3 ГБ
+  // на весь срок (подбор не умел пакеты «в день»). Теперь робот решает настройкой, а если не вышло —
+  // письмо оператору. Вернуть — ESIM_AUTO_REPLACE=1 в .env (и сперва починить pickReplacement для «в день»).
+  const AUTO_REPLACE = process.env.ESIM_AUTO_REPLACE === "1";
   async function secondLine(chat) {
     const mine = await ordersByContact(chat.contact, chat.page, chat.vid);
     if (!mine.length) return false;
@@ -2960,12 +2978,14 @@ function mount(app, opts) {
       const tried = [];
       if (chat.autoDiag) tried.push("первый автоматический разбор человеку уже отправляли");
       if (chat.autoFix1) tried.push("подсказку про две включённые линии уже давали");
+      if (!AUTO_REPLACE) tried.push("новую eSIM взамен мы НЕ выдаём: не обещай замену и другую eSIM, решай настройкой телефона (роуминг данных, ручной выбор сети, APN, перезагрузка), а если не помогло — передай оператору (action escalate)");
       const seen = await doctor.diagnose({
         messages: chat.messages, orders: mine, states: st,
         ua: chat.ua, ip: chat.ip, tried, refundAllowed: false,
       }).catch((e) => { console.error("esim доктор:", e.message); return null; });
       if (seen && seen.reply) {
         console.log("esim доктор:", seen.diagnosis, "→", seen.action);
+        if (seen.action === "replace" && !AUTO_REPLACE) return false;   // ответ обещал замену — не отправляем, письмо оператору
         if (seen.action === "replace") {
           const ok = await giftReplacement(chat, here.o, seen.reply).catch((e) => {
             console.error("esim замена:", e.message); return false;
@@ -3007,13 +3027,13 @@ function mount(app, opts) {
         "1. Настройки, Сотовая связь: выключите старую линию eSIM.\n" +
         "2. Для новой включите «Роуминг данных» и выберите её в пункте «Сотовые данные».\n" +
         "3. Режим полёта на 15 секунд и обратно.\n\n" +
-        "Через минуту интернет появится. Если нет, напишите сюда: выдадим eSIM другого оператора за наш счёт.",
+        "Через минуту интернет появится. Если нет, напишите сюда, разберёмся.",
         "autoFix1");
       return true;
     }
 
     // Шаг 2 (и шаг 1, если подсказать нечем): бесплатная замена другим оператором
-    if (!here.active || here.left < 20) {
+    if (AUTO_REPLACE && (!here.active || here.left < 20)) {
       const ok = await giftReplacement(chat, here.o).catch((e) => {
         console.error("esim замена:", e.message); return false;
       });

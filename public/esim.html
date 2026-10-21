@@ -957,6 +957,7 @@
     var head, sub;
     if(current === "EU-REGION" || (multi && !current)){ head = "Европа и рядом"; sub = nStran(p.countries.length); }
     else { head = cname(current||p.countries[0]); sub = multi ? ("+ ещё "+nStran(p.countries.length-1)) : (p.operator||""); }
+    if (p.without && p.without.length) sub = (sub ? sub + ", " : "") + "без " + p.without.join(", ");   // «Europe (35 areas)» без Франции (21.10.2026)
     var gb = p.unlimited ? '∞' : (p.dataGb!=null ? GBN(p.dataGb) : "—");
     var card = el('<div class="pk">'+
       '<div class="top"><span class="fl">'+flag(multi&&current!=="EU-REGION"?(current||p.countries[0]):(multi?"EU-REGION":p.countries[0]))+'</span>'+
@@ -1363,7 +1364,7 @@
     var gb = p.unlimited ? "Безлимит" : (GBN(p.dataGb)+(p.daily?' ГБ<span class="perday">в день</span>':" ГБ"));
     var where = current && current!=="EU-REGION" ? cname(current) : (multi ? nStran(p.countries.length) : cname(p.countries[0]));
     document.getElementById("mTitle").innerHTML = esc(where) + " · " + gb;
-    document.getElementById("mSub").textContent = (p.title || "") + (p.operator ? " · сеть "+p.operator : "");
+    document.getElementById("mSub").textContent = (p.title || "") + (p.without && p.without.length ? " · без "+p.without.join(", ") : "") + (p.operator ? " · сеть "+p.operator : "");
     var mrp = document.getElementById("mRuPick");
     mrp.hidden = !p.note; if(p.note) mrp.textContent = p.note;
     document.getElementById("mSpecs").innerHTML =
