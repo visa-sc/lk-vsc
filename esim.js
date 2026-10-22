@@ -2021,15 +2021,18 @@ function mount(app, opts) {
     const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(order.email) + "&t=" + signEmail(order.email);
     const many = items.length > 1;
     const tipsCN = isChinaLabel(order.label);
-    const btn = (href, text) => '<a href="' + href + '" style="display:inline-block;background:#3589bd;color:#fff;' +
-      'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">' + text + '</a>';
+    // 22.10.2026: кнопку в письме клиентка не заметила — теперь крупная, во всю ширину, со стрелкой
+    const btn = (href, text) => '<a href="' + href + '" style="display:block;text-align:center;background:#2c7fb0;color:#ffffff;' +
+      'text-decoration:none;font-weight:800;font-size:18px;line-height:1.3;padding:18px 22px;border-radius:14px;' +
+      'box-shadow:0 8px 20px -10px rgba(44,127,176,.8)">' + text + ' &rarr;</a>';
     // несколько eSIM: сразу видно, какую ставить себе, а какие переслать спутникам
     const seatName = (i) => (i ? "для спутника" : "для вас");
     const list = many
       ? '<table style="border-collapse:collapse;margin:0 0 18px">' + items.map((it, i) =>
           '<tr><td style="padding:0 12px 10px 0;font-size:14px;color:#3a4356;white-space:nowrap"><b>eSIM ' + (i + 1) + '</b> · ' + seatName(i) + '</td>' +
-          '<td style="padding:0 0 10px">' + btn(it.myUrl, "Открыть QR-код") + '</td></tr>').join("") + '</table>'
-      : '<p style="margin:0 0 18px">' + btn(items[0].myUrl, "Открыть QR-код и остаток") + '</p>';
+          '<td style="padding:0 0 10px;min-width:220px">' + btn(it.myUrl, "Установить eSIM " + (i + 1)) + '</td></tr>').join("") + '</table>'
+      : '<p style="font-size:14px;color:#3a4356;margin:0 0 10px">Нажмите кнопку, чтобы установить eSIM. На iPhone на открывшейся странице будет кнопка установки в один тап, там же QR-код.</p>' +
+        '<div style="margin:0 0 18px">' + btn(items[0].myUrl, "Установить eSIM") + '</div>';
     // VOYO mobile на экране телефона: одна строка под устройство, с которого купили (обе, если не знаем)
     const homeIos = "iPhone, Safari: три точки внизу справа → «Поделиться» → «На экран „Домой“» → «Добавить»";
     const homeAnd = "Android, Chrome: три точки справа вверху → «Установить приложение» или «Добавить на гл. экран»";
@@ -2055,7 +2058,7 @@ function mount(app, opts) {
         '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">' + esc(order.label || "") + (many ? " · " + items.length + " шт." : "") + '</p>' +
         list +
         '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">' + (many ? "<b>Каждая eSIM ставится на свой телефон.</b> eSIM 1 поставьте себе, ссылки на остальные перешлите спутникам: каждый откроет свою и установит у себя. " : "") +
-        'Установка: Настройки → Сотовая связь → Добавить eSIM → сканировать QR. ' +
+        'Установка на iPhone: на странице по кнопке выше нажмите «Установить eSIM на этот iPhone». Или Настройки → Сотовая связь → Добавить eSIM → сканировать QR с другого экрана. ' +
         'Сделайте это дома по Wi-Fi, до вылета. В поездке включите «Роуминг данных» для линии eSIM.</p>' +
         '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px;padding:10px 14px;' +
         'background:#fdf6e7;border:1px solid #f0e2c0;border-radius:12px">Обратите внимание: ' +
