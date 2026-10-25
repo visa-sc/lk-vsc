@@ -780,7 +780,17 @@ function mount(app, deps) {
       if (cfg.pbx && cfg.pbx.domain && cfg.pbx.key) {
         try {
           rlog("запрашиваю входящие OnlinePBX за " + hours + " ч");
-          const calls = await pbxCalls(cfg.pbx, fromTs, toTs);
+          // OnlinePBX иногда отвечает 502 на минуту-другую (25.10.2026 так пропали звонки
+          // за 24.10). Три попытки с паузой в минуту, прежде чем записать ошибку.
+          let calls = null;
+          for (let att = 1; att <= 3; att++) {
+            try { calls = await pbxCalls(cfg.pbx, fromTs, toTs); break; }
+            catch (e) {
+              if (att === 3) throw e;
+              rlog("OnlinePBX: " + e.message + " — повтор через минуту (" + att + "/3)");
+              await new Promise((r) => setTimeout(r, 60000));
+            }
+          }
           const uniq = new Map();
           for (const c of calls) {
             const k = last10(c.caller);
@@ -1037,7 +1047,17 @@ function mount(app, deps) {
     let ms = ((((4 - msk.getUTCHours() + 24) % 24) * 60 + (30 - msk.getUTCMinutes())) * 60 - msk.getUTCSeconds()) * 1000;
     if (ms <= 0) ms += 24 * 3600000;
     setTimeout(() => {
-      runRecon({ day: "yesterday", by: "ночное расписание" }).catch((e) => console.error("phonetest night recon:", e.message));
+      const day = mskDayStr(Date.now() - 86400000);
+      // Если ночная сверка закончилась с ошибкой (АТС или сайт не ответили) — пересчитать
+      // этот же день через час, не больше двух раз: сбои у внешних сервисов обычно короткие.
+      const redo = (n) => {
+        const r = (store().reconDays || {})[day];
+        if (!r || !r.errors || n > 2) return;
+        setTimeout(() => {
+          runRecon({ day, by: "повтор после ошибки (" + n + ")" }).then(() => redo(n + 1)).catch((e) => console.error("phonetest recon redo:", e.message));
+        }, 3600000);
+      };
+      runRecon({ day: "yesterday", by: "ночное расписание" }).then(() => redo(1)).catch((e) => console.error("phonetest night recon:", e.message));
       scheduleReconNightly();
     }, ms);
     return ms;
