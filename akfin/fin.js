@@ -379,7 +379,9 @@ function mount(app, deps) {
       .sort((a, b) => b.uses - a.uses);
     const seen = new Set(custom.map((c) => c.name.toLowerCase()));
     const frequent = custom.concat((sd.frequent || []).filter((f) => !seen.has(f.name.toLowerCase()))).slice(0, 60);
-    const today = todayMsk();
+    // «сегодня» присылает телефон (его часовой пояс); без параметра — по Москве, как раньше
+    const qd = String(req.query.today || "");
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(qd) ? qd : todayMsk();
     const entries = st.entries.filter((e) => e.date === today && !e.deleted);
     res.json({ success: true, frequent, categories: sd.categories || [], today, entries, total: st.entries.filter((e) => !e.deleted).length });
   });

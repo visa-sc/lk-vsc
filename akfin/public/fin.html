@@ -207,6 +207,16 @@ input.pill::placeholder{color:var(--faint)}
 const LS_TOKEN = "finToken";
 let token = localStorage.getItem(LS_TOKEN) || "";
 let FREQ = [], TODAY = "";
+// «Сегодня» — по часам ТЕЛЕФОНА, а не по Москве (Андрей, 26.10: в Лос-Анджелесе
+// вечерние расходы по МСК уже уезжали в завтрашний день). Часовой пояс берётся сам,
+// где бы телефон ни был. Сутки меняются в 3:00 ночи, а не в полночь: всё до трёх
+// часов — ещё вчерашний день.
+const DAY_START_HOUR = 3;
+function localToday() {
+  const d = new Date(), p = (n) => String(n).padStart(2, "0");
+  if (d.getHours() < DAY_START_HOUR) d.setDate(d.getDate() - 1); // по календарю, переход на летнее время не сбивает
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
 let daysOpen = false, recordsOpen = false;
 
 const $ = (id) => document.getElementById(id);
@@ -428,6 +438,13 @@ function clearForm() {
 }
 
 // ── сохранение ──
+// Дату не трогали руками — берём сегодняшнюю по телефону В МОМЕНТ «Внести»
+// (приложение могло висеть открытым через полночь); выбранную вручную — как есть.
+function dateForSave() {
+  const el = $("date");
+  if (!el.value || el.value === el.dataset.auto) { const t = localToday(); el.value = t; el.dataset.auto = t; TODAY = t; }
+  return el.value;
+}
 async function saveEntry() {
   const raw = $("amount").value.trim();
   const expr = isExpr(raw);
@@ -440,7 +457,7 @@ async function saveEntry() {
   if (!(amount > 0) && !flag) { toast("Заполни сумму и название"); return; }
   const payload = {
     name, amount: amount > 0 ? Math.round(amount * 100) / 100 : 0, formula, bucket,
-    category: $("category").value, date: $("date").value, flag, comment: $("comment").value.trim(),
+    category: $("category").value, date: dateForSave(), flag, comment: $("comment").value.trim(),
     cid: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2)),
     at: Date.now(),
   };
@@ -632,7 +649,7 @@ function renderToday(r) {
 async function refresh() {
   let r;
   try {
-    r = await api("/fin/api/state");
+    r = await api("/fin/api/state?today=" + localToday());
     if (!r.success) return;
     localStorage.setItem("finCache", JSON.stringify(r));
   } catch (e) {
@@ -642,7 +659,7 @@ async function refresh() {
     if (!r) { renderToday(null); return; }
   }
   lastState = r;
-  FREQ = r.frequent || []; TODAY = r.today;
+  FREQ = r.frequent || []; TODAY = localToday();
   if (!$("date").value || $("date").value === $("date").dataset.auto) {
     $("date").value = TODAY; $("date").dataset.auto = TODAY;
   }
