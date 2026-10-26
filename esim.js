@@ -5829,6 +5829,7 @@ function mount(app, opts) {
     res.json({ success: true, about: "Поддержка VOYO mobile / VSC mobile: чаты (сайт и телеграм-бот) и обращения с формы «Не получается подключить». Контакты клиентов видны — никому их не передавать.",
       auth: "Заголовок X-Sup-Key: <ключ>. Не чаще 60 запросов в минуту.",
       endpoints: {
+        "GET /esim/api/sup/history?q=&days=60": "ИСТОРИЯ КЛИЕНТОВ — смотреть первым делом: по каждому человеку покупки, обращения, переписка, решения оператора, возвраты, замены и итог (status). q — телефон, почта, номер заказа или слово.",
         "GET /esim/api/sup/inbox": "Что ждёт человека: чаты, где робот не справился и клиенту ещё не ответили, и необработанные обращения.",
         "GET /esim/api/sup/chats?days=14": "Все чаты за период, коротко.",
         "GET /esim/api/sup/chat?id=": "Чат целиком + покупки клиента + живое состояние каждой eSIM у поставщика (установлена, активна, остаток, удалена) + досье, по которому отвечает робот.",
@@ -6117,6 +6118,76 @@ function mount(app, opts) {
       console.log("esim sup: " + by + " отменил", o.mmOrderId);
       res.json({ success: true, canceled: o.mmOrderId, refund: "eSIM Access возвращает себестоимость на баланс сразу" });
     } catch (e) { res.json({ success: false, message: e.installed ? "профиль уже скачан на телефон — отменить нельзя" : e.message }); }
+  });
+  // ── История клиента (26.10.2026): Claude Петрова отвечал «ничего не знаю» по клиенту, с которым всё решили
+  // 13.10. Здесь всё по человеку в одном месте: покупки, обращения, переписка, решения оператора (планы),
+  // возвраты на карту, замены, аннулирования, итог. Человек склеивается по телефону, почте и телеграму.
+  app.get("/esim/api/sup/history", async (req, res) => {
+    if (!supGate(req, res)) return;
+    try {
+      const days = Math.min(365, Math.max(1, Number(req.query.days) || 60));
+      const since = Date.now() - days * 864e5;
+      const q = String(req.query.q || "").trim().toLowerCase();
+      const ph = (s) => { const d = String(s || "").replace(/\D/g, ""); return d.length >= 10 ? d.slice(-10) : ""; };
+      const em = (s) => normEmail((String(s || "").match(/[^\s,;<>()]+@[^\s,;<>()]+\.[a-z]{2,}/i) || [])[0] || "");
+      const people = [];
+      const idx = new Map();   // "p:телефон" | "e:почта" | "t:телеграм" → человек
+      const person = (keys) => {
+        keys = keys.filter((k) => k && !/^[pet]:$/.test(k));
+        let p = null;
+        for (const k of keys) if (idx.has(k)) { const x = idx.get(k); if (!p) p = x; else if (x !== p) { // склеиваем двоих в одного
+          for (const kk of x.keys) { p.keys.add(kk); idx.set(kk, p); }
+          ["orders", "cases", "chats", "plans", "refunds"].forEach((f) => { p[f] = p[f].concat(x[f]); });
+          x.merged = true;
+        } }
+        if (!p) { p = { keys: new Set(), orders: [], cases: [], chats: [], plans: [], refunds: [] }; people.push(p); }
+        for (const k of keys) { p.keys.add(k); idx.set(k, p); }
+        return p;
+      };
+      const ordKeys = (o) => ["p:" + ph(o.phone), "e:" + normEmail(o.email || ""), "t:" + (o.tgChatId || "")];
+      const all = readJson(ORDERS_FILE, []);
+      const byMm = new Map(all.map((o) => [String(o.mmOrderId || ""), o]));
+      // обращения, чаты, планы, возвраты — за период; покупки — все этих людей
+      for (const c of readJson(HELP_FILE, []).filter((x) => x.ts > since))
+        person(["p:" + ph(c.contact), "e:" + em(c.contact)]).cases.push(c);
+      for (const c of support.loadChats().filter((x) => (x.lastAt || x.ts) > since)) {
+        const mm = (/[?&]o=([A-Za-z0-9_-]+)/.exec(String(c.page || "")) || [])[1];
+        const o = mm ? byMm.get(mm) : null;
+        const keys = ["p:" + ph(c.contact), "e:" + em(c.contact), "t:" + (c.tgChatId || "")].concat(o ? ordKeys(o) : []);
+        if (keys.every((k) => /^[pet]:$/.test(k))) keys.push("chat:" + c.id);
+        person(keys).chats.push(c);
+      }
+      for (const p of readJson(path.join(DIR, "caseplans.json"), []).filter((x) => (x.created || 0) > since))
+        person(["p:" + ph(p.phone), "t:" + (p.tg || "")]).plans.push(p);
+      for (const r of readJson(REFUNDS_FILE, []).filter((x) => x.ts > since))
+        person(["p:" + ph(r.phone), "e:" + normEmail(r.email || ""), "t:" + (r.tgChatId || "")]).refunds.push(r);
+      for (const o of all.filter((x) => x.status === "done" || x.status === "canceled")) {
+        const keys = ordKeys(o).filter((k) => !/^[pet]:$/.test(k));
+        if (keys.some((k) => idx.has(k))) person(keys).orders.push(o);
+      }
+      const t = (ms) => ms ? new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ") : null;
+      const out = people.filter((p) => !p.merged).map((p) => {
+        const openChat = p.chats.some((c) => waitingChat(c));
+        const openCase = p.cases.some((c) => !c.answered && c.result !== "ok");
+        const pendingAnnul = p.orders.some((g) => g.giftFor && g.giftBy && g.status === "done" && !(all.find((x) => x.id === g.giftFor) || {}).annulledAt);
+        return {
+          who: Array.from(p.keys).filter((k) => !/^chat:/.test(k)).map((k) => k.replace(/^p:/, "тел. …").replace(/^e:/, "").replace(/^t:/, "телеграм ")),
+          status: openChat || openCase ? "ждёт ответа" : pendingAnnul ? "не аннулирована старая eSIM после замены" : "закрыто",
+          orders: p.orders.sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0)).map((o) => Object.assign(supOrder(o), { status: o.status, giftFor: o.giftFor || null, giftBy: o.giftBy || null, cancelNote: o.cancelNote || null })),
+          cases: p.cases.map((c) => ({ id: c.id, at: t(c.ts), problem: c.error, phone: c.model, tried: c.tried, refundAsked: !!c.refundAsked,
+            reissuedAt: t(c.reissuedAt), operatorNote: c.note || null, internalNote: c.answeredNote || null, closed: !!c.answered || c.result === "ok", link: caseLink(c.id) })),
+          chats: p.chats.map((c) => ({ id: c.id, where: c.tgChatId ? "телеграм-бот" : "чат на сайте", from: t(c.ts), last: t(c.lastAt || c.ts), waiting: waitingChat(c),
+            resolved: c.resolvedAt ? (c.resolvedBy || "") + " " + t(c.resolvedAt) : null, staffNotes: (c.staffNotes || []).map((n) => t(n.ts) + " " + n.by + ": " + n.text),
+            messages: (c.messages || []).filter((m) => !(m.from === "bot" && m.text === support.AUTO_REPLY))
+              .map((m) => t(m.ts) + " " + (m.from === "client" ? "клиент" : m.from === "operator" ? "оператор" + (m.by ? " (" + m.by + ")" : "") : "робот") + ": " + String(m.text || "").slice(0, 600)) })),
+          decisions: p.plans.map((x) => ({ plan: x.id, kind: x.kind, created: t(x.created), done: t(x.done), result: x.result || null, note: x.note || x.refundNote || null })),
+          refunds: p.refunds.map((r) => ({ at: t(r.ts), rub: r.rub, to: r.kind === "card" ? "на карту" : "на баланс", orders: r.orderIds, note: r.note || null })),
+        };
+      }).filter((x) => !q || JSON.stringify(x).toLowerCase().includes(q))
+        .sort((a, b) => (a.status === "закрыто") - (b.status === "закрыто"));
+      res.json({ success: true, days, count: out.length, people: out,
+        how: "Перед ответом клиенту всегда смотрите его историю: что уже обещали и решили. status «закрыто» — вопрос решён; если пишет снова, сначала прочитайте решения (decisions, refunds, staffNotes)." });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
   app.get("/esim/api/sup/find", async (req, res) => {
     if (!supGate(req, res)) return;
