@@ -5798,7 +5798,14 @@ function mount(app, opts) {
   const supOrder = (o) => ({ id: o.id, paidAt: o.paidAt ? new Date(o.paidAt + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ") : null,
     label: o.label, email: o.email || null, phone: o.phone || null, priceRub: o.payTotalRub || o.priceRub, promo: o.promoCode || null,
     via: o.tgChatId ? "бот" : "сайт", brand: o.brand || "voyo", supplier: o.src || null, iccid: o.iccid || null,
-    qrPage: !!o.myUrl, refunded: !!(o.refundedAt || o.refund), replacedFrom: (o.replacedFrom || []).length || 0 });
+    qrPage: !!o.myUrl, clientRefundRub: supClientRefund(o), supplierRefund: o.supplierRefund ? { state: o.supplierRefund.state, usd: o.supplierRefund.refundedUsd || null,
+      at: o.supplierRefund.refundedAt || o.supplierRefund.asked || null } : null, annulled: o.annulledAt ? o.annulResult || true : null,
+    replacedFrom: (o.replacedFrom || []).length || 0 });
+  // возвраты клиенту (журнал refunds.json): платёж на несколько eSIM записан на основной заказ, поэтому смотрим и «-2», «-3»
+  function supClientRefund(o) {
+    const base = String(o.id || "").replace(/-\d+$/, "");
+    return readJson(REFUNDS_FILE, []).filter((r) => (r.orderIds || []).some((x) => x === o.id || x === base)).reduce((a, r) => a + Number(r.rub || 0), 0) || 0;
+  }
   async function supStates(mine, raw) {
     const st = raw || await orderStates(mine).catch(() => []);
     return st.map((x) => ({ order: x.o.id, installed: x.installed, active: x.active, expired: x.expired,
@@ -5836,7 +5843,7 @@ function mount(app, opts) {
         "GET /esim/api/sup/kb": "Справочник поддержки: частые проблемы и как их решать (по нему отвечает робот первой линии).",
         "GET /esim/api/sup/replace-options?order=&country=FR": "Подбор замены eSIM: исходный пакет (сколько дней и ГБ осталось, входит ли нужная страна) и подходящие пакеты eSIM Access по себестоимости.",
         "POST /esim/api/sup/replace {order, productId, chat?, reason}": "Выдать замену за наш счёт — на ваше усмотрение. QR уходит клиенту на почту покупки и в чат (если чат его). Андрею и вам приходит письмо с себестоимостью.",
-        "POST /esim/api/sup/annul {order, reason}": "Аннулировать СТАРУЮ eSIM после выданной замены (обязательно после каждой replace): нескачанная отменяется с возвратом денег, скачанная отключается. Список несделанных — inbox.annul.",
+        "POST /esim/api/sup/annul {order, reason}": "Аннулировать eSIM: старую после замены (обязательно после каждой replace) или ту, за которую клиенту вернули деньги. Нетронутую поставщик возвращает на баланс (нескачанную сразу, скачанную — по письму, которое сервер отправит сам); использованную — только отключение. Итог — в find/chat: supplierRefund.state (Asked → Refunded). Список несделанных замен — inbox.annul.",
         "POST /esim/api/sup/cancel {order, reason}": "Отменить замену, которую клиент ещё не скачал: деньги возвращаются на баланс поставщика сразу. Покупку клиента так не отменить — это возврат, его решает Андрей Комисаренко.",
       },
       rules: "Замену eSIM за наш счёт выдаёте на своё усмотрение (replace-options → replace). Возврат денег, бонусы и промокоды — только Андрей Комисаренко: напишите ему на director@visa-sc.ru с номером заказа и сутью." });
@@ -6076,9 +6083,11 @@ function mount(app, opts) {
       const o = all.find((x) => x.status === "done" && [x.id, x.mmOrderId].indexOf(String(b.order || "")) >= 0);
       if (!o) return res.status(404).json({ success: false, message: "оплаченный заказ не найден" });
       const gift = all.find((x) => x.giftFor === o.id && x.status === "done");
-      if (!gift) return res.json({ success: false, message: "к этому заказу замена не выдавалась — аннулировать нельзя (сначала replace или решение Андрея Комисаренко)" });
+      // 26.10.2026, Андрей: аннулировать можно и eSIM, за которую клиенту уже вернули деньги, — возврат у поставщика Петров доводит сам
+      const refunded = supClientRefund(o) > 0;
+      if (!gift && !refunded) return res.json({ success: false, message: "к этому заказу не выдавалась замена и клиенту не возвращали деньги — аннулировать нельзя (это отключение оплаченной услуги, решает Андрей Комисаренко)" });
       if (o.annulledAt) return res.json({ success: true, already: true, result: o.annulResult });
-      const reason = String(b.reason || "выдана замена " + gift.mmOrderId).slice(0, 200);
+      const reason = String(b.reason || (gift ? "выдана замена " + gift.mmOrderId : "клиенту вернули деньги, eSIM не нужна")).slice(0, 200);
       let result = await refundFromSupplier(o, reason);
       if (/использован/.test(String(result))) {
         if (!isEaId(o.mmOrderId)) return res.json({ success: false, message: "пакет использован, отключить можно только у eSIM Access — напишите Андрею Комисаренко" });
