@@ -46,9 +46,14 @@
  *   • четыре группы, случайно по долям groupShares, закрепляются за контактом навсегда
  *     (с 16.10 22:50, её запрос в data/site-visits/ЗАПРОС-ОТ-ЕКАТЕРИНЫ.md): «контроль» 20 % —
  *     ни задачи, ни SMS; «только SMS» 20 %; «только задача» 30 %; «SMS + задача» 30 %;
- *   • задачу не ставим поверх живой работы: у клиента есть активные задачи (на контакте или
- *     незакрытых сделках) — «не поставлена: есть активная задача», кроме случая, когда она
- *     одна и типа «Повторная сделка» (1095426). Группа и SMS при этом остаются;
+ *   • задачу не ставим поверх живой работы (решение Екатерины 30.10.2026, вместо прежнего
+ *     «любая активная задача, кроме одной Повторной сделки»): задача НЕ ставится, если
+ *     (1) среди активных задач клиента (на контакте и его незакрытых сделках) есть задача со
+ *     сроком на сегодня — «не поставлена: задача на сегодня» (blockIfTaskToday), или
+ *     (2) у клиента есть сделка на активном статусе (оплачено, услуга не оказана; 26 пар
+ *     воронка_статус, activeDealStatuses) — «не поставлена: оплаченная сделка в работе»
+ *     (blockIfPaidDealInWork). Оба выключателя и список — в settings.json Кати. Группа и SMS
+ *     при этом остаются;
  *   • первая новая сделка контакта в 30 дней после визита получает тег «Сигнал с сайта»
  *     (у контроля — «Сигнал с сайта: контроль»), первый звонок и дозвон тоже пишутся;
  *   • выгрузка для Кати — /var/www/kateadmin/data/site-visits/<spb|msk>-visits.json и .csv.
@@ -70,6 +75,22 @@ const DB_PATH = process.env.AMOCOPY_DB || "/var/www/voyo/.amocopy-db/crm.db";
 const SQLITE = process.env.SQLITE_MODULE || "/var/www/voyo/crm-svc/node_modules/better-sqlite3";
 const PFX = process.env.RETURN_PREFIX || "SPB_RETURN";            // SPB_RETURN | MSK_RETURN
 const SITE_KEY = PFX === "MSK_RETURN" ? "msk" : "spb";
+
+// Активные статусы «оплачено, услуга ещё не оказана» (пары воронка_статус, сверены с amoCRM
+// Катиным Claude 30.10.2026): набор выручки «Кассы» без финальных 142, плюс «Оплачен счёт через
+// раздел Касса». «Выставлен счёт через раздел Касса» (85963077) намеренно НЕ включён.
+const ACTIVE_DEAL_STATUSES_DEFAULT = [
+  // Продажи
+  "138231_83715629", "138231_85862533",
+  // ОРК
+  "1309524_21271227", "1309524_21256761", "1309524_21232020", "1309524_70381749", "1309524_76835705",
+  "1309524_21232023", "1309524_76836473", "1309524_30302436", "1309524_21256455", "1309524_21256203",
+  "1309524_70957793", "1309524_70957929", "1309524_21256458",
+  // Оформление
+  "1312578_21256590", "1312578_43200834", "1312578_21256593", "1312578_58406233", "1312578_58405049",
+  "1312578_58405421", "1312578_22535466", "1312578_26918115", "1312578_21256668", "1312578_61251437",
+  "1312578_76836369",
+];
 
 // Настройки Кати: common, поверх — spb / msk. Чего нет или что за границами — берём своё.
 const KATE_DIR = process.env.RETURN_KATE_DIR || "/var/www/kateadmin/data/site-visits";
@@ -96,9 +117,16 @@ const CFG = (() => {
       for (const k of Object.keys(out)) out[k] = Math.round((out[k] / sum) * 1000) / 1000;
       return out;
     })(),
-    // задачу не ставим поверх живой работы: есть активные задачи — нет, кроме одной-единственной этого типа
-    checkActiveTasks: c.checkActiveTasks !== false,
-    okIfOnlyActiveTaskType: num("okIfOnlyActiveTaskType", 1095426, 0, 1e9), // «Повторная сделка»
+    // задачу не ставим поверх живой работы (решение Екатерины 30.10.2026): есть задача на сегодня
+    // или сделка на активном статусе. Прежние checkActiveTasks / okIfOnlyActiveTaskType больше
+    // не используются (оставлены в settings.json для истории).
+    blockIfTaskToday: c.blockIfTaskToday !== false,
+    blockIfPaidDealInWork: c.blockIfPaidDealInWork !== false,
+    activeDealStatuses: (() => {
+      const def = ACTIVE_DEAL_STATUSES_DEFAULT;
+      const a = Array.isArray(c.activeDealStatuses) ? c.activeDealStatuses.map((x) => String(x).trim()).filter((x) => /^\d+_\d+$/.test(x)) : null;
+      return new Set(a && a.length ? a : def);
+    })(),
     smsText: str("smsText", "", 160),
     smsEveryDays: num("smsEveryDays", Number(process.env[PFX + "_SMS_DAYS"] || 30), 7, 365),
     smsMaxDay: num("smsMaxDay", Number(process.env[PFX + "_SMS_MAX_DAY"] || 100), 0, 300),
@@ -263,19 +291,30 @@ function exportForKate(items, out, mobileOf) {
   const qNewLead = db.prepare("SELECT count(*) n FROM lead_contacts lc JOIN leads l ON l.id = lc.lead_id WHERE lc.contact_id = ? AND l.created_at BETWEEN ? AND ?");
   const qOpenTask = db.prepare("SELECT count(*) n FROM tasks WHERE entity_type = 'contacts' AND entity_id = ? AND is_completed = 0");
   // активные задачи клиента: на контакте и на его незакрытых сделках (задачи на закрытых — не живая работа)
-  const qActive = db.prepare(`SELECT t.id, t.task_type FROM tasks t WHERE t.is_completed = 0 AND (
+  const qActive = db.prepare(`SELECT t.id, t.task_type, t.complete_till FROM tasks t WHERE t.is_completed = 0 AND (
       (t.entity_type = 'contacts' AND t.entity_id = ?) OR
       (t.entity_type = 'leads' AND t.entity_id IN (SELECT l.id FROM leads l JOIN lead_contacts lc ON lc.lead_id = l.id
         WHERE lc.contact_id = ? AND l.status_id NOT IN (142, 143))))`);
   const typeName = new Map(db.prepare("SELECT id, name FROM task_types").all().map((x) => [x.id, x.name]));
   typeName.set(4391573, "Посещение сайта");
+  const qDeals = db.prepare("SELECT l.id, l.pipeline_id, l.status_id FROM leads l JOIN lead_contacts lc ON lc.lead_id = l.id WHERE lc.contact_id = ?");
+  const mskDayOf = (sec) => new Date(sec * 1000 + 3 * 3600e3).toISOString().slice(0, 10);
+  // Причина, по которой задачу НЕ ставим (решение Екатерины 30.10.2026), или "" — ставим.
+  // Две разные причины — чтобы в выгрузке было видно, что именно отсеивает.
   const activeBlock = (contactId) => {
-    if (!CFG.checkActiveTasks) return "";
-    const t = qActive.all(contactId, contactId);
-    if (!t.length) return "";
-    if (t.length === 1 && CFG.okIfOnlyActiveTaskType && t[0].task_type === CFG.okIfOnlyActiveTaskType) return "";
-    const names = [...new Set(t.map((x) => typeName.get(x.task_type) || "тип " + x.task_type))].slice(0, 4).join(", ");
-    return `не поставлена: есть активная задача (${t.length}: ${names})`;
+    if (CFG.blockIfTaskToday) {
+      const today = mskDayOf(Date.now() / 1000);
+      const t = qActive.all(contactId, contactId).filter((x) => x.complete_till && mskDayOf(x.complete_till) === today);
+      if (t.length) {
+        const names = [...new Set(t.map((x) => typeName.get(x.task_type) || "тип " + x.task_type))].slice(0, 3).join(", ");
+        return `не поставлена: задача на сегодня (${t.length}: ${names})`;
+      }
+    }
+    if (CFG.blockIfPaidDealInWork) {
+      const d = qDeals.all(contactId).filter((x) => CFG.activeDealStatuses.has(x.pipeline_id + "_" + x.status_id));
+      if (d.length) return `не поставлена: оплаченная сделка в работе (${d.map((x) => "#" + x.id).slice(0, 3).join(", ")})`;
+    }
+    return "";
   };
   const respName = (qUser.get(RESPONSIBLE) || {}).name || "";
   // Ответственный (ТЗ Кати): «Менеджер ОП» последней успешной сделки клиента, если он работает
