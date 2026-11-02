@@ -3289,7 +3289,7 @@ function mount(app, opts) {
       // eSIM Access возвращает свою цену, а в заказе закупка бывает выше (13.10.2026: вернули
       // $5,23 при закупке $5,88) — поэтому порог мягкий
       if (diff >= cost * 0.8 && diff <= cost * 1.5 + 0.5) {
-        r.state = "Refunded"; r.refundedAt = Date.now(); changed = true;
+        r.state = "Refunded"; r.refundedAt = Date.now(); r.refundedUsd = Math.round(diff * 100) / 100; changed = true;
         planMail("VOYO eSIM: поставщик вернул деньги за пакет на баланс",
           "eSIM Access вернул $" + cost.toFixed(2) + " за пакет " + o.mmOrderId + " (" + (o.label || "") + ") на наш баланс.\n" +
           "Клиент: " + (o.phone || o.email || (o.tgChatId ? "телеграм " + o.tgChatId : "—")) + ". eSIM аннулирована" +
@@ -3299,7 +3299,14 @@ function mount(app, opts) {
         r.eaBal = cur; r.eaBalTs = Date.now(); changed = true;   // похоже на пополнение счёта
       }
     }
-    if (changed) writeJson(ORDERS_FILE, all);
+    if (changed) {
+      // тоже только свои поля поверх свежей копии (см. annulWatch)
+      const fresh = readJson(ORDERS_FILE, []);
+      const MINE = ["state", "refundedAt", "refundedUsd", "eaBal", "eaBalTs"];
+      wait.forEach((o) => { const x = fresh.find((y) => y.id === o.id); if (!x || !x.supplierRefund) return;
+        MINE.forEach((k) => { if (o.supplierRefund[k] != null) x.supplierRefund[k] = o.supplierRefund[k]; }); });
+      writeJson(ORDERS_FILE, fresh);
+    }
   }
   setInterval(() => { eaRefundWatch().catch((x) => console.error("esim сторож возврата EA:", x.message)); }, 30 * 60 * 1000);
 
@@ -3378,9 +3385,12 @@ function mount(app, opts) {
       await new Promise((ok) => setTimeout(ok, 300));
     }
     if (changed) {
-      // пишем поверх свежей копии: за время запросов заказы могли поменяться
+      // пишем поверх свежей копии и только свои поля: целиком supplierRefund из старой копии
+      // затирал «Refunded», который тем временем ставил eaRefundWatch (02.11.2026, Армения)
       const fresh = readJson(ORDERS_FILE, []);
-      list.forEach((o) => { const x = fresh.find((y) => y.id === o.id); if (x) x.supplierRefund = o.supplierRefund; });
+      const MINE = ["annulledAt", "revokeTries", "annulMailed", "remindedAt"];
+      list.forEach((o) => { const x = fresh.find((y) => y.id === o.id); if (!x || !x.supplierRefund) return;
+        MINE.forEach((k) => { if (o.supplierRefund[k] != null) x.supplierRefund[k] = o.supplierRefund[k]; }); });
       writeJson(ORDERS_FILE, fresh);
     }
   }
