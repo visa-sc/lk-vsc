@@ -136,6 +136,8 @@ const CFG = (() => {
     workFrom: num("workFrom", 10, 0, 23), workTo: num("workTo", 18, 1, 24),
     dueInWorkMinutes: num("dueInWorkMinutes", 60, 10, 24 * 60), dueNextDayHour: num("dueNextDayHour", 11, 0, 23),
     taskText: str("taskText", "", 1000),
+    // Своё правило Кати «ставить задачу или нет» — файл rule.js в её папке (с 02.11.2026).
+    customRule: c.customRule === true,
     dealTag: str("dealTag", "Сигнал с сайта", 60), controlDealTag: str("controlDealTag", "Сигнал с сайта: контроль", 60),
     dealWindowDays: num("dealWindowDays", 30, 1, 90), callWindowDays: num("callWindowDays", 14, 1, 60)
   };
@@ -301,7 +303,49 @@ function exportForKate(items, out, mobileOf) {
   const mskDayOf = (sec) => new Date(sec * 1000 + 3 * 3600e3).toISOString().slice(0, 10);
   // Причина, по которой задачу НЕ ставим (решение Екатерины 30.10.2026), или "" — ставим.
   // Две разные причины — чтобы в выгрузке было видно, что именно отсеивает.
+  // Своё правило Кати (customRule в settings.json + rule.js в её папке, 02.11.2026). Её файл
+  // запускается ОТДЕЛЬНЫМ процессом от пользователя kateadmin — без доступа к ключам и к коду
+  // основного сайта. На вход — факты о клиенте (JSON), на выход — {"block": "причина"} или
+  // {"block": ""}. Ошибка, таймаут, кривой ответ — работает встроенное правило ниже.
+  const RULE_FILE = path.join(KATE_DIR, "rule.js");
+  const qStatus = db.prepare("SELECT name FROM statuses WHERE pipeline_id = ? AND id = ?");
+  const qDealsFull = db.prepare("SELECT l.id, l.pipeline_id, l.status_id, l.price, l.created_at, l.closed_at FROM leads l JOIN lead_contacts lc ON lc.lead_id = l.id WHERE lc.contact_id = ?");
+  const ruleFacts = (contactId) => {
+    const today = mskDayOf(Date.now() / 1000);
+    return {
+      site: SITE_KEY, contactId, today,
+      tasks: qActive.all(contactId, contactId).map((x) => ({ id: x.id, type: x.task_type, typeName: typeName.get(x.task_type) || "",
+        due: x.complete_till ? new Date(x.complete_till * 1000 + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ") : null,
+        dueToday: !!(x.complete_till && mskDayOf(x.complete_till) === today), overdue: !!(x.complete_till && x.complete_till * 1000 < Date.now()) })),
+      deals: qDealsFull.all(contactId).map((x) => ({ id: x.id, pipeline: x.pipeline_id, status: x.status_id, key: x.pipeline_id + "_" + x.status_id,
+        statusName: (qStatus.get(x.pipeline_id, x.status_id) || {}).name || "", price: x.price || 0,
+        created: x.created_at ? mskDayOf(x.created_at) : null, closed: x.closed_at ? mskDayOf(x.closed_at) : null })),
+      settings: { blockIfTaskToday: CFG.blockIfTaskToday, blockIfPaidDealInWork: CFG.blockIfPaidDealInWork, activeDealStatuses: [...CFG.activeDealStatuses] },
+    };
+  };
+  let ruleErrors = 0;
+  const kateWrite = (name, text) => {   // служебные файлы в папке Кати — её владельца, чтобы могла править/удалять
+    try { const f = path.join(KATE_DIR, name); fs.writeFileSync(f, text); const st = fs.statSync(KATE_DIR); fs.chownSync(f, st.uid, st.gid); } catch (_) {}
+  };
+  const customBlock = (contactId) => {
+    if (!CFG.customRule || ruleErrors >= 3 || !fs.existsSync(RULE_FILE)) return null;
+    const input = JSON.stringify(ruleFacts(contactId));
+    kateWrite("rule-last-input.json", input);
+    const r = require("child_process").spawnSync("runuser", ["-u", "kateadmin", "--", process.execPath, RULE_FILE], { input, timeout: 5000, encoding: "utf8", maxBuffer: 1 << 20 });
+    try {
+      if (r.status !== 0) throw new Error((r.stderr || r.error || "код " + r.status).toString().slice(0, 300));
+      const j = JSON.parse(String(r.stdout || "").trim().split("\n").pop());
+      if (!j || typeof j.block !== "string") throw new Error("ответ без поля block: " + String(r.stdout).slice(0, 120));
+      return j.block.slice(0, 200);
+    } catch (e) {
+      ruleErrors++;
+      kateWrite("rule-last-error.txt", new Date().toISOString() + " контакт " + contactId + ": " + e.message + "\n");
+      return null;
+    }
+  };
   const activeBlock = (contactId) => {
+    const own = customBlock(contactId);
+    if (own !== null) return own ? (own.startsWith("не поставлена") ? own : "не поставлена: " + own) : "";
     if (CFG.blockIfTaskToday) {
       const today = mskDayOf(Date.now() / 1000);
       const t = qActive.all(contactId, contactId).filter((x) => x.complete_till && mskDayOf(x.complete_till) === today);
