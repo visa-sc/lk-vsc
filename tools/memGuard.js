@@ -17,6 +17,7 @@
  *   cpu   — средняя загрузка процессора за 5 минут выше 1,5 × число ядер три проверки подряд (~15 мин).
  * Письмо о проблеме — не чаще раза в 12 часов на одну проблему; когда всё прошло — одно
  * письмо «в норме». В письме — сколько свободно и кто сколько занимает.
+ * Про диск (с 05.11.2026, просьба Андрея) — ещё и строкой в комнату «Помощники» чата Кати.
  * Состояние — /var/lib/mem-guard/state.json.
  *
  * Запуск: node tools/memGuard.js [--dry] [--test]   (--test — пробное письмо)
@@ -66,6 +67,21 @@ async function send(subject, lines) {
   const r = await sendMail({ to: TO, subject, html });
   console.log(new Date().toISOString(), "письмо:", subject, JSON.stringify(r));
 }
+
+// Комната «Помощники» (gmvcc6iz9pmsc) в чате work.voyotravel.ru: пишем от kateadmin через её
+// claude-say.js, чтобы файлы чата остались её. Сбой чата не мешает письму.
+const CHAT_ROOM = process.env.MEM_GUARD_CHAT_ROOM || "gmvcc6iz9pmsc";
+function chatSay(text, key) {
+  if (DRY) { console.log("[dry] в Помощники:", text); return; }
+  try {
+    const tmp = path.join(require("os").tmpdir(), "mem-guard-chat-" + process.pid + ".txt");
+    fs.writeFileSync(tmp, text, { mode: 0o644 });
+    execSync("runuser -u kateadmin -- node /var/www/kateadmin/claude-say.js " + tmp + " " + CHAT_ROOM + " " + key, { timeout: 30000, stdio: "ignore" });
+    fs.unlinkSync(tmp);
+  } catch (e) { console.log("чат: не отправлено —", e.message); }
+}
+const diskLine = (disks, total) => `свободно ${total.toFixed(1)} ГБ на двух дисках (` +
+  disks.map((d) => `${d.m === "/" ? "основной" : "сетевой"} ${d.freeGb.toFixed(1)} из ${d.totGb.toFixed(0)}`).join(", ") + ")";
 
 (async () => {
   const st = load();
@@ -154,6 +170,9 @@ async function send(subject, lines) {
       fresh.length === 1 && fresh[0] === "disk" ? (diskLevel >= 2 ? "Пока места не прибавится, письмо будет приходить раз в сутки." : `Следующее письмо — если останется меньше ${DISK_DAILY_GB} ГБ, тогда каждый день.`)
         : "Повторю письмо не раньше чем через 12 часов, если проблема останется."
     ]);
+    if (fresh.includes("disk")) chatSay("Сторож сервера: " + WHAT.disk + ". Сейчас " + diskLine(disks, diskFreeGb) + ". " +
+      (diskLevel >= 2 ? "Пока не освободят, напомню раз в сутки." : `Если станет меньше ${DISK_DAILY_GB} ГБ — буду писать каждый день.`) +
+      " Резервные копии Кати — /mnt/data/kate-backup-daily.", "memguard-disk-" + now);
     for (const k of fresh) st.alerted[k] = now;
     if (fresh.includes("disk")) st.diskLevel = diskLevel;
   }
@@ -162,7 +181,7 @@ async function send(subject, lines) {
   if (gone.length) {
     await send("Сервер: ресурсы снова в норме", [`Прошло: ${gone.map((k) => WHAT[k]).join("; ")}.`, ...facts]);
     for (const k of gone) delete st.alerted[k];
-    if (gone.includes("disk")) st.diskLevel = 0;
+    if (gone.includes("disk")) { st.diskLevel = 0; chatSay("Сторож сервера: место на дисках снова в норме — " + diskLine(disks, diskFreeGb) + ".", "memguard-diskok-" + now); }
   }
   save(st);
 })();
