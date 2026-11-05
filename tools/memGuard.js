@@ -10,7 +10,10 @@
  *           (≈0,4 МБ/с) три проверки подряд;
  *   swapfull — подкачка занята больше чем на 85% И при этом свободно меньше 800 МБ или идёт обмен;
  *   oom   — система убила процесс из-за нехватки памяти (сразу, без ожидания);
- *   disk  — на диске свободно меньше 4 ГБ или занято больше 90% (с 20.10.2026, план переезда visa-sc.ru);
+ *   disk  — с 05.11.2026 считается ОБЩЕЕ свободное место на основном диске (/, 40 ГБ) и сетевом
+ *           (/mnt/data, 50 ГБ, там резервные копии Кати): меньше 10 ГБ — одно письмо, меньше 8 ГБ —
+ *           письмо каждый день, пока не освободят. Отдельно: на основном диске меньше 3 ГБ — тоже
+ *           каждый день (сайты падают при полном /, сетевой диск их не спасёт);
  *   cpu   — средняя загрузка процессора за 5 минут выше 1,5 × число ядер три проверки подряд (~15 мин).
  * Письмо о проблеме — не чаще раза в 12 часов на одну проблему; когда всё прошло — одно
  * письмо «в норме». В письме — сколько свободно и кто сколько занимает.
@@ -35,8 +38,11 @@ const LOW_MB = Number(process.env.MEM_GUARD_LOW_MB || 500);
 const SWAP_RATE = Number(process.env.MEM_GUARD_SWAP_RATE || 100); // страниц в секунду
 const SWAP_FULL = 0.85;
 const SWAP_FULL_LOW_MB = 800;
-const DISK_LOW_GB = Number(process.env.MEM_GUARD_DISK_GB || 4);
-const DISK_FULL = 0.9;
+const DISK_WARN_GB = Number(process.env.MEM_GUARD_DISK_WARN_GB || 10); // общий остаток: одно письмо
+const DISK_DAILY_GB = Number(process.env.MEM_GUARD_DISK_DAILY_GB || 8); // общий остаток: письмо каждый день
+const ROOT_MIN_GB = Number(process.env.MEM_GUARD_ROOT_MIN_GB || 3);     // основной диск отдельно
+const DISKS = ["/", "/mnt/data"];
+const DAY_MS = 24 * 3600 * 1000;
 const CPU_K = 1.5; // загрузка (loadavg 5 мин) на ядро
 const STREAK = 3;
 const REPEAT_MS = 12 * 3600 * 1000;
@@ -78,11 +84,21 @@ async function send(subject, lines) {
   st.oomSeen = ooms;
 
   // диск и процессор (20.10.2026: «мониторинг RAM, диск, CPU с письмом Петрову»)
-  const df = sh("df -B1 --output=size,avail / | tail -1").split(/\s+/).map(Number);
-  const diskTotGb = df[0] / 1e9, diskFreeGb = df[1] / 1e9, diskShare = df[0] ? 1 - df[1] / df[0] : 0;
+  // смонтирован ли сетевой диск: иначе df покажет основной под его именем
+  const disks = DISKS.filter((m) => m === "/" || sh("findmnt -n -o TARGET " + m) === m).map((m) => {
+    const [size, avail] = sh("df -B1 --output=size,avail " + m + " | tail -1").split(/\s+/).map(Number);
+    return { m, totGb: size / 2 ** 30, freeGb: avail / 2 ** 30 }; // ГБ как в панели Рег.облака
+  });
+  const diskFreeGb = disks.reduce((a, d) => a + d.freeGb, 0), diskTotGb = disks.reduce((a, d) => a + d.totGb, 0);
+  const rootFreeGb = disks[0].freeGb;
+  const dataMissing = disks.length < DISKS.length;
+  // уровень: 0 норма, 1 «меньше 10» (одно письмо), 2 «меньше 8» или мало на основном (каждый день);
+  // выход из тревоги — с запасом 1 ГБ, чтобы не слать «в норме / снова мало» каждые 5 минут
+  const pad = st.alerted.disk ? 1 : 0;
+  const diskLevel = diskFreeGb < DISK_DAILY_GB + pad || rootFreeGb < ROOT_MIN_GB + pad ? 2 : diskFreeGb < DISK_WARN_GB + pad ? 1 : 0;
   const cores = require("os").cpus().length, load5 = require("os").loadavg()[1];
   const cond = {
-    disk: diskFreeGb < DISK_LOW_GB || diskShare > DISK_FULL,
+    disk: diskLevel > 0 || dataMissing,
     cpu: load5 > cores * CPU_K,
     low: availMb < LOW_MB,
     swap: rate > SWAP_RATE,
@@ -96,7 +112,9 @@ async function send(subject, lines) {
 
   const facts = [
     `Свободно памяти: <b>${availMb} МБ</b> из ${totalMb} МБ (порог ${LOW_MB} МБ).`,
-    `Диск: свободно <b>${diskFreeGb.toFixed(1)} ГБ</b> из ${diskTotGb.toFixed(0)} ГБ (занято ${Math.round(diskShare * 100)}%, порог: меньше ${DISK_LOW_GB} ГБ или больше ${DISK_FULL * 100}%).`,
+    `Диски вместе: свободно <b>${diskFreeGb.toFixed(1)} ГБ</b> из ${diskTotGb.toFixed(0)} ГБ (пороги: меньше ${DISK_WARN_GB} ГБ — письмо, меньше ${DISK_DAILY_GB} ГБ — каждый день). ` +
+      disks.map((d) => `${d.m === "/" ? "основной" : "сетевой " + d.m}: свободно ${d.freeGb.toFixed(1)} из ${d.totGb.toFixed(0)} ГБ`).join("; ") +
+      (dataMissing ? "; <b>сетевой диск /mnt/data не подключён</b>" : "") + ".",
     `Процессор: загрузка за 5 минут ${load5.toFixed(2)} при ${cores} ядрах (порог ${(cores * CPU_K).toFixed(1)}).`,
     `Файл подкачки: занят ${mb(swapUsed)} из ${mb(swapTot)} МБ (${Math.round(swapShare * 100)}%), обмен сейчас ${Math.round(rate)} стр/с (порог ${SWAP_RATE}).`,
     `<p>Больше всего занимают:</p><pre style="font-size:12px">${topProcs().join("\n")}</pre>`
@@ -106,7 +124,9 @@ async function send(subject, lines) {
     swap: "сервер постоянно обращается к файлу подкачки — сайты начинают тормозить",
     swapfull: "файл подкачки почти заполнен",
     oom: `система закрыла процесс из-за нехватки памяти (${newOom} раз за 5 минут)`,
-    disk: `на диске мало места: свободно ${diskFreeGb.toFixed(1)} ГБ`,
+    disk: dataMissing && !diskLevel ? "сетевой диск /mnt/data не подключён — резервные копии Кати пишутся на основной диск"
+      : rootFreeGb < ROOT_MIN_GB ? `на основном диске осталось ${rootFreeGb.toFixed(1)} ГБ — сайты могут остановиться`
+      : `на дисках мало места: свободно ${diskFreeGb.toFixed(1)} ГБ на двоих`,
     cpu: "процессор перегружен уже 15 минут — сайты могут отвечать медленно"
   };
   console.log(new Date().toISOString(), `свободно ${availMb} МБ, диск ${diskFreeGb.toFixed(1)} ГБ, нагрузка ${load5.toFixed(2)}/${cores}, подкачка ${Math.round(swapShare * 100)}% ${Math.round(rate)} стр/с, oom ${ooms}`, active.length ? "ПРОБЛЕМА: " + active.join(",") : "норма");
@@ -116,28 +136,33 @@ async function send(subject, lines) {
     save(st);
     return;
   }
-  const fresh = active.filter((k) => !st.alerted[k] || now - st.alerted[k] > REPEAT_MS);
+  // диск: при «меньше 10» — одно письмо, при «меньше 8» — раз в сутки, переход 1→2 — сразу
+  const repeatMs = (k) => k !== "disk" ? REPEAT_MS : diskLevel >= 2 ? DAY_MS : Infinity;
+  const fresh = active.filter((k) => !st.alerted[k] || now - st.alerted[k] > repeatMs(k) || (k === "disk" && diskLevel > (st.diskLevel || 0)));
   if (fresh.length) {
     const memIssue = fresh.some((k) => ["low", "swap", "swapfull", "oom"].includes(k));
     const subj = memIssue ? "Сервер: не хватает оперативной памяти — нужно увеличить RAM"
       : fresh.includes("disk") ? "Сервер: заканчивается место на диске" : "Сервер: процессор перегружен";
     const todo = [];
     if (memIssue) todo.push("память — добавить RAM (сейчас " + Math.round(totalMb / 1024) + " ГБ)");
-    if (fresh.includes("disk")) todo.push("диск — почистить старые журналы и резервные копии или увеличить диск");
+    if (fresh.includes("disk")) todo.push("диск — почистить старые журналы и резервные копии (Катины — /mnt/data/kate-backup-daily) или увеличить сетевой диск: Рег.облако → Сетевые диски → диск сервера VOYO, размер увеличивается без перезагрузки, затем resize2fs /dev/sdb");
     if (fresh.includes("cpu")) todo.push("процессор — посмотреть, какой процесс грузит (top), при постоянной нагрузке добавить ядро");
     await send(subj, [
       `<b>Что случилось:</b> ${active.map((k) => WHAT[k]).join("; ")}.`,
       ...facts,
-      "<b>Что сделать:</b> " + todo.join("; ") + ". Рег.облако → Виртуальные серверы → VOYO (ID 7303919) → карандаш у «Характеристик сервера». Если в панели «Нет доступных тарифов» — заявка в поддержку. Сервер перезагрузится на несколько минут.",
-      "Повторю письмо не раньше чем через 12 часов, если проблема останется."
+      "<b>Что сделать:</b> " + todo.join("; ") + "." + (memIssue || fresh.includes("cpu") ? " Рег.облако → Виртуальные серверы → VOYO (ID 7303919) → карандаш у «Характеристик сервера». Если в панели «Нет доступных тарифов» — заявка в поддержку. Сервер перезагрузится на несколько минут." : ""),
+      fresh.length === 1 && fresh[0] === "disk" ? (diskLevel >= 2 ? "Пока места не прибавится, письмо будет приходить раз в сутки." : `Следующее письмо — если останется меньше ${DISK_DAILY_GB} ГБ, тогда каждый день.`)
+        : "Повторю письмо не раньше чем через 12 часов, если проблема останется."
     ]);
     for (const k of fresh) st.alerted[k] = now;
+    if (fresh.includes("disk")) st.diskLevel = diskLevel;
   }
   // «oom» — разовое событие: «в норме» по нему не шлём, отметка лишь сдерживает повтор 12 часов
   const gone = Object.keys(st.alerted).filter((k) => k !== "oom" && !active.includes(k));
   if (gone.length) {
     await send("Сервер: ресурсы снова в норме", [`Прошло: ${gone.map((k) => WHAT[k]).join("; ")}.`, ...facts]);
     for (const k of gone) delete st.alerted[k];
+    if (gone.includes("disk")) st.diskLevel = 0;
   }
   save(st);
 })();
