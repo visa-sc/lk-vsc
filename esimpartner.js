@@ -33,14 +33,14 @@ function ensure(code, cfg) {
   const all = load();
   if (!all[code]) {
     all[code] = { name: (cfg && cfg.name) || code, pct: Number((cfg && cfg.pct) || 0),
-      bonusRub: Number((cfg && cfg.bonusRub) || 0), pass: String((cfg && cfg.pass) || ""),
+      bonusRub: Number((cfg && cfg.bonusRub) || 0), discountRub: Number((cfg && cfg.discountRub) || 0), pass: String((cfg && cfg.pass) || ""),
       ts: Date.now(), clients: {}, log: [], payouts: [] };
     save(all);
   } else if (cfg) {
     const p = all[code];
     let changed = false;
     ["name", "pass"].forEach((k) => { if (cfg[k] && p[k] !== cfg[k]) { p[k] = cfg[k]; changed = true; } });
-    ["pct", "bonusRub"].forEach((k) => {
+    ["pct", "bonusRub", "discountRub"].forEach((k) => {
       if (cfg[k] != null && Number(p[k]) !== Number(cfg[k])) { p[k] = Number(cfg[k]); changed = true; }
     });
     if (changed) save(all);
@@ -101,7 +101,7 @@ function stats(code) {
   const earnedMonth = (p.log || []).filter((l) => new Date(l.ts + 3 * 3600e3).toISOString().slice(0, 7) === month)
     .reduce((a, l) => a + (l.earnedRub || 0), 0);
   return {
-    code, name: p.name, pct: p.pct, bonusRub: p.bonusRub,
+    code, name: p.name, pct: p.pct, bonusRub: p.bonusRub, discountRub: p.discountRub || 0,
     clients, clientCount: clients.length, orders, spentRub: spent,
     earnedRub: earned, earnedMonth, paidRub: paid, dueRub: earned - paid,
     log: (p.log || []).slice(0, 100).map((l) => ({ ts: l.ts, cust: maskMail(l.cust), label: l.label,

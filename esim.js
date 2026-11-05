@@ -1408,9 +1408,12 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
   } else if (promo && promo.rub > 0) {
     out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code; out.promoPct = promo.pct || 0;
   } else if (promo && promo.partner) {
-    // Партнёрский код (турагентство): цену не режем, клиенту после оплаты падают
-    // бонусы на баланс, партнёру — процент с покупки. Маржа остаётся целой.
+    // Партнёрский код (турагентство): партнёру — процент с покупки. Клиенту — либо скидка сразу
+    // (partner.discountRub, с 05.11.2026: туристы VisaZen видели «0 ₽» и не понимали, где их 100 ₽),
+    // либо бонусы на баланс после оплаты (partner.bonusRub). Пол по себестоимости действует как обычно.
     out.promoCode = promo.code; out.discountKind = "partner"; out.partner = promo.partner;
+    const pd = Number(promo.partner.discountRub || 0);
+    if (pd > 0) out.discountRub = pd;
     out.partnerBonusRub = Number(promo.partner.bonusRub || 0);
   } else if (refCode) {
     const inviter = customerByRef(refCode);
@@ -2201,6 +2204,10 @@ function mount(app, opts) {
         // с каждой его покупки — даже когда код он больше не вводит.
         try {
           const paidRub = Number(g.order.payTotalRub || g.order.priceRub || 0);
+          // настройки партнёра — из текущего промокода: правка в promos.json (05.11.2026: VisaZen
+          // перевели с бонуса на скидку) иначе дошла бы до начисления только после перезапуска
+          const pcfg = g.order.promoCode ? loadPromos()[String(g.order.promoCode).toUpperCase()] : null;
+          if (pcfg && pcfg.partner) partner.ensure(g.order.promoCode, pcfg.partner);
           const res = partner.onPaid({ code: g.order.promoCode, custKey: who,
             orderId: g.order.id, label: g.order.label, amountRub: paidRub });
           if (res) {

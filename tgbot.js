@@ -503,7 +503,7 @@ async function showPack(chatId, productId, messageId) {
     const why = price.discountKind === "ref" ? "скидка по приглашению друга"
       : price.discountKind === "cost" ? "цена по себестоимости"
       : price.discountKind === "test" ? "тестовый промокод " + (st.promo || "")
-      : price.discountKind === "promo" ? "промокод " + (st.promo || "")
+      : (price.discountKind === "promo" || price.discountKind === "partner") ? "промокод " + (st.promo || "")
       : "скидка";
     text += "Цена: <s>" + RU(price.listPrice) + " ₽</s>  <b>" + RU(price.total) + " ₽</b>\n" +
             (price.discountRub > 0 ? esc(why) + " −" + RU(price.discountRub) + " ₽\n" : "") +

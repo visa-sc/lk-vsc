@@ -265,8 +265,12 @@
     .trust{gap:8px;}
     .trust .tc{flex:1 1 100%;max-width:340px;min-height:58px;padding:11px 14px;}
   }
-  .pk .go{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;transition:transform .15s ease;}
-  .pk:hover .go{transform:translateX(3px);}
+  /* 05.11.2026: «Выбрать» была синей надписью, и люди не понимали, куда нажимать — теперь это кнопка */
+  .pk .go{display:inline-flex;align-items:center;font-size:14px;font-weight:700;color:#fff;white-space:nowrap;
+    background:linear-gradient(135deg,#2c6f96 0%,#3d95c7 60%,#5ac8fa 130%);padding:9px 16px;border-radius:12px;
+    box-shadow:0 6px 14px -8px rgba(44,111,150,.8);transition:transform .15s ease,box-shadow .15s ease;}
+  .pk:hover .go{transform:translateX(2px);box-shadow:0 8px 18px -8px rgba(44,111,150,.9);}
+  .pk:active .go{transform:scale(.97);}
   .pk .adm{font-size:11px;color:#7a6a35;margin-top:10px;background:#fdf9ee;border:1px dashed #e8dcb4;border-radius:9px;padding:6px 9px;}
   .more{display:block;margin:20px auto 0;font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);
     background:rgba(255,255,255,.85);color:var(--ink);border-radius:14px;padding:12px 26px;cursor:pointer;box-shadow:var(--sh);
