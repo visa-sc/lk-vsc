@@ -9,6 +9,8 @@
 // статус заказа у MobiMatter стал Refunded или кошелёк вырос на сумму заказа сверх наших покупок
 // с момента запроса (точка отсчёта — mmBal/mmBalTs, ставится при первой проверке).
 //
+// С 12.11.2026: если через 5 суток после письма денег нет — одно напоминание поставщику (followUpAt).
+//
 // Крон: 17 */2 * * * cd /var/www/voyo && node tools/mmRefundWatch.js
 require("dotenv").config({ quiet: true });
 const fs = require("fs");
@@ -66,6 +68,27 @@ function api(p) {
     }
     console.log(now + " " + o.mmOrderId + " (" + r.state + ") статус: " + st + " | кошелёк: $" + wallet + (how ? " | ВЕРНУЛИ: " + how : ""));
     if (how) { patch[o.id] = Object.assign(patch[o.id] || {}, { state: "Refunded", refundedAt: Date.now(), refundedUsd: cost, at: Date.now(), how }); done.push(o); }
+  }
+  // Напоминание поставщику (Андрей, 12.11.2026): письмо о возврате ушло, а денег нет 5 суток —
+  // один раз пишем повторно сами, в рабочее время по Москве (10–19), копия Андрею.
+  const mskH = (new Date().getUTCHours() + 3) % 24;
+  for (const o of wait) {
+    const r = o.supplierRefund;
+    if (!r.mailedAt || r.followUpAt || (patch[o.id] && patch[o.id].state === "Refunded")) continue;
+    if (Date.now() - r.mailedAt < 5 * 864e5 || mskH < 10 || mskH >= 19) continue;
+    const day = (t) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Moscow" });
+    const cost = Number(o.costUsd || 0).toFixed(2);
+    const r2 = await mail.sendMail({
+      to: r.mailedTo || "support@mobimatter.com", cc: TO, replyTo: TO,
+      subject: "Follow-up: refund request for order " + o.mmOrderId,
+      text: "Dear MobiMatter team,\n\nOn " + day(r.mailedAt) + " we asked for a refund for order " + o.mmOrderId +
+        " (ICCID " + (o.iccid || "-") + ", " + String(o.label || "").replace(/^eSIM\s*/, "").split(" · ")[0] + ", USD " + cost + ").\n" +
+        "The profile never worked for our customer and we issued a replacement from another provider.\n\n" +
+        "We have not received a reply or the refund yet. Could you please check the request and refund USD " + cost +
+        " to our MobiMatter balance?\n\nThank you,\nAndrei Komisarenko\nVOYO mobile / AK GROUP\n" + TO,
+    }).catch((e) => ({ ok: false, error: e.message }));
+    console.log(now + " " + o.mmOrderId + " напоминание поставщику: " + (r2 && r2.ok ? "отправлено" : (r2 && r2.error)));
+    if (r2 && r2.ok) patch[o.id] = Object.assign(patch[o.id] || {}, { followUpAt: Date.now() });
   }
   if (Object.keys(patch).length) {
     // пишем поверх свежей копии и только свои поля — сервер мог за это время поменять заказы
