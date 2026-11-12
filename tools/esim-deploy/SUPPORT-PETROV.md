@@ -109,10 +109,17 @@ curl -s -X POST -H "X-Sup-Key: $KEY" -H "Content-Type: application/json" \
 2. Дальше сервер действует сам, по поставщику:
    - **eSIM Access, профиль не скачан:** отмена, деньги на баланс сразу.
    - **eSIM Access, скачан, трафик не тронут:** профиль отключается, поставщику уходит письмо с просьбой вернуть деньги, копия Андрею.
-   - **MobiMatter:** возврат оформляется через их систему.
+   - **MobiMatter:** возврат оформляется через их систему, но только пока eSIM не запускалась. Если запустилась (даже с 0 МБ), автоматически не выйдет, см. пункт 5.
    - **Использованный пакет:** только отключение, поставщики за него не возвращают.
 3. Проверка: `find?q=<заказ>` → `supplierRefund.state`. `Asked` — попросили, `PendingRefund` — ждём, `Refunded` — деньги вернулись (сумма в `usd`). Сервер сам замечает возврат по балансу.
 4. **TSim** возвращает только по письму. Если после `annul` пришло письмо «запросить возврат у поставщика tsim», напишите им сами: support@tsimtech.com и менеджеру Tracy Lui (tracy.lui@tsimtech.com), копия director@visa-sc.ru. В письме: номер заказа, ICCID, пакет, «not used, please refund to our balance».
+5. **MobiMatter вручную.** Если пришло письмо «запросить возврат у поставщика mobimatter», напишите им сами:
+   - кому: support@mobimatter.com, копия director@visa-sc.ru;
+   - что в письме: номер заказа (AKGR-…), ICCID, пакет, дата покупки, цена;
+   - что случилось: например, «profile activated but never registered on any network, 0 MB used»;
+   - просьба: «we issued a replacement, please deactivate this profile and refund USD … to our MobiMatter balance».
+   Перед письмом проверьте в `history` или `find` поле `supplierRefund.mailedAt`: если оно заполнено, письмо уже отправили, второй раз не пишите. После своего письма отметьте: `POST /esim/api/sup/supplier-mailed {"order":"<заказ>"}` (так же для TSim).
+
 
 ### Что можно и что нельзя
 

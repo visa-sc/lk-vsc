@@ -5816,7 +5816,7 @@ function mount(app, opts) {
     label: o.label, email: o.email || null, phone: o.phone || null, priceRub: o.payTotalRub || o.priceRub, promo: o.promoCode || null,
     via: o.tgChatId ? "бот" : "сайт", brand: o.brand || "voyo", supplier: o.src || null, iccid: o.iccid || null,
     qrPage: !!o.myUrl, clientRefundRub: supClientRefund(o), supplierRefund: o.supplierRefund ? { state: o.supplierRefund.state, usd: o.supplierRefund.refundedUsd || null,
-      at: o.supplierRefund.refundedAt || o.supplierRefund.asked || null } : null, annulled: o.annulledAt ? o.annulResult || true : null,
+      at: o.supplierRefund.refundedAt || o.supplierRefund.asked || null, mailedAt: o.supplierRefund.mailedAt || null } : null, annulled: o.annulledAt ? o.annulResult || true : null,
     replacedFrom: (o.replacedFrom || []).length || 0 });
   // возвраты клиенту (журнал refunds.json): платёж на несколько eSIM записан на основной заказ, поэтому смотрим и «-2», «-3»
   function supClientRefund(o) {
@@ -5862,6 +5862,7 @@ function mount(app, opts) {
         "GET /esim/api/sup/replace-options?order=&country=FR": "Подбор замены eSIM: исходный пакет (сколько дней и ГБ осталось, входит ли нужная страна) и подходящие пакеты eSIM Access по себестоимости.",
         "POST /esim/api/sup/replace {order, productId, chat?, reason}": "Выдать замену за наш счёт — на ваше усмотрение. QR уходит клиенту на почту покупки и в чат (если чат его). Андрею и вам приходит письмо с себестоимостью.",
         "POST /esim/api/sup/annul {order, reason}": "Аннулировать eSIM: старую после замены (обязательно после каждой replace) или ту, за которую клиенту вернули деньги. Нетронутую поставщик возвращает на баланс (нескачанную сразу, скачанную — по письму, которое сервер отправит сам); использованную — только отключение. Итог — в find/chat: supplierRefund.state (Asked → Refunded). Список несделанных замен — inbox.annul.",
+        "POST /esim/api/sup/supplier-mailed {order}": "Отметить, что поставщику (MobiMatter, TSim) написали о возврате вручную — видно в supplierRefund.mailedAt, чтобы не писать дважды.",
         "POST /esim/api/sup/cancel {order, reason}": "Отменить замену, которую клиент ещё не скачал: деньги возвращаются на баланс поставщика сразу. Покупку клиента так не отменить — это возврат, его решает Андрей Комисаренко.",
       },
       rules: "Замену eSIM за наш счёт выдаёте на своё усмотрение (replace-options → replace). Возврат денег, бонусы и промокоды — только Андрей Комисаренко: напишите ему на director@visa-sc.ru с номером заказа и сутью." });
@@ -6117,6 +6118,16 @@ function mount(app, opts) {
       console.log("esim sup: " + by + " аннулировал", o.mmOrderId, "—", result);
       res.json({ success: true, annulled: o.mmOrderId, result });
     } catch (e) { console.error("esim sup annul:", e.message); res.json({ success: false, message: e.message }); }
+  });
+  // Отметка «письмо поставщику о возврате отправлено» (MobiMatter, TSim пишут вручную), чтобы не писать дважды (12.11.2026)
+  app.post("/esim/api/sup/supplier-mailed", express.json({ limit: "8kb" }), (req, res) => {
+    const who = supGate(req, res); if (!who) return;
+    const all = readJson(ORDERS_FILE, []);
+    const o = all.find((x) => [x.id, x.mmOrderId].indexOf(String((req.body || {}).order || "")) >= 0);
+    if (!o) return res.status(404).json({ success: false, message: "заказ не найден" });
+    o.supplierRefund = Object.assign({ asked: Date.now(), state: "Asked" }, o.supplierRefund || {}, { mailedAt: Date.now(), mailedBy: SUP_NAME[who] || who });
+    writeJson(ORDERS_FILE, all);
+    res.json({ success: true, order: o.id, supplierRefund: o.supplierRefund });
   });
   // Отмена eSIM, которую ещё не скачали на телефон: eSIM Access сразу возвращает деньги на баланс.
   app.post("/esim/api/sup/cancel", express.json({ limit: "8kb" }), async (req, res) => {
