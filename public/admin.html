@@ -2403,10 +2403,31 @@
       // Сравнение месяца с предыдущим за СОПОСТАВИМОЕ число прошедших дней:
       // аддитивные KPI — сумма первых N дней пред. месяца; коэффициенты — среднее
       // первых N дней; план ОП — помесячно. N = число заполненных дней текущего.
+      // Коэффициенты за несколько дней — взвешенно, как у склейки недель (aggBlocks):
+      // ДРР = Σреклама ÷ Σвыручка, CPL = Σреклама ÷ Σлиды и т. д. Простое среднее дневных
+      // значений ломалось на днях почти без продаж: 11.10.2026 ДРР дня 2 554% дал
+      // «прошлый период» 250% и плитку «ДРР ▼226% к пред.» (аудит 12.11.2026).
+      function vscWeightedDays(days, k) {
+        const S = (fn) => days.reduce((a, d) => { const v = fn(d); return v != null && isFinite(v) ? a + v : a; }, 0);
+        const T = (d) => (d.atv && d.budget != null ? d.budget / d.atv : null);
+        const L = (d) => (d.cpl && d.ad != null ? d.ad / d.cpl : null);
+        const ratio = (num, den, mul) => { const dn = S(den); return dn ? S(num) / dn * (mul || 1) : null; };
+        if (k === "drr") return ratio((d) => (d.drr != null ? d.ad : null), (d) => (d.drr != null ? d.budget : null), 100);
+        if (k === "cpl") return ratio((d) => (L(d) != null ? d.ad : null), L);
+        if (k === "atv") return ratio((d) => (T(d) != null ? d.budget : null), T);
+        if (k === "asp") return ratio((d) => (d.asp ? d.budget : null), (d) => (d.asp && d.budget != null ? d.budget / d.asp : null));
+        if (k === "upt") return ratio((d) => (d.asp && T(d) != null ? d.budget / d.asp : null), (d) => (d.asp ? T(d) : null));
+        if (k === "cv") return ratio((d) => (d.cv ? T(d) : null), (d) => (d.cv && T(d) != null ? T(d) / (d.cv / 100) : null), 100);
+        if (k === "trafConv") return ratio((d) => (d.trafConv ? L(d) : null), (d) => (d.trafConv && L(d) != null ? L(d) / (d.trafConv / 100) : null), 100);
+        return undefined;                                     // остальные — простым средним
+      }
       function vscMonthCompare(curM, prevM) {
         const N = vscFilledDays(curM) || (curM.days || []).length;
         const firstN = prevM ? (prevM.days || []).slice(0, N) : [];
-        const agg = (days, k, isAvg) => { const v = days.map((d) => d[k]).filter((x) => x != null); if (!v.length) return null; const s = v.reduce((a, b) => a + b, 0); return isAvg ? s / v.length : s; };
+        const agg = (days, k, isAvg) => {
+          if (isAvg) { const w = vscWeightedDays(days, k); if (w !== undefined) return w; }
+          const v = days.map((d) => d[k]).filter((x) => x != null); if (!v.length) return null; const s = v.reduce((a, b) => a + b, 0); return isAvg ? s / v.length : s;
+        };
         const res = {};
         VSC_KPIS.forEach((kpi) => {
           const cur = curM.total ? curM.total[kpi.key] : null;
