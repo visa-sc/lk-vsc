@@ -166,6 +166,24 @@ function opTargetPlan(ym) {
   return Object.keys(out).length ? out : null;
 }
 
+// Пропущенные звонки за день по АТС из «Стаффа» Кати (staffperf/pbx/ГГГГ-ММ-ДД.json): как её
+// «первая линия» и как KPI-таблица — только рабочее время: входящие на нерабочую линию
+// (offHoursNumbers) убираются и из входящих, и из пропущенных. Сверено 12.11.2026 с таблицей
+// день в день (01–04.10: 26,79 / 19,64 / 19,35 / 21,05 %), октябрь 28,32 против 28,29.
+// Нужен, когда в листе месяца колонки АТС пустые (ноябрь 2026). Ответ { inbound, missed } или null.
+let _offNums = null, _offAt = 0;
+function pbxMissedDay(iso) {
+  const j = readJson(KATE + "/staffperf/pbx/" + iso + ".json");
+  if (!j || !j.final || !(j.inbound > 0)) return null;
+  if (!_offNums || Date.now() - _offAt > 3600e3) {
+    const st = readJson(KATE + "/staffperf/settings.json") || {};
+    _offNums = [...new Set((st.depts || []).reduce((a, d) => a.concat(d.offHoursNumbers || []), []))]; _offAt = Date.now();
+  }
+  const off = _offNums.reduce((a, n) => a + (((j.byDest || {})[n] || {}).in || 0), 0);
+  const inbound = j.inbound - off, missed = j.missed - off;
+  return inbound > 0 ? { inbound, missed: Math.max(0, missed) } : null;
+}
+
 // Зарплата закрытого месяца (zp/closed + zp/fot): оклад = оплата по часам + отпускные +
 // больничные + компенсации; остальное начислено бонусами (продажи, приём, оформление,
 // качество, звонки…). Для прогноза прибыли (07.10.2026).
@@ -213,4 +231,4 @@ async function cashNoCheck(ym) {
 }
 
 module.exports = { FROM_YM, KATE, ymName, nameYm, returnMonths, amoMonths, returnsForDashboard, returnsSpb, returnsByEntity, returnsSbory,
-  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, opTargetPlan, OP_PLAN_FROM_YM, fotSplit, init };
+  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, opTargetPlan, pbxMissedDay, OP_PLAN_FROM_YM, fotSplit, init };

@@ -6548,6 +6548,26 @@ async function vscFetchAll() {
     }
     m.taxes = (extra.tax && extra.tax[m.name]) || null;
   });
+  // % пропущенных звонков, если в листе колонки АТС пустые (в ноябре 2026 там #DIV/0!), — из
+  // данных АТС «Стаффа» Кати тем же счётом, что у таблицы: рабочее время, без нерабочей линии.
+  // Неделя и месяц — Σпропущенных ÷ Σвходящих по закрытым дням.
+  months.forEach((m) => {
+    const ym = katedata.nameYm(m.name);
+    if (!ym || ym < "2026-09" || !(m.days || []).some((d) => d.missedPct == null)) return;
+    let used = 0;
+    (m.days || []).forEach((d) => {
+      if (d.missedPct != null) return;
+      const mm = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(d.date || ""));
+      const p = mm ? katedata.pbxMissedDay(mm[3] + "-" + mm[2] + "-" + mm[1]) : null;
+      if (!p) return;
+      d.missedPct = p.missed / p.inbound * 100; d._pbx = p; used++;
+    });
+    if (!used) return;
+    const agg = (days) => { const xs = days.filter((d) => d._pbx); const i = xs.reduce((a, d) => a + d._pbx.inbound, 0); return i ? xs.reduce((a, d) => a + d._pbx.missed, 0) / i * 100 : null; };
+    (m.weeks || []).forEach((w) => { if ((w.days || []).some((d) => d._pbx)) w.missedPct = agg(w.days); });
+    if (m.total && m.total.missedPct == null) { m.total.missedPct = agg(m.days); m.total.missedSrc = "work"; }
+    (m.days || []).forEach((d) => { delete d._pbx; });
+  });
   // План таргета (МСК+СПБ) по дням, если в листе колонки «Таргет … ПЛАН» пустые, — из
   // «Стаффа ОП» Кати (слой plan в targets-ГГГГ-ММ.json; там же живёт ФАКТ, который её
   // модуль переносит в таблицу, — совпадает день в день). Ноябрь 2026: план в таблицу
