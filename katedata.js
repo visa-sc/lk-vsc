@@ -184,6 +184,31 @@ function pbxMissedDay(iso) {
   return inbound > 0 ? { inbound, missed: Math.max(0, missed) } : null;
 }
 
+// KPI месяца с платформы — модуль «Маркетинг» Кати (marketing-api.js, с 12.11.2026 туда
+// переезжает Google-таблица «KPI VSC»). Её build(ym) запускаем ОТДЕЛЬНЫМ процессом от
+// kateadmin: модуль правит Катя, и ошибка в нём не должна ронять наш сайт. Ответ —
+// { rows: [{day, future, revAll, costAll, atv, asp, upt, drrAll, deals, pkg, tFactMsk,
+// tPlanMsk, tFactSpb, tPlanSpb, calls, missed, missPct, …}], total: {…} } или null.
+// Сверено 12.11 с таблицей: выручка сентября 11 562 270 против 11 562 003, реклама
+// октября 1 826 840,53 = 1 826 841, отклонение таргета −325 = −325, пропущенные 28,3 = 28,3.
+const _kpiCache = {};
+function platformKpi(ym) {
+  const c = _kpiCache[ym];
+  if (c && Date.now() - c.at < 10 * 60 * 1000) return Promise.resolve(c.data);
+  const code = "const m=require(" + JSON.stringify(path.join(KATE, "..", "marketing-api.js")) + ");" +
+    "const r=m._test.build(" + JSON.stringify(ym) + ");process.stdout.write(JSON.stringify({rows:r.rows||r.days||[],total:r.total||r.t||{}}),()=>process.exit(0));";
+  return new Promise((resolve) => {
+    require("child_process").execFile("runuser", ["-u", "kateadmin", "--", process.execPath, "-e", code],
+      { timeout: 15000, maxBuffer: 8 << 20 }, (e, out) => {
+        let data = null;
+        if (!e) { try { const j = JSON.parse(out); if (Array.isArray(j.rows) && j.rows.length) data = j; } catch (_) {} }
+        else console.error("KPI платформы " + ym + ":", String(e.message).slice(0, 160));
+        _kpiCache[ym] = { at: Date.now(), data };
+        resolve(data);
+      });
+  });
+}
+
 // Зарплата закрытого месяца (zp/closed + zp/fot): оклад = оплата по часам + отпускные +
 // больничные + компенсации; остальное начислено бонусами (продажи, приём, оформление,
 // качество, звонки…). Для прогноза прибыли (07.10.2026).
@@ -231,4 +256,4 @@ async function cashNoCheck(ym) {
 }
 
 module.exports = { FROM_YM, KATE, ymName, nameYm, returnMonths, amoMonths, returnsForDashboard, returnsSpb, returnsByEntity, returnsSbory,
-  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, opTargetPlan, pbxMissedDay, OP_PLAN_FROM_YM, fotSplit, init };
+  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, opTargetPlan, pbxMissedDay, platformKpi, OP_PLAN_FROM_YM, fotSplit, init };

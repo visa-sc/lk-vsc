@@ -6504,6 +6504,78 @@ function vscFreezeCity(cr) {
   return out;
 }
 
+// ═══ KPI с платформы, когда нет Google-таблицы (Андрей 12.11.2026) ═══
+// Таблица «KPI VSC» переезжает в модуль «Маркетинг» Кати. Пока таблица жива — она главная;
+// если в ней нет месяца, дня или поля — берём с платформы (katedata.platformKpi). Сейчас
+// платформа даёт выручку, рекламу, ATV/ASP/UPT, ДРР, таргет ФАКТ/ПЛАН и пропущенные;
+// набранных контактов, CV, CPL, мусора и плана ОП у неё пока нет — эти плитки без таблицы
+// остаются пустыми, пока Катя их не добавит (тогда дописать в vscPlatformMap).
+const VSC_PLATFORM_FROM_YM = "2026-08";
+function vscPlatformAgg(rows) {
+  const has = rows.filter((r) => r && !r.future);
+  const S = (f) => has.reduce((a, r) => a + (typeof r[f] === "number" ? r[f] : 0), 0);
+  const any = (f) => has.some((r) => typeof r[f] === "number");
+  const rev = S("revAll"), ad = S("costAll"), deals = S("deals"), pkg = S("pkg");
+  const fact = S("tFactMsk") + S("tFactSpb"), plan = S("tPlanMsk") + S("tPlanSpb"), calls = S("calls"), missed = S("missed");
+  return {
+    budget: any("revAll") ? rev : null, ad: any("costAll") ? Math.round(ad * 100) / 100 : null,
+    atv: deals ? rev / deals : null, asp: pkg ? rev / pkg : null, upt: deals ? pkg / deals : null,
+    drr: rev && any("costAll") ? ad / rev * 100 : null,
+    targetFact: any("tFactMsk") || any("tFactSpb") ? fact : null,
+    targetDev: (any("tFactMsk") || any("tFactSpb")) && plan > 0 ? fact - plan : null,
+    missedPct: calls ? missed / calls * 100 : null
+  };
+}
+const vscPlatformMap = (r) => vscPlatformAgg([r]);
+const VSC_DOW_FULL = { пн: "Понедельник", вт: "Вторник", ср: "Среда", чт: "Четверг", пт: "Пятница", сб: "Суббота", вс: "Воскресенье" };   // как в листе таблицы
+function vscYmList(from, to) { const out = []; let [y, m] = from.split("-").map(Number); for (;;) { const ym = y + "-" + String(m).padStart(2, "0"); if (ym > to) break; out.push(ym); if (++m > 12) { m = 1; y++; } } return out; }
+async function vscFillFromPlatform(months, extra) {
+  const now = new Date(Date.now() + 3 * 3600 * 1000), nowYm = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");   // МСК
+  const byYm = new Map(months.map((m) => [katedata.nameYm(m.name), m]));
+  for (const ym of vscYmList(VSC_PLATFORM_FROM_YM, nowYm)) {
+    const P = await katedata.platformKpi(ym).catch(() => null);
+    if (!P) continue;
+    const rowOf = (dd) => P.rows[(+String(dd.date).slice(0, 2)) - 1];
+    let m = byYm.get(ym);
+    if (!m) {
+      // Месяца в таблице нет — собираем целиком: дни, недели пн–вс внутри месяца, итог.
+      if (!P.rows.some((r) => !r.future && typeof r.revAll === "number")) continue;
+      const name = VSC_RU_MONTHS[+ym.slice(5) - 1].replace(/^./, (c) => c.toUpperCase()) + " " + ym.slice(0, 4);
+      const days = P.rows.map((r) => Object.assign({ date: r.date.slice(8) + "." + r.date.slice(5, 7) + "." + r.date.slice(0, 4), weekday: VSC_DOW_FULL[r.dow] || r.dow || "" },
+        r.future ? {} : vscPlatformMap(r), { src: "platform" }));
+      const weeks = []; let blk = [];
+      P.rows.forEach((r, i) => {
+        blk.push(i); const last = i === P.rows.length - 1;
+        if (r.dow === "вс" || last) {
+          const ds = blk.map((k) => days[k]), rs = blk.map((k) => P.rows[k]);
+          weeks.push(Object.assign({ label: ds[0].date.slice(0, 5) + "–" + ds[ds.length - 1].date.slice(0, 5), days: ds }, vscPlatformAgg(rs)));
+          blk = [];
+        }
+      });
+      const total = Object.assign(vscPlatformAgg(P.rows), { _filledDays: P.rows.filter((r) => !r.future && typeof r.revAll === "number").length, src: "platform" });
+      m = { name, days, weeks, total, platform: true, taxes: (extra && extra.tax && extra.tax[name]) || null };
+      months.push(m); byYm.set(ym, m);
+      continue;
+    }
+    // Месяц в таблице есть — дополняем пустые поля дней, а за ними недели и итог.
+    let touched = false;
+    (m.days || []).forEach((d) => {
+      const r = rowOf(d); if (!r || r.future) return;
+      const v = vscPlatformMap(r);
+      const sheetEmpty = !(d.budget > 0) && !(d.processed > 0);   // строка дня не заполнена (нули или пусто)
+      Object.keys(v).forEach((k) => {
+        if (v[k] == null) return;
+        if (d[k] == null || (sheetEmpty && ["budget", "ad", "atv", "asp", "upt", "drr"].includes(k) && !d[k])) { d[k] = v[k]; d.src = "platform"; touched = true; }
+      });
+    });
+    if (!touched) continue;
+    const fill = (obj, rows) => { const a = vscPlatformAgg(rows); Object.keys(a).forEach((k) => { if (a[k] != null && (obj[k] == null || (!(obj.budget > 0) && !obj[k]))) obj[k] = a[k]; }); };
+    (m.weeks || []).forEach((w) => { if ((w.days || []).some((d) => d.src === "platform")) fill(w, (w.days || []).map(rowOf).filter(Boolean)); });
+    if (m.total && m.days.some((d) => d.src === "platform")) fill(m.total, P.rows);
+  }
+  months.sort((a, b) => String(katedata.nameYm(a.name)).localeCompare(String(katedata.nameYm(b.name))));
+}
+
 async function vscFetchAll() {
   // Листы Google тянем ПАРАЛЛЕЛЬНО (раньше — последовательно, 7 листов = долго).
   // Promise.all сохраняет порядок; недоступный лист → null → отфильтруем.
@@ -6593,6 +6665,8 @@ async function vscFetchAll() {
     (m.weeks || []).forEach((w) => { if ((w.days || []).some((d) => d.targetPlanSrc === "work")) w.targetDev = sumDev(w.days); });
     if (m.total) { m.total.targetDev = sumDev(m.days || []); m.total.targetPlanSrc = "work"; }
   });
+  // Нет в таблице месяца, дня или поля — берём с платформы (модуль «Маркетинг» Кати).
+  try { await vscFillFromPlatform(months, extra); } catch (e) { console.error("KPI платформы:", e && e.message); }
   // Заморозка истории: подставляем/фиксируем снимки старых месяцев ДО годового агрегата,
   // чтобы год считался по стабильным значениям и вмороженные месяцы не пропадали.
   vscApplyFreeze(months);
