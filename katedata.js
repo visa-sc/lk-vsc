@@ -149,6 +149,23 @@ function opPlan(ym) {
     state: (j.approve && j.approve.state) || "" };
 }
 
+// Дневной ПЛАН таргета по контактам (МСК/СПБ) из того же файла Кати: слой `plan` — как
+// расписали по графику на начало месяца, по сотрудникам ({сотрудник: {день: {m, s}}}),
+// или `planTotals` — общими числами на день. Нужен, когда в KPI-таблице колонки
+// «Таргет … ПЛАН» пустые (ноябрь 2026: план у Кати «черновик», в таблицу не отправлен).
+// Ответ: { "1": {msk, spb}, … } или null.
+function opTargetPlan(ym) {
+  const j = readJson(KATE + "/staffperf/op/targets-" + ym + ".json");
+  if (!j) return null;
+  const out = {};
+  if (j.planTotals) Object.keys(j.planTotals).forEach((d) => { const x = j.planTotals[d] || {}; out[String(+d)] = { msk: Number(x.msk) || 0, spb: Number(x.spb) || 0 }; });
+  else if (j.plan) Object.keys(j.plan).forEach((emp) => Object.keys(j.plan[emp] || {}).forEach((d) => {
+    const c = j.plan[emp][d] || {}, k = String(+d); out[k] = out[k] || { msk: 0, spb: 0 };
+    out[k].msk += Number(c.m) || 0; out[k].spb += Number(c.s) || 0;
+  }));
+  return Object.keys(out).length ? out : null;
+}
+
 // Зарплата закрытого месяца (zp/closed + zp/fot): оклад = оплата по часам + отпускные +
 // больничные + компенсации; остальное начислено бонусами (продажи, приём, оформление,
 // качество, звонки…). Для прогноза прибыли (07.10.2026).
@@ -196,4 +213,4 @@ async function cashNoCheck(ym) {
 }
 
 module.exports = { FROM_YM, KATE, ymName, nameYm, returnMonths, amoMonths, returnsForDashboard, returnsSpb, returnsByEntity, returnsSbory,
-  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, OP_PLAN_FROM_YM, fotSplit, init };
+  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, opTargetPlan, OP_PLAN_FROM_YM, fotSplit, init };

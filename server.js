@@ -6548,6 +6548,31 @@ async function vscFetchAll() {
     }
     m.taxes = (extra.tax && extra.tax[m.name]) || null;
   });
+  // План таргета (МСК+СПБ) по дням, если в листе колонки «Таргет … ПЛАН» пустые, — из
+  // «Стаффа ОП» Кати (слой plan в targets-ГГГГ-ММ.json; там же живёт ФАКТ, который её
+  // модуль переносит в таблицу, — совпадает день в день). Ноябрь 2026: план в таблицу
+  // не отправлен, отклонение таргета было пустым (Андрей 12.11.2026: «план ставится на портале»).
+  months.forEach((m) => {
+    // неделя, где ни у одного дня нет плана, — без отклонения (а не «факт − 0» из строки Total)
+    (m.weeks || []).forEach((w) => { if ((w.days || []).length && w.days.every((d) => d.targetDev == null)) w.targetDev = null; });
+    const ym = katedata.nameYm(m.name);
+    if (!ym || ym < "2026-09" || !(m.days || []).some((d) => d.targetDev == null && d.targetFact != null)) return;
+    const kp = katedata.opTargetPlan(ym);
+    if (!kp) return;
+    let used = 0;
+    (m.days || []).forEach((d) => {
+      if (d.targetDev != null || d.targetFact == null) return;
+      const p = kp[String(+String(d.date || "").slice(0, 2))];
+      if (!p) return;
+      d.targetDev = d.targetFact - (p.msk + p.spb); d.targetPlanSrc = "work"; used++;
+    });
+    if (!used) return;
+    const filledDay = (d) => (d.processed != null && d.processed > 0) || (d.budget != null && d.budget > 0);
+    const sumDev = (days) => { const v = days.filter(filledDay).map((d) => d.targetDev).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
+    // строка «Total» недели при пустом плане даёт план 0 (сумма пустых), то есть отклонение = факт
+    (m.weeks || []).forEach((w) => { if ((w.days || []).some((d) => d.targetPlanSrc === "work")) w.targetDev = sumDev(w.days); });
+    if (m.total) { m.total.targetDev = sumDev(m.days || []); m.total.targetPlanSrc = "work"; }
+  });
   // Заморозка истории: подставляем/фиксируем снимки старых месяцев ДО годового агрегата,
   // чтобы год считался по стабильным значениям и вмороженные месяцы не пропадали.
   vscApplyFreeze(months);
