@@ -6086,10 +6086,12 @@ function vscParseMonth(rows) {
   const overCols = colsAll(["недобор/перебор", "оп"]);
   const sumNN = (r, cols) => { const v = cols.map((i) => vscNum(r[i])).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
   // Отклонение таргета: (ФАКТ МСК + ФАКТ СПБ) − (ПЛАН МСК + ПЛАН СПБ).
+  // Нет плана в листе — нет и отклонения: в ноябре 2026 колонки ПЛАН пустые, и
+  // прежнее «план = 0» выдавало отклонение, равное факту (+551 за месяц, 12.11.2026).
   const targetDev = (r) => {
     const f = sumNN(r, [C.factMSK, C.factSPB].filter((i) => i >= 0));
     const p = sumNN(r, [C.planMSK, C.planSPB].filter((i) => i >= 0));
-    return (f == null && p == null) ? null : ((f || 0) - (p || 0));
+    return p == null ? null : ((f || 0) - p);
   };
   const pick = (r) => ({
     atv: C.atv >= 0 ? vscNum(r[C.atv]) : null, asp: vscNum(r[C.asp]), upt: vscNum(r[C.upt]),
@@ -6241,11 +6243,18 @@ function vscParseReviews(rows) {
   }
   return out;
 }
+// Сбой Google или пустой ответ не должен стирать блок «Отзывы»: раньше в такой
+// пересчёт он пропадал до следующего (Андрей 12.11.2026: «в какой-то день барахлили»).
+// Отдаём последнюю удачную загрузку, она хранится на диске.
+const VSC_REVIEWS_LAST = path.join(__dirname, ".vscReviewsLast.json");
 async function vscFetchReviews() {
   try {
     const r = await axios.get(VSC_REVIEWS_CSV, { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
-    return vscParseReviews(vscParseCsv(r.data));
-  } catch (e) { return []; /* недоступна таблица отзывов — просто без неё */ }
+    const out = vscParseReviews(vscParseCsv(r.data));
+    if (out.length) { try { fs.writeFileSync(VSC_REVIEWS_LAST, JSON.stringify(out)); } catch (_) {} return out; }
+    console.error("отзывы: таблица пришла без строк — показываю прошлую загрузку");
+  } catch (e) { console.error("отзывы: таблица не загрузилась —", e.message); }
+  try { return JSON.parse(fs.readFileSync(VSC_REVIEWS_LAST, "utf8")); } catch (_) { return []; }
 }
 // ═══ Возвраты — Google-таблица «Отчёт по возвратам» (Андрей 06.10.2026: «пока по
 // старинке из таблицы»). Все четыре потребителя (дашборд, Питер, «Запас на сборы»,
@@ -9205,7 +9214,7 @@ async function tbGet(url, attempt) {
     const r = await axios.get(url, { headers: { Authorization: "Bearer " + TBANK_TOKEN }, timeout: 30000, validateStatus: () => true, httpsAgent: tbCaAgent() });
     if (r.status === 200) return r.data;
     if ((r.status === 429 || r.status >= 500) && (attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500 * ((attempt || 0) + 1))); return tbGet(url, (attempt || 0) + 1); }
-    throw new Error("T-Bank HTTP " + r.status);
+    throw new Error("T-Bank HTTP " + r.status + (r.data && r.data.errorMessage ? ": " + String(r.data.errorMessage).slice(0, 200) : ""));
   } catch (e) { if (e.message && e.message.indexOf("T-Bank HTTP") === 0) throw e; if ((attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500)); return tbGet(url, (attempt || 0) + 1); } throw e; }
 }
 async function tbAccountNumber() {
@@ -9410,7 +9419,13 @@ async function runBuyoutsCheck(trigger) {
     saveBuyouts(result);
     console.log("BUYOUTS [" + (trigger || "cron") + "]: банк-месяцев " + Object.keys(bankMonths).length + ", заморожено " + result.frozen + " ₽, ops " + ops.length + ", " + result.durationMs + "ms");
     return result;
-  } catch (e) { console.error("runBuyoutsCheck:", e.message); return { error: e.message }; }
+  } catch (e) {
+    console.error("runBuyoutsCheck:", e.message);
+    // прежние цифры остаются, но блок должен сказать, что они не обновляются (с 30.10.2026
+    // токен ООО отклонялся банком, а блок две недели молча показывал данные от 29.10)
+    const prev = loadBuyouts(); if (prev) saveBuyouts(Object.assign({}, prev, { lastError: e.message, lastErrorAt: Date.now() }));
+    return { error: e.message };
+  }
   finally { _buyoutsRunning = false; }
 }
 // Сводка сверки контактов (OnlinePBX + Flexbe против amoCRM) — блок в
@@ -9526,7 +9541,7 @@ async function tbGetT(token, url, attempt) {
     const r = await axios.get(url, { headers: { Authorization: "Bearer " + token }, timeout: 30000, validateStatus: () => true, httpsAgent: tbCaAgent() });
     if (r.status === 200) return r.data;
     if ((r.status === 429 || r.status >= 500) && (attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500 * ((attempt || 0) + 1))); return tbGetT(token, url, (attempt || 0) + 1); }
-    throw new Error("T-Bank HTTP " + r.status);
+    throw new Error("T-Bank HTTP " + r.status + (r.data && r.data.errorMessage ? ": " + String(r.data.errorMessage).slice(0, 200) : ""));
   } catch (e) { if (e.message && e.message.indexOf("T-Bank HTTP") === 0) throw e; if ((attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500)); return tbGetT(token, url, (attempt || 0) + 1); } throw e; }
 }
 async function tbAccRuble(token) {
