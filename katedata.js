@@ -134,6 +134,17 @@ function entityRevenue(ym) {
   const s = (f) => Object.values(days).reduce((a, d) => a + (Number(d[f]) || 0), 0);
   return { alta: s("alta"), kom: s("komis"), pan: s("panf"), akg: s("akg") };
 }
+// Нал без чека В ВЫРУЧКЕ ЮРЛИЦ за месяц: бюджеты (услуги без НДС) сделок юрлица с флагом
+// cashNo. Нал без чека по сделкам без договора / «серым» (ВНЖ и пр.) сюда не входит —
+// эти сделки и так не попадают в entityRevenue (налоговая вкладка, 13.11.2026).
+function entityCashNo(ym) {
+  if (ym < FROM_YM) return null;
+  const days = amoDays(ym); if (!days) return null;
+  const MAP = { alta: "alta", komis: "kom", panf: "pan", akg: "akg" };
+  const out = { alta: 0, kom: 0, pan: 0, akg: 0 };
+  Object.values(days).forEach((d) => (d.deals || []).forEach((x) => { const k = MAP[x.ent]; if (k && x.cashNo) out[k] += Number(x.price) || 0; }));
+  return out;
+}
 
 // План отдела продаж на месяц — «Управление персоналом → Стафф → План на месяц ОП» Кати
 // (data/staffperf/op/targets-ГГГГ-ММ.json, goals: atv — средний чек, conv — конверсия
@@ -256,4 +267,4 @@ async function cashNoCheck(ym) {
 }
 
 module.exports = { FROM_YM, KATE, ymName, nameYm, returnMonths, amoMonths, returnsForDashboard, returnsSpb, returnsByEntity, returnsSbory,
-  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, opTargetPlan, pbxMissedDay, platformKpi, OP_PLAN_FROM_YM, fotSplit, init };
+  sboryIncome, taxesMonth, entityRevenue, entityCashNo, cashNoCheck, opPlan, opTargetPlan, pbxMissedDay, platformKpi, OP_PLAN_FROM_YM, fotSplit, init };

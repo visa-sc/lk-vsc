@@ -8630,6 +8630,7 @@ async function vscTaxLegAuto(qkey) {
   const [year, q] = qkey.split("-");
   const rev = { alta: [null, null, null], kom: [null, null, null], pan: [null, null, null], akg: [null, null, null] };
   const cash = [null, null, null], vat = [null, null, null]; const missing = [];
+  const cashEnt = { alta: 0, kom: 0, pan: 0, akg: 0 };
   const monsQ = TAXLEG_QMONTHS[q] || [];
   for (let mi = 0; mi < monsQ.length; mi++) {
     const name = monsQ[mi] + " " + year, ym = katedata.nameYm(name);
@@ -8638,9 +8639,12 @@ async function vscTaxLegAuto(qkey) {
     rev.alta[mi] = er.alta; rev.kom[mi] = er.kom; rev.pan[mi] = er.pan; rev.akg[mi] = er.akg;
     const t = katedata.taxesMonth(ym); if (t) vat[mi] = t.nds;
     const cn = await katedata.cashNoCheck(ym); if (cn) cash[mi] = cn.total;
+    const ce = katedata.entityCashNo(ym); if (ce) Object.keys(cashEnt).forEach((k) => { cashEnt[k] += ce[k] || 0; });
   }
   const sum = (a) => a.some((v) => v != null) ? a.reduce((x, v) => x + (v || 0), 0) : null;
-  const data = vscTaxLegLG("taxLegAuto", qkey, { rev, cashMonths: cash, vatMonths: vat, cash: sum(cash), vatOut: sum(vat), missing, src: "work" }, []);
+  // cashEnt — нал без чека в сделках самих юрлиц (схема с III кв., 13.11.2026): только он
+  // вычитается из базы; cash (весь сейф) — справочно, в нём ВНЖ и сделки без договора.
+  const data = vscTaxLegLG("taxLegAuto", qkey, { rev, cashMonths: cash, vatMonths: vat, cash: sum(cash), cashEnt, vatOut: sum(vat), missing, src: "work" }, []);
   _taxLegAutoCache[qkey] = { at: Date.now(), data };
   return data;
 }

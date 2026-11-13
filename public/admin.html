@@ -5672,7 +5672,7 @@
       const VSC_TAXQ_MON = { Q1: ["Январь", "Февраль", "Март"], Q2: ["Апрель", "Май", "Июнь"], Q3: ["Июль", "Август", "Сентябрь"], Q4: ["Октябрь", "Ноябрь", "Декабрь"] };
       async function renderVscTaxes() {
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Налоги — сверка по юрлицам";
-        h.appendChild(vscInfo("<b>Как считается (формулы твоего файла «1-2 кв.xlsx», ред. 22.07)</b><br>• С III квартала 2026 всё из раздела Кати на work.voyotravel.ru: выручки юрлиц и вынесенный НДС (база × 5 %) — «Касса → CRM-факт», нал без чека — пересчёт сейфа МСК и СПб там же, возвраты — её модуль возвратов («Услуги» + «НДС»). I и II кварталы — зафиксированные цифры прежней таблицы «срм-факт», сверенные с файлом.<br>• «Нал сверх срм-факт» (ВНЖ и пр.) — ручное поле, прибавляется к налу без чека.<br>• Возвраты и нал переводятся в <b>доли от суммарной выручки квартала</b> всех 4 юрлиц и вычитаются из базы каждого пропорционально его выручке (доли считаются точно, без округления как в файле).<br>• Налог = (выручка − вычет) × ставка: Альта 1,5% · Комисаренко 3% · Панфилова 3% · ЭйКей 1,5%.<br>• НДС 5% платят юрлица, у которых НДС уже начался (Альта/Комисаренко — с мая 2026): база = выручка НДС-месяцев минус те же доли + вынесенный НДС, поделённый на число НДС-плательщиков квартала (1 кв — на 2, со 2 кв — на 4).<br>• «От бухгалтера» — ввод; Δ = наш − бух; внизу — сумма расхождений квартала.<br><br>Кэш прогревается фоном каждые 12 минут — вкладка открывается сразу."));
+        h.appendChild(vscInfo("<b>Как считается (формулы твоего файла «1-2 кв.xlsx», ред. 22.07)</b><br>• <b>С III квартала 2026 (исправлено 13.11.2026):</b> выручка юрлиц из CRM-факта Кати уже не содержит ВНЖ и сделок без договора, поэтому вычитаются только СВОИ возвраты юрлица (без НДС) и СВОЙ нал без чека в его сделках; НДС = база × 5 %. Формулы ниже про доли — для I–II кв.<br>• С III квартала 2026 всё из раздела Кати на work.voyotravel.ru: выручки юрлиц и вынесенный НДС (база × 5 %) — «Касса → CRM-факт», нал без чека — пересчёт сейфа МСК и СПб там же, возвраты — её модуль возвратов («Услуги» + «НДС»). I и II кварталы — зафиксированные цифры прежней таблицы «срм-факт», сверенные с файлом.<br>• «Нал сверх срм-факт» (ВНЖ и пр.) — ручное поле, прибавляется к налу без чека.<br>• Возвраты и нал переводятся в <b>доли от суммарной выручки квартала</b> всех 4 юрлиц и вычитаются из базы каждого пропорционально его выручке (доли считаются точно, без округления как в файле).<br>• Налог = (выручка − вычет) × ставка: Альта 1,5% · Комисаренко 3% · Панфилова 3% · ЭйКей 1,5%.<br>• НДС 5% платят юрлица, у которых НДС уже начался (Альта/Комисаренко — с мая 2026): база = выручка НДС-месяцев минус те же доли + вынесенный НДС, поделённый на число НДС-плательщиков квартала (1 кв — на 2, со 2 кв — на 4).<br>• «От бухгалтера» — ввод; Δ = наш − бух; внизу — сумма расхождений квартала.<br><br>Кэш прогревается фоном каждые 12 минут — вкладка открывается сразу."));
         vscContent.appendChild(h);
         const box = document.createElement("div"); vscContent.appendChild(box);
         box.innerHTML = '<div class="loading-state">Загружаем…</div>';
@@ -5713,6 +5713,10 @@
         const money0 = function (v) { return (v == null || isNaN(v)) ? "\u2014" : Math.round(v).toLocaleString("ru-RU") + " \u20bd"; };
         const A = AUTO || { rev: { alta: [], kom: [], pan: [], akg: [] }, cash: null, vatOut: null, missing: ["\u0430\u0432\u0442\u043e\u0442\u044f\u0433 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d"] };
         const retTot = Object.values((RET && RET.byEnt) || {}).reduce(function (a, v) { return a + (v || 0); }, 0);
+        // Схема с III кв. 2026 (13.11.2026): выручка юрлиц из CRM-факта Кати уже без ВНЖ и сделок без
+        // договора, поэтому вычитается только СВОЙ нал без чека юрлица (cashEnt) и СВОИ возвраты.
+        const V4 = !!(A.src === "work" && A.cashEnt);
+        const cashEntTot = V4 ? Object.values(A.cashEnt).reduce(function (a, v) { return a + (v || 0); }, 0) : 0;
         // \u2500\u2500 \u0410\u0432\u0442\u043e-\u0434\u0430\u043d\u043d\u044b\u0435 (read-only) \u2500\u2500
         const inCard = document.createElement("div"); inCard.className = "vsc-chart";
         let ih = '<div class="vsc-chart-h" style="margin-bottom:8px;">Данные из раздела Кати — CRM-факт и возвраты (автоматом)' + (A.src === "work" ? "" : ' · I–II кв. — зафиксировано из прежней таблицы') + '</div>'
@@ -5728,9 +5732,11 @@
         });
         ih += '</tbody></table></div>'
           + '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;color:#5a626f;align-items:center;">'
-          + '<div>Нал без чека за кв (пересчёт сейфа): <b>' + money0(A.cash) + '</b></div>'
-          + '<div>+ \u043d\u0430\u043b \u0441\u0432\u0435\u0440\u0445 \u0441\u0440\u043c-\u0444\u0430\u043a\u0442 (\u0412\u041d\u0416 \u0438 \u043f\u0440.): <input type="text" inputmode="numeric" class="tax-cash-extra" value="' + (Q.cashExtra == null ? "" : Q.cashExtra) + '" style="width:110px;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;"></div>'
-          + '<div>= \u043d\u0430\u043b \u0432\u0441\u0435\u0433\u043e: <b id="taxCashTotal">\u2014</b></div>'
+          + (V4 ? '<div>Нал без чека в сделках юрлиц (вычитается): <b>' + money0(cashEntTot) + '</b> <span style="color:#9aa0ab;">(' + ENT.map(function (e) { return escapeHtml(e.name) + " " + money0(A.cashEnt[e.key] || 0); }).join(" · ") + ')</span></div>'
+            + '<div style="color:#9aa0ab;">Весь нал без чека по сейфу: ' + money0(A.cash) + ' — справочно: ВНЖ и сделки без договора в выручку юрлиц не входят</div>'
+            : '<div>Нал без чека за кв (пересчёт сейфа): <b>' + money0(A.cash) + '</b></div>')
+          + (V4 ? '' : '<div>+ \u043d\u0430\u043b \u0441\u0432\u0435\u0440\u0445 \u0441\u0440\u043c-\u0444\u0430\u043a\u0442 (\u0412\u041d\u0416 \u0438 \u043f\u0440.): <input type="text" inputmode="numeric" class="tax-cash-extra" value="' + (Q.cashExtra == null ? "" : Q.cashExtra) + '" style="width:110px;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;"></div>'
+          + '<div>= \u043d\u0430\u043b \u0432\u0441\u0435\u0433\u043e: <b id="taxCashTotal">\u2014</b></div>')
           + '<div>\u0412\u044b\u043d\u0435\u0441\u0435\u043d\u043d\u044b\u0439 \u041d\u0414\u0421 \u0437\u0430 \u043a\u0432: <b>' + money0(A.vatOut) + '</b></div>'
           + '<div>\u0412\u043e\u0437\u0432\u0440\u0430\u0442\u044b (\u0443\u0441\u043b\u0443\u0433\u0438+\u041d\u0414\u0421) \u0437\u0430 \u043a\u0432: <b>' + money0(retTot) + '</b></div>'
           + '</div>'
@@ -5761,23 +5767,28 @@
           const fmtPct = function (p) { return (Math.round(p * 10000) / 100).toLocaleString("ru-RU") + "%"; };
           const ctEl = box.querySelector("#taxCashTotal"); if (ctEl) ctEl.textContent = money0(cashTotal);
           const th = 'text-align:right;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;white-space:nowrap;';
-          let oh = '<div style="font-size:12px;color:#6b7280;margin-bottom:8px;">Доли от Σ выручки квартала (' + money0(sumRevAll) + '): возвраты <b>' + fmtPct(pctRet) + '</b> · нал <b>' + fmtPct(pctCash) + '</b> — вычет каждому юрлицу пропорционально его выручке</div>'
+          let oh = (V4 ? '<div style="font-size:12px;color:#6b7280;margin-bottom:8px;">Σ выручки юрлиц ' + money0(sumRevAll) + ' (без ВНЖ и сделок без договора). Вычет каждому юрлицу — его возвраты (без НДС) + его нал без чека. НДС = база × 5 %.</div>' : '<div style="font-size:12px;color:#6b7280;margin-bottom:8px;">Доли от Σ выручки квартала (' + money0(sumRevAll) + '): возвраты <b>' + fmtPct(pctRet) + '</b> · нал <b>' + fmtPct(pctCash) + '</b> — вычет каждому юрлицу пропорционально его выручке</div>')
             + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px;"><thead><tr>'
             + '<th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;">\u042e\u0440\u043b\u0438\u0446\u043e</th>'
-            + '<th style="' + th + '">\u0412\u044b\u0440\u0443\u0447\u043a\u0430</th><th style="' + th + '">\u0412\u044b\u0447\u0435\u0442 ' + fmtPct(pct) + '</th><th style="' + th + '">\u0411\u0430\u0437\u0430</th>'
+            + '<th style="' + th + '">\u0412\u044b\u0440\u0443\u0447\u043a\u0430</th><th style="' + th + '">\u0412\u044b\u0447\u0435\u0442 ' + (V4 ? 'возвр.+нал' : fmtPct(pct)) + '</th><th style="' + th + '">\u0411\u0430\u0437\u0430</th>'
             + '<th style="' + th + '">\u041d\u0430\u043b\u043e\u0433 \u043d\u0430\u0448</th><th style="' + th + '">\u041d\u0430\u043b\u043e\u0433 \u0431\u0443\u0445</th><th style="' + th + '">\u0394 \u043d\u0430\u043b\u043e\u0433</th>'
             + '<th style="' + th + '">\u041d\u0414\u0421 \u043d\u0430\u0448</th><th style="' + th + '">\u041d\u0414\u0421 \u0431\u0443\u0445</th><th style="' + th + '">\u0394 \u041d\u0414\u0421</th><th style="' + th + '">\u0414\u043e\u0445\u043e\u0434 \u0431\u0443\u0445</th></tr></thead><tbody>';
           let sumDTax = 0, sumDVat = 0, haveB = false;
           ENT.forEach(function (e) {
             const arr = (A.rev && A.rev[e.key]) || [];
             const R = arr.reduce(function (a, v) { return a + (v || 0); }, 0);
-            const taxDeduct = R * pct; // вычет пропорционально выручке юрлица
+            // I–II кв.: вычет пропорционально выручке юрлица. С III кв. (V4): свои возвраты юрлица
+            // (без НДС, ÷1,05) + доля непривязанных возвратов по выручке + свой нал без чека.
+            const retOwn = V4 ? (((RET.byEnt || {})[e.key] || 0) + ((RET.byEnt || {}).other || 0) * (sumRevAll ? R / sumRevAll : 0)) / 1.05 : 0;
+            const cashOwn = V4 ? (A.cashEnt[e.key] || 0) : 0;
+            const taxDeduct = V4 ? Math.min(R, retOwn + cashOwn) : R * pct;
             const base = R - taxDeduct;
             const tax = base * e.rate;
             let vat = 0;
             if (e.vatStart <= lastYm) {
               let vatRev = 0; for (let mi = 0; mi < 3; mi++) { if (monthYm(mi) >= e.vatStart) vatRev += arr[mi] || 0; }
-              vat = (vatRev * (1 - pct) + (A.vatOut || 0) / vatPayers) * 0.05;
+              // V4: выручка в CRM-факте уже без НДС, поэтому НДС = база × 5 % (без «+ вынесенный НДС / N»).
+              vat = V4 ? (R ? base * vatRev / R : 0) * 0.05 : (vatRev * (1 - pct) + (A.vatOut || 0) / vatPayers) * 0.05;
             }
             const b = Q.buh[e.key] || {};
             const dTax = (b.tax != null) ? tax - b.tax : null;
