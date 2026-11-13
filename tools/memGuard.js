@@ -42,6 +42,9 @@ const SWAP_FULL_LOW_MB = 800;
 const DISK_WARN_GB = Number(process.env.MEM_GUARD_DISK_WARN_GB || 10); // общий остаток: одно письмо
 const DISK_DAILY_GB = Number(process.env.MEM_GUARD_DISK_DAILY_GB || 8); // общий остаток: письмо каждый день
 const ROOT_MIN_GB = Number(process.env.MEM_GUARD_ROOT_MIN_GB || 3);     // основной диск отдельно
+// Диск копий /mnt/data с 13.11.2026 — 20 ГБ (был 50): свои пороги, общие 10/8 на нём не сработают
+const DATA_WARN_GB = Number(process.env.MEM_GUARD_DATA_WARN_GB || 4);   // одно письмо
+const DATA_DAILY_GB = Number(process.env.MEM_GUARD_DATA_DAILY_GB || 3); // каждый день
 const DISKS = ["/", "/mnt/data"];
 const DAY_MS = 24 * 3600 * 1000;
 const CPU_K = 1.5; // загрузка (loadavg 5 мин) на ядро
@@ -108,10 +111,12 @@ const diskLine = (disks, total) => `свободно ${total.toFixed(1)} ГБ н
   const diskFreeGb = disks.reduce((a, d) => a + d.freeGb, 0), diskTotGb = disks.reduce((a, d) => a + d.totGb, 0);
   const rootFreeGb = disks[0].freeGb;
   const dataMissing = disks.length < DISKS.length;
+  const dataFreeGb = dataMissing ? Infinity : disks[1].freeGb;
   // уровень: 0 норма, 1 «меньше 10» (одно письмо), 2 «меньше 8» или мало на основном (каждый день);
   // выход из тревоги — с запасом 1 ГБ, чтобы не слать «в норме / снова мало» каждые 5 минут
   const pad = st.alerted.disk ? 1 : 0;
-  const diskLevel = diskFreeGb < DISK_DAILY_GB + pad || rootFreeGb < ROOT_MIN_GB + pad ? 2 : diskFreeGb < DISK_WARN_GB + pad ? 1 : 0;
+  const diskLevel = diskFreeGb < DISK_DAILY_GB + pad || rootFreeGb < ROOT_MIN_GB + pad || dataFreeGb < DATA_DAILY_GB + pad ? 2
+    : diskFreeGb < DISK_WARN_GB + pad || dataFreeGb < DATA_WARN_GB + pad ? 1 : 0;
   const cores = require("os").cpus().length, load5 = require("os").loadavg()[1];
   const cond = {
     disk: diskLevel > 0 || dataMissing,
@@ -128,7 +133,7 @@ const diskLine = (disks, total) => `свободно ${total.toFixed(1)} ГБ н
 
   const facts = [
     `Свободно памяти: <b>${availMb} МБ</b> из ${totalMb} МБ (порог ${LOW_MB} МБ).`,
-    `Диски вместе: свободно <b>${diskFreeGb.toFixed(1)} ГБ</b> из ${diskTotGb.toFixed(0)} ГБ (пороги: меньше ${DISK_WARN_GB} ГБ — письмо, меньше ${DISK_DAILY_GB} ГБ — каждый день). ` +
+    `Диски вместе: свободно <b>${diskFreeGb.toFixed(1)} ГБ</b> из ${diskTotGb.toFixed(0)} ГБ (пороги: меньше ${DISK_WARN_GB} ГБ — письмо, меньше ${DISK_DAILY_GB} ГБ — каждый день; на диске копий отдельно ${DATA_WARN_GB} и ${DATA_DAILY_GB} ГБ). ` +
       disks.map((d) => `${d.m === "/" ? "основной" : "сетевой " + d.m}: свободно ${d.freeGb.toFixed(1)} из ${d.totGb.toFixed(0)} ГБ`).join("; ") +
       (dataMissing ? "; <b>сетевой диск /mnt/data не подключён</b>" : "") + ".",
     `Процессор: загрузка за 5 минут ${load5.toFixed(2)} при ${cores} ядрах (порог ${(cores * CPU_K).toFixed(1)}).`,
@@ -142,6 +147,7 @@ const diskLine = (disks, total) => `свободно ${total.toFixed(1)} ГБ н
     oom: `система закрыла процесс из-за нехватки памяти (${newOom} раз за 5 минут)`,
     disk: dataMissing && !diskLevel ? "сетевой диск /mnt/data не подключён — резервные копии Кати пишутся на основной диск"
       : rootFreeGb < ROOT_MIN_GB ? `на основном диске осталось ${rootFreeGb.toFixed(1)} ГБ — сайты могут остановиться`
+      : dataFreeGb < DATA_WARN_GB ? `на диске резервных копий /mnt/data осталось ${dataFreeGb.toFixed(1)} ГБ`
       : `на дисках мало места: свободно ${diskFreeGb.toFixed(1)} ГБ на двоих`,
     cpu: "процессор перегружен уже 15 минут — сайты могут отвечать медленно"
   };
@@ -161,17 +167,17 @@ const diskLine = (disks, total) => `свободно ${total.toFixed(1)} ГБ н
       : fresh.includes("disk") ? "Сервер: заканчивается место на диске" : "Сервер: процессор перегружен";
     const todo = [];
     if (memIssue) todo.push("память — добавить RAM (сейчас " + Math.round(totalMb / 1024) + " ГБ)");
-    if (fresh.includes("disk")) todo.push("диск — почистить старые журналы и резервные копии (Катины — /mnt/data/kate-backup-daily) или увеличить сетевой диск: Рег.облако → Сетевые диски → диск сервера VOYO, размер увеличивается без перезагрузки, затем resize2fs /dev/sdb");
+    if (fresh.includes("disk")) todo.push(`диск — почистить старые журналы и резервные копии (Катины — /mnt/data/kate-backup-daily) или увеличить сетевой диск: Рег.облако → Сетевые диски → диск сервера VOYO, размер увеличивается без перезагрузки, затем resize2fs ${sh("findmnt -n -o SOURCE /mnt/data") || "/dev/sdc"}`);
     if (fresh.includes("cpu")) todo.push("процессор — посмотреть, какой процесс грузит (top), при постоянной нагрузке добавить ядро");
     await send(subj, [
       `<b>Что случилось:</b> ${active.map((k) => WHAT[k]).join("; ")}.`,
       ...facts,
       "<b>Что сделать:</b> " + todo.join("; ") + "." + (memIssue || fresh.includes("cpu") ? " Рег.облако → Виртуальные серверы → VOYO (ID 7303919) → карандаш у «Характеристик сервера». Если в панели «Нет доступных тарифов» — заявка в поддержку. Сервер перезагрузится на несколько минут." : ""),
-      fresh.length === 1 && fresh[0] === "disk" ? (diskLevel >= 2 ? "Пока места не прибавится, письмо будет приходить раз в сутки." : `Следующее письмо — если останется меньше ${DISK_DAILY_GB} ГБ, тогда каждый день.`)
+      fresh.length === 1 && fresh[0] === "disk" ? (diskLevel >= 2 ? "Пока места не прибавится, письмо будет приходить раз в сутки." : "Если места станет ещё меньше — буду писать каждый день.")
         : "Повторю письмо не раньше чем через 12 часов, если проблема останется."
     ]);
     if (fresh.includes("disk")) chatSay("Сторож сервера: " + WHAT.disk + ". Сейчас " + diskLine(disks, diskFreeGb) + ". " +
-      (diskLevel >= 2 ? "Пока не освободят, напомню раз в сутки." : `Если станет меньше ${DISK_DAILY_GB} ГБ — буду писать каждый день.`) +
+      (diskLevel >= 2 ? "Пока не освободят, напомню раз в сутки." : "Если места станет ещё меньше — буду писать каждый день.") +
       " Резервные копии Кати — /mnt/data/kate-backup-daily.", "memguard-disk-" + now);
     for (const k of fresh) st.alerted[k] = now;
     if (fresh.includes("disk")) st.diskLevel = diskLevel;
