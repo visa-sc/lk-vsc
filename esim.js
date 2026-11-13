@@ -2964,6 +2964,10 @@ function mount(app, opts) {
     for (const g of old) {
       const u = await providerFor(g.mmOrderId).getUsage(g.mmOrderId).catch(() => null);
       if (!u || u.installed) continue;
+      // KDDI у eSIM Access не отдаёт ни время установки, ни трафик (smdpStatus NOT_SUPPORTED, usage 0),
+      // хотя клиентка в Японии пользуется: 13.11.2026 так отменили рабочую замену EA-B26111004540040.
+      // Запущенную у поставщика eSIM (IN_USE и дальше) и ту, про которую в чате «работает», не трогаем.
+      if (/IN_USE|USED_UP|SUSPEND|ENABLE/i.test(String(u.status || "")) || u.active) continue;
       const r = await refundFromSupplier(g, "replacement was not needed, never installed").catch((e) => e.message);
       const all2 = readJson(ORDERS_FILE, []);
       const rec = all2.find((x) => x.id === g.id);
