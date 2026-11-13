@@ -6006,17 +6006,28 @@ function vscNormDMY(s) {
 // Возвращает { "Июль 2026": "1604770336", ... }; кэш 6 ч на книгу; сбой → {} (работаем
 // по хардкод-мапе). Так новые помесячные вкладки (август и далее) подхватываются САМИ.
 const _gidDiscCache = {};
+// Последний удачный список вкладок храним и на диске (13.11.2026): Google из РФ временами
+// не отвечает, а сразу после рестарта кэша в памяти нет — и листы с августа пропадали из
+// /vsc целиком (плитки контактов, CV, CPL пустели). Теперь при сбое берём список с диска.
+const VSC_GID_DISK = path.join(__dirname, ".vscGidCache.json");
 async function vscDiscoverGids(pubBase) {
-  const c = _gidDiscCache[pubBase];
+  let c = _gidDiscCache[pubBase];
+  if (!c) { try { const d = JSON.parse(fs.readFileSync(VSC_GID_DISK, "utf8"))[pubBase]; if (d && d.map) c = { at: 0, map: d.map }; } catch (_) {} }
   if (c && (Date.now() - c.at) < 6 * 3600 * 1000) return c.map;
   try {
     const r = await axios.get(pubBase + "html", { timeout: 30000, responseType: "text", transformResponse: [(d) => d] });
     const map = {};
     const re = /items\.push\(\{name: "([^"]+)", pageUrl: "[^"]*[?&]gid=(\d+)/g;
     let m; while ((m = re.exec(String(r.data)))) map[m[1].trim()] = m[2];
+    if (!Object.keys(map).length) throw new Error("пустой список вкладок");
     _gidDiscCache[pubBase] = { at: Date.now(), map };
+    try { let all = {}; try { all = JSON.parse(fs.readFileSync(VSC_GID_DISK, "utf8")); } catch (_) {} all[pubBase] = { at: Date.now(), map }; fs.writeFileSync(VSC_GID_DISK, JSON.stringify(all)); } catch (_) {}
     return map;
-  } catch (e) { console.error("vscDiscoverGids:", e.message); return (c && c.map) || {}; }
+  } catch (e) {
+    console.error("vscDiscoverGids:", e.message || e.code || "сбой");
+    if (c) _gidDiscCache[pubBase] = { at: Date.now() - 5.5 * 3600 * 1000, map: c.map };   // повтор через ~30 мин
+    return (c && c.map) || {};
+  }
 }
 // Месячные вкладки «<Месяц> <год>» (год ≥ 2026) из discovery + хардкода, хронологически.
 function vscMonthTabs(discovered, hardcodeMap) {
@@ -6506,10 +6517,10 @@ function vscFreezeCity(cr) {
 
 // ═══ KPI с платформы, когда нет Google-таблицы (Андрей 12.11.2026) ═══
 // Таблица «KPI VSC» переезжает в модуль «Маркетинг» Кати. Пока таблица жива — она главная;
-// если в ней нет месяца, дня или поля — берём с платформы (katedata.platformKpi). Сейчас
-// платформа даёт выручку, рекламу, ATV/ASP/UPT, ДРР, таргет ФАКТ/ПЛАН и пропущенные;
-// набранных контактов, CV, CPL, мусора и плана ОП у неё пока нет — эти плитки без таблицы
-// остаются пустыми, пока Катя их не добавит (тогда дописать в vscPlatformMap).
+// если в ней нет месяца, дня или поля — берём с платформы (katedata.platformKpi). Платформа
+// даёт выручку, рекламу, ATV/ASP/UPT, ДРР, таргет ФАКТ/ПЛАН, пропущенные, а с 13.11 и
+// набранные контакты, CV, CPL, долю мусора, недобор/перебор ОП. Нет у неё «paid traf conv»
+// (её pcAll считается иначе, на октябре 2% против 7% таблицы) и месячного плана ОП в %.
 const VSC_PLATFORM_FROM_YM = "2026-08";
 function vscPlatformAgg(rows) {
   const has = rows.filter((r) => r && !r.future);
@@ -6517,13 +6528,22 @@ function vscPlatformAgg(rows) {
   const any = (f) => has.some((r) => typeof r[f] === "number");
   const rev = S("revAll"), ad = S("costAll"), deals = S("deals"), pkg = S("pkg");
   const fact = S("tFactMsk") + S("tFactSpb"), plan = S("tPlanMsk") + S("tPlanSpb"), calls = S("calls"), missed = S("missed");
+  // С 13.11.2026 у платформы есть и контакты. Сверено с таблицей по всем дням октября:
+  // набранные = leadsAll, CV = сделки ÷ обработанные ОП (handled), CPL = реклама ÷ контакты,
+  // доля мусора = мусор ÷ (целевые + мусор), недобор/перебор ОП = ctGap (Σ за период).
+  const leads = S("leadsAll"), handled = S("handled"), junk = S("musor"), tgt = S("ctTarget");
   return {
     budget: any("revAll") ? rev : null, ad: any("costAll") ? Math.round(ad * 100) / 100 : null,
     atv: deals ? rev / deals : null, asp: pkg ? rev / pkg : null, upt: deals ? pkg / deals : null,
     drr: rev && any("costAll") ? ad / rev * 100 : null,
     targetFact: any("tFactMsk") || any("tFactSpb") ? fact : null,
     targetDev: (any("tFactMsk") || any("tFactSpb")) && plan > 0 ? fact - plan : null,
-    missedPct: calls ? missed / calls * 100 : null
+    missedPct: calls ? missed / calls * 100 : null,
+    processed: any("leadsAll") ? leads : null,
+    cv: any("handled") && handled > 0 ? deals / handled * 100 : null,
+    cpl: any("costAll") && leads > 0 ? ad / leads : null,
+    junkPct: any("musor") && junk + tgt > 0 ? junk / (junk + tgt) * 100 : null,
+    over: any("ctGap") ? S("ctGap") : null
   };
 }
 const vscPlatformMap = (r) => vscPlatformAgg([r]);
@@ -6565,7 +6585,8 @@ async function vscFillFromPlatform(months, extra) {
       const sheetEmpty = !(d.budget > 0) && !(d.processed > 0);   // строка дня не заполнена (нули или пусто)
       Object.keys(v).forEach((k) => {
         if (v[k] == null) return;
-        if (d[k] == null || (sheetEmpty && ["budget", "ad", "atv", "asp", "upt", "drr"].includes(k) && !d[k])) { d[k] = v[k]; d.src = "platform"; touched = true; }
+        // Незаполненная строка листа стоит нулями (и «недобор» = −план) — тогда платформа главнее.
+        if (d[k] == null || (sheetEmpty && ["budget", "ad", "atv", "asp", "upt", "drr", "processed", "cv", "cpl", "junkPct", "over"].includes(k) && (!d[k] || k === "over"))) { d[k] = v[k]; d.src = "platform"; touched = true; }
       });
     });
     if (!touched) continue;

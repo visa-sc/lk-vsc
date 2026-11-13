@@ -224,3 +224,4 @@ vscom/ads/_upload/
 .aiUsage.json
 .vscRadar.json
 .dataRoLog.json
+.vscGidCache.json
