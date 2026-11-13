@@ -5668,7 +5668,38 @@
       // Перенос таблички Андрея (налоги.xlsx): выручки 4 юрлиц по месяцам квартала (ввод),
       // нал без чека и вынесенный НДС (ввод), возвраты за услуги — АВТО по юрлицам из
       // гугл-таблицы возвратов, наши налоги по формулам Андрея vs цифры бухгалтера.
-      let _vscTaxQ = "2026-Q2", _vscTaxData = null;
+      let _vscTaxQ = "2026-Q3", _vscTaxData = null;
+      const _vscTaxCache = {}; // q → { RET, AUTO } — для итога года (данные кварталов подгружаются фоном)
+      // Итог года: Δ (наш − бух) по ЗАКРЫТЫМ кварталам — где внесены цифры бухгалтера (просьба Андрея 13.11.2026).
+      function vscTaxYearPaint(ENT, year) {
+        const el = document.getElementById("taxYearSum"); if (!el) return;
+        const money0 = function (v) { return Math.round(v).toLocaleString("ru-RU") + " \u20bd"; };
+        const fmtD = function (d) { return (d >= 0 ? "+" : "\u2212") + money0(Math.abs(d)); };
+        const colD = function (d) { return d < 0 ? "#b0263a" : "#2c7a43"; };
+        const qs = Object.keys(_vscTaxData.quarters || {}).filter(function (q) { return q.indexOf(year + "-") === 0; }).sort();
+        let tot = 0, totT = 0, totV = 0, n = 0, loading = 0; const parts = [];
+        qs.forEach(function (q) {
+          const Q = _vscTaxData.quarters[q];
+          const hasBuh = Object.values((Q && Q.buh) || {}).some(function (b) { return b && (b.tax != null || b.vat != null); });
+          if (!hasBuh) return;
+          const c = _vscTaxCache[q]; if (!c) { loading++; parts.push('<span style="color:#9aa0ab;">' + q.split("-")[1] + ' …</span>'); return; }
+          const C = vscTaxCalc(ENT, Q, c.RET, c.AUTO, q);
+          const d = C.sumDTax + C.sumDVat; tot += d; totT += C.sumDTax; totV += C.sumDVat; n++;
+          parts.push(q.split("-")[1] + ' <b style="color:' + colD(d) + ';">' + fmtD(d) + '</b>');
+        });
+        if (!parts.length) { el.innerHTML = '<span style="color:#8a90a0;">' + year + ': закрытых кварталов пока нет (не внесены цифры бухгалтера)</span>'; return; }
+        el.innerHTML = '<div style="font-size:13.5px;">Итог ' + year + ' по закрытым кварталам (наш \u2212 бух): ' + parts.join(' \u00b7 ')
+          + (loading ? '' : ' \u00b7 <b>всего <span style="color:' + colD(tot) + ';">' + fmtD(tot) + '</span></b>') + '</div>'
+          + (loading ? '' : '<div style="font-size:12px;color:#6b7280;margin-top:4px;">налог ' + fmtD(totT) + ' \u00b7 НДС ' + fmtD(totV) + ' \u2014 ' + (tot < 0 ? "бухгалтер насчитала БОЛЬШЕ нашей оценки на " : "наша оценка выше бухгалтерской на ") + money0(Math.abs(tot)) + '</div>');
+      }
+      async function vscTaxYearLoad(ENT, year) {
+        const qs = Object.keys(_vscTaxData.quarters || {}).filter(function (q) { return q.indexOf(year + "-") === 0 && !_vscTaxCache[q]; });
+        vscTaxYearPaint(ENT, year);
+        await Promise.all(qs.map(async function (q) {
+          try { const j = await apiFetch("/admin/api/vsc/taxes-legal?q=" + encodeURIComponent(q)); _vscTaxCache[q] = { RET: j.returns || { byEnt: {}, missing: [] }, AUTO: j.auto || null }; } catch (_) {}
+        }));
+        vscTaxYearPaint(ENT, year);
+      }
       const VSC_TAXQ_MON = { Q1: ["Январь", "Февраль", "Март"], Q2: ["Апрель", "Май", "Июнь"], Q3: ["Июль", "Август", "Сентябрь"], Q4: ["Октябрь", "Ноябрь", "Декабрь"] };
       async function renderVscTaxes() {
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Налоги — сверка по юрлицам";
@@ -5681,30 +5712,95 @@
         catch (e) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить: ' + escapeHtml(e.message) + '</div>'; return; }
         if (vscTab !== "taxes") return;
         _vscTaxData = j.data;
+        _vscTaxCache[_vscTaxQ] = { RET: j.returns || { byEnt: {}, missing: [] }, AUTO: j.auto || null };
         vscTaxPaint(box, j.entities, (j.returns || { byEnt: {}, missing: [] }), (j.auto || null));
+      }
+      // Расчёт квартала (одна функция для таблицы квартала и для итога года).
+      // I–II кв. 2026 — схема «1-2 кв.xlsx» (ред. 22.07): возвраты и нал — ДОЛИ от Σ выручки
+      // 4 юрлиц, вычитаются пропорционально; НДС = (выручка НДС-месяцев × (1 − доли) +
+      // вынесенный НДС / число НДС-плательщиков) × 5 %. С III кв. (V4, 13.11.2026): выручка
+      // юрлиц из CRM-факта Кати уже без ВНЖ и сделок без договора, вычитаются СВОИ возвраты
+      // юрлица (÷1,05, без НДС; непривязанные — по доле выручки) и СВОЙ нал без чека; НДС = база × 5 %.
+      function vscTaxCalc(ENT, Q, RET, A, qkey) {
+        A = A || { rev: {} }; RET = RET || { byEnt: {} }; Q = Q || {}; const buh = Q.buh || {};
+        const year = qkey.split("-")[0], qn = +qkey.split("-Q")[1];
+        const monthYm = function (mi) { return year + "-" + String((qn - 1) * 3 + mi + 1).padStart(2, "0"); };
+        const num = function (x) { if (x == null || x === "") return null; const n = parseFloat(String(x).replace(/[\s\u00a0]/g, "").replace(",", ".")); return isNaN(n) ? null : n; };
+        const byEnt = RET.byEnt || {};
+        const retTot = Object.values(byEnt).reduce(function (a, v) { return a + (v || 0); }, 0);
+        const V4 = !!(A.src === "work" && A.cashEnt);
+        const cashTotal = (A.cash || 0) + (num(Q.cashExtra) || 0);
+        const sumRevAll = ENT.reduce(function (a, e) { return a + (((A.rev && A.rev[e.key]) || []).reduce(function (x, v) { return x + (v || 0); }, 0)); }, 0);
+        const pctRet = sumRevAll ? retTot / sumRevAll : 0;
+        const pctCash = sumRevAll ? cashTotal / sumRevAll : 0;
+        const pct = pctRet + pctCash;
+        const lastYm = monthYm(2);
+        const vatPayers = ENT.filter(function (e) { return e.vatStart <= lastYm; }).length || 1;
+        const rows = {}; let sumDTax = 0, sumDVat = 0, haveB = false;
+        ENT.forEach(function (e) {
+          const arr = (A.rev && A.rev[e.key]) || [];
+          const R = arr.reduce(function (a, v) { return a + (v || 0); }, 0);
+          const retOwn = V4 ? ((byEnt[e.key] || 0) + (byEnt.other || 0) * (sumRevAll ? R / sumRevAll : 0)) / 1.05 : 0;
+          const cashOwn = V4 ? (A.cashEnt[e.key] || 0) : 0;
+          const taxDeduct = V4 ? Math.min(R, retOwn + cashOwn) : R * pct;
+          const base = R - taxDeduct;
+          const tax = base * e.rate;
+          let vat = 0;
+          if (e.vatStart <= lastYm) {
+            let vatRev = 0; for (let mi = 0; mi < 3; mi++) { if (monthYm(mi) >= e.vatStart) vatRev += arr[mi] || 0; }
+            vat = V4 ? (R ? base * vatRev / R : 0) * 0.05 : (vatRev * (1 - pct) + (A.vatOut || 0) / vatPayers) * 0.05;
+          }
+          const b = buh[e.key] || {};
+          const dTax = (b.tax != null) ? tax - b.tax : null;
+          const dVat = (b.vat != null) ? vat - b.vat : null;
+          if (dTax != null) { sumDTax += dTax; haveB = true; }
+          if (dVat != null) { sumDVat += dVat; haveB = true; }
+          rows[e.key] = { R: R, taxDeduct: taxDeduct, base: base, tax: tax, vat: vat, dTax: dTax, dVat: dVat };
+        });
+        return { V4: V4, retTot: retTot, cashTotal: cashTotal, sumRevAll: sumRevAll, pctRet: pctRet, pctCash: pctCash, pct: pct, rows: rows, sumDTax: sumDTax, sumDVat: sumDVat, haveB: haveB };
       }
       function vscTaxPaint(box, ENT, RET, AUTO) {
         box.innerHTML = "";
-        const qs = Object.keys((_vscTaxData && _vscTaxData.quarters) || {}).sort();
-        if (qs.indexOf(_vscTaxQ) < 0) _vscTaxQ = qs[qs.length - 1];
+        const qsAll = Object.keys((_vscTaxData && _vscTaxData.quarters) || {}).sort();
+        if (qsAll.indexOf(_vscTaxQ) < 0) _vscTaxQ = qsAll[qsAll.length - 1];
+        const curY = _vscTaxQ.split("-")[0];
+        const years = qsAll.map(function (q) { return q.split("-")[0]; }).filter(function (y, i, a) { return a.indexOf(y) === i; });
+        // ── Годы: вкладки + «+ год» (заводит сразу 4 квартала) ──
+        const ybar = document.createElement("div"); ybar.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;";
+        years.forEach(function (y) {
+          const on = y === curY;
+          const b = document.createElement("button"); b.type = "button"; b.textContent = y + " \u0433\u043e\u0434";
+          b.style.cssText = "border:1px solid " + (on ? "#1e2a3b" : "#cfd8e3") + ";background:" + (on ? "#1e2a3b" : "#fff") + ";color:" + (on ? "#fff" : "#33415a") + ";border-radius:10px;padding:8px 18px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;";
+          b.addEventListener("click", function () {
+            const yq = qsAll.filter(function (q) { return q.indexOf(y + "-") === 0; });
+            const withBuh = yq.filter(function (q) { return Object.values((_vscTaxData.quarters[q].buh) || {}).some(function (x) { return x && (x.tax != null || x.vat != null); }); });
+            _vscTaxQ = withBuh.length ? withBuh[withBuh.length - 1] : yq[0]; renderVsc();
+          });
+          ybar.appendChild(b);
+        });
+        const addY = document.createElement("button"); addY.type = "button"; addY.textContent = "+ \u0433\u043e\u0434";
+        addY.style.cssText = "border:1px dashed #b7c0cd;background:#f6f8fb;color:#4a5568;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;";
+        addY.addEventListener("click", function () {
+          const ny = (+years[years.length - 1]) + 1;
+          for (let k = 1; k <= 4; k++) if (!_vscTaxData.quarters[ny + "-Q" + k]) _vscTaxData.quarters[ny + "-Q" + k] = { buh: {} };
+          _vscTaxQ = ny + "-Q1"; vscTaxSave(null, true).then(function () { renderVsc(); });
+        });
+        ybar.appendChild(addY);
+        box.appendChild(ybar);
+        const ysum = document.createElement("div"); ysum.id = "taxYearSum";
+        ysum.style.cssText = "padding:12px 16px;background:#f6f8fb;border:1px solid #edf0f5;border-radius:12px;margin-bottom:12px;";
+        box.appendChild(ysum);
+        const qs = qsAll.filter(function (q) { return q.indexOf(curY + "-") === 0; });
         const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;";
         qs.forEach(function (q) {
           const on = q === _vscTaxQ;
-          const b = document.createElement("button"); b.type = "button"; b.textContent = q.replace("2026-", "") + " \u00b7 " + (VSC_TAXQ_MON[q.split("-")[1]] || []).map(function (m) { return m.slice(0, 3); }).join("\u2013") + " " + q.slice(0, 4);
+          const b = document.createElement("button"); b.type = "button"; b.textContent = q.split("-")[1] + " \u00b7 " + (VSC_TAXQ_MON[q.split("-")[1]] || []).map(function (m) { return m.slice(0, 3); }).join("\u2013") + " " + q.slice(0, 4);
           b.style.cssText = "border:1px solid " + (on ? "#0097ca" : "#cfd8e3") + ";background:" + (on ? "#0097ca" : "#fff") + ";color:" + (on ? "#fff" : "#33415a") + ";border-radius:10px;padding:8px 15px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;";
           b.addEventListener("click", function () { _vscTaxQ = q; renderVsc(); });
           bar.appendChild(b);
         });
-        const addQ = document.createElement("button"); addQ.type = "button"; addQ.textContent = "+ \u043a\u0432\u0430\u0440\u0442\u0430\u043b";
-        addQ.style.cssText = "border:1px dashed #b7c0cd;background:#f6f8fb;color:#4a5568;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;";
-        addQ.addEventListener("click", function () {
-          const last = qs[qs.length - 1]; const parts = last.split("-Q"); let ny = +parts[0], nq = +parts[1] + 1; if (nq > 4) { nq = 1; ny++; }
-          const key = ny + "-Q" + nq;
-          _vscTaxData.quarters[key] = { buh: {} };
-          _vscTaxQ = key; vscTaxSave(null, true).then(function () { renderVsc(); });
-        });
-        bar.appendChild(addQ);
         box.appendChild(bar);
+        vscTaxYearLoad(ENT, curY);
         const Q = _vscTaxData.quarters[_vscTaxQ]; Q.buh = Q.buh || {};
         const year = _vscTaxQ.split("-")[0], qn = +_vscTaxQ.split("-Q")[1];
         const mons = VSC_TAXQ_MON["Q" + qn] || [];
@@ -5757,13 +5853,8 @@
           // уже наступил в квартале (Q1 — только Пан/ЭКГ, со 2 кв — все 4); база НДС =
           // выручка месяцев ≥ vatStart минус те же доли; вынесенный НДС делится
           // поровну на число НДС-плательщиков квартала.
-          const cashTotal = (A.cash || 0) + (num(Q.cashExtra) || 0);
-          const sumRevAll = ENT.reduce(function (a, e) { return a + (((A.rev && A.rev[e.key]) || []).reduce(function (x, v) { return x + (v || 0); }, 0)); }, 0);
-          const pctRet = sumRevAll ? retTot / sumRevAll : 0;
-          const pctCash = sumRevAll ? cashTotal / sumRevAll : 0;
-          const pct = pctRet + pctCash;
-          const lastYm = monthYm(2);
-          const vatPayers = ENT.filter(function (e) { return e.vatStart <= lastYm; }).length || 1;
+          const C = vscTaxCalc(ENT, Q, RET, A, _vscTaxQ);
+          const cashTotal = C.cashTotal, sumRevAll = C.sumRevAll, pctRet = C.pctRet, pctCash = C.pctCash, pct = C.pct;
           const fmtPct = function (p) { return (Math.round(p * 10000) / 100).toLocaleString("ru-RU") + "%"; };
           const ctEl = box.querySelector("#taxCashTotal"); if (ctEl) ctEl.textContent = money0(cashTotal);
           const th = 'text-align:right;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;white-space:nowrap;';
@@ -5773,28 +5864,11 @@
             + '<th style="' + th + '">\u0412\u044b\u0440\u0443\u0447\u043a\u0430</th><th style="' + th + '">\u0412\u044b\u0447\u0435\u0442 ' + (V4 ? 'возвр.+нал' : fmtPct(pct)) + '</th><th style="' + th + '">\u0411\u0430\u0437\u0430</th>'
             + '<th style="' + th + '">\u041d\u0430\u043b\u043e\u0433 \u043d\u0430\u0448</th><th style="' + th + '">\u041d\u0430\u043b\u043e\u0433 \u0431\u0443\u0445</th><th style="' + th + '">\u0394 \u043d\u0430\u043b\u043e\u0433</th>'
             + '<th style="' + th + '">\u041d\u0414\u0421 \u043d\u0430\u0448</th><th style="' + th + '">\u041d\u0414\u0421 \u0431\u0443\u0445</th><th style="' + th + '">\u0394 \u041d\u0414\u0421</th><th style="' + th + '">\u0414\u043e\u0445\u043e\u0434 \u0431\u0443\u0445</th></tr></thead><tbody>';
-          let sumDTax = 0, sumDVat = 0, haveB = false;
+          const sumDTax = C.sumDTax, sumDVat = C.sumDVat, haveB = C.haveB;
           ENT.forEach(function (e) {
-            const arr = (A.rev && A.rev[e.key]) || [];
-            const R = arr.reduce(function (a, v) { return a + (v || 0); }, 0);
-            // I–II кв.: вычет пропорционально выручке юрлица. С III кв. (V4): свои возвраты юрлица
-            // (без НДС, ÷1,05) + доля непривязанных возвратов по выручке + свой нал без чека.
-            const retOwn = V4 ? (((RET.byEnt || {})[e.key] || 0) + ((RET.byEnt || {}).other || 0) * (sumRevAll ? R / sumRevAll : 0)) / 1.05 : 0;
-            const cashOwn = V4 ? (A.cashEnt[e.key] || 0) : 0;
-            const taxDeduct = V4 ? Math.min(R, retOwn + cashOwn) : R * pct;
-            const base = R - taxDeduct;
-            const tax = base * e.rate;
-            let vat = 0;
-            if (e.vatStart <= lastYm) {
-              let vatRev = 0; for (let mi = 0; mi < 3; mi++) { if (monthYm(mi) >= e.vatStart) vatRev += arr[mi] || 0; }
-              // V4: выручка в CRM-факте уже без НДС, поэтому НДС = база × 5 % (без «+ вынесенный НДС / N»).
-              vat = V4 ? (R ? base * vatRev / R : 0) * 0.05 : (vatRev * (1 - pct) + (A.vatOut || 0) / vatPayers) * 0.05;
-            }
+            const r = C.rows[e.key];
+            const R = r.R, taxDeduct = r.taxDeduct, base = r.base, tax = r.tax, vat = r.vat, dTax = r.dTax, dVat = r.dVat;
             const b = Q.buh[e.key] || {};
-            const dTax = (b.tax != null) ? tax - b.tax : null;
-            const dVat = (b.vat != null) ? vat - b.vat : null;
-            if (dTax != null) { sumDTax += dTax; haveB = true; }
-            if (dVat != null) { sumDVat += dVat; haveB = true; }
             // «+» (наша оценка выше бухгалтерской — запас) — всегда зелёным; «−» —
             // красным только при существенном расхождении (просьба Андрея 22.07).
             const dCol = function (d, scale) { if (d == null) return "#9aa0ab"; return (d < 0 && Math.abs(d) > scale) ? "#b0263a" : "#2c7a43"; };
@@ -5823,6 +5897,7 @@
               + '<div style="font-size:12px;color:#6b7280;margin-top:4px;">' + (total < 0 ? "\u0431\u0443\u0445\u0433\u0430\u043b\u0442\u0435\u0440 \u043d\u0430\u0441\u0447\u0438\u0442\u0430\u043b\u0430 \u0411\u041e\u041b\u042c\u0428\u0415 \u043d\u0430\u0448\u0435\u0439 \u043e\u0446\u0435\u043d\u043a\u0438 \u043d\u0430 " + money0(Math.abs(total)) : "\u043d\u0430\u0448\u0430 \u043e\u0446\u0435\u043d\u043a\u0430 \u0432\u044b\u0448\u0435 \u0431\u0443\u0445\u0433\u0430\u043b\u0442\u0435\u0440\u0441\u043a\u043e\u0439 \u043d\u0430 " + money0(Math.abs(total))) + '</div></div>';
           }
           const out = box.querySelector(".tax-out"); if (out) { out.innerHTML = oh; bindBuh(); }
+          vscTaxYearPaint(ENT, curY);
         };
         let bindBuh = function () {
           ENT.forEach(function (e) {
