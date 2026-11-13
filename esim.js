@@ -2956,26 +2956,10 @@ function mount(app, opts) {
     });
     return true;
   }
-  // Подарочную замену, которую человек так и не поставил, через трое суток
-  // отменяем и возвращаем деньги поставщика (eSIM Access делает это сразу).
-  async function sweepUnusedGifts() {
-    const all = readJson(ORDERS_FILE, []);
-    const old = all.filter((x) => x.giftFor && x.status === "done" && Date.now() - (x.ts || 0) > 72 * 3600e3);
-    for (const g of old) {
-      const u = await providerFor(g.mmOrderId).getUsage(g.mmOrderId).catch(() => null);
-      if (!u || u.installed) continue;
-      // KDDI у eSIM Access не отдаёт ни время установки, ни трафик (smdpStatus NOT_SUPPORTED, usage 0),
-      // хотя клиентка в Японии пользуется: 13.11.2026 так отменили рабочую замену EA-B26111004540040.
-      // Запущенную у поставщика eSIM (IN_USE и дальше) и ту, про которую в чате «работает», не трогаем.
-      if (/IN_USE|USED_UP|SUSPEND|ENABLE/i.test(String(u.status || "")) || u.active) continue;
-      const r = await refundFromSupplier(g, "replacement was not needed, never installed").catch((e) => e.message);
-      const all2 = readJson(ORDERS_FILE, []);
-      const rec = all2.find((x) => x.id === g.id);
-      if (rec) { rec.status = "canceled"; rec.canceledAt = Date.now(); rec.cancelReason = "подарок не поставили за трое суток"; writeJson(ORDERS_FILE, all2); }
-      console.log("esim: невостребованный подарок " + g.mmOrderId + " отменён — " + r);
-    }
-  }
-  setInterval(() => { sweepUnusedGifts().catch((e) => console.error("esim подарки:", e.message)); }, 6 * 3600e3);
+  // Автоотмены «невостребованных» замен больше нет (Андрей, 13.11.2026: «убери эту штуку, не надо лишних
+  // действий»). Она гасила замену через трое суток, если поставщик не показывал установку, и 13.11 отменила
+  // рабочую eSIM KDDI клиентки в Японии (eSIM Access не отдаёт по KDDI ни установку, ни трафик) с письмом
+  // поставщику о возврате. Замены и их отмену решают только люди: /sup/replace, /sup/cancel.
 
   // Автоматическая замена eSIM за наш счёт ВЫКЛЮЧЕНА (21.10.2026, Андрей: «она не просила замену… не надо
   // такие замены делать, надо решить проблему»). Робот выдал клиентке, у которой 3 ГБ в день, пакет 3 ГБ
@@ -5994,7 +5978,7 @@ function mount(app, opts) {
   // менять сим-карты на своё усмотрение через свой код»). Робот замены больше не выдаёт сам (AUTO_REPLACE),
   // поэтому подбор честный: пакеты «в день» сравниваются с «в день», срок — по оставшимся дням, страны —
   // нужные клиенту (?country=FR). Выдаёт только eSIM Access (там 8000+ пакетов и мгновенная выдача).
-  // Неустановленную замену через трое суток гасит sweepUnusedGifts — деньги возвращаются на баланс.
+  // Нескачанную замену отменяет только оператор (/sup/cancel), сервер сам замены не гасит (с 13.11.2026).
   const supFindOrder = (q) => readJson(ORDERS_FILE, []).find((x) => x.status === "done" && [x.id, x.mmOrderId].indexOf(String(q || "")) >= 0) || null;
   async function supOriginal(o) {
     const cat = await getCatalog(false);
