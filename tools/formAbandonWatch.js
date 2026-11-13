@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 /* ─────────────────────────────────────────────────────────────────────────────
  * formAbandonWatch — брошенные формы и сторож заявок сайтов spb.visa-sc.ru, visa-sc.ru (+ visa-gum.ru),
- * ekb.visa-sc.ru (просьба Андрея и Андрея Петрова, 13.11.2026). Письма — Петрову (ap@spt1.ru),
- * Андрей в копии.
+ * ekb.visa-sc.ru (просьба Андрея и Андрея Петрова, 13.11.2026). Письма — только Петрову (ap@spt1.ru):
+ * с 13.11 вечера Андрея в копии нет (его просьба).
  *
  * 1) Брошенная форма. Счётчик на странице (stat.js копий) молча запоминает, что посетитель ввёл в форму;
  *    ушёл со страницы с телефоном или почтой и не отправил — событие form_abandon в stat/events-*.jsonl.
  *    Через 30 минут проверяем: не пришла ли от него заявка (тот же телефон, почта или посетитель) на любом
  *    из трёх сайтов, не звонил ли на номера сайта, не появилась ли у контакта с этим телефоном новая сделка
- *    в amoCRM (копия CRM). Если нет — письмо с введёнными данными: Петров создаёт лид вручную.
+ *    в amoCRM (копия CRM). Если нет и введён полный номер — сами заводим заявку на сайте (POST формы на
+ *    локальный порт сайта, как от посетителя: его vid и utm, форма «Брошенная форма»), она уходит в amoCRM
+ *    обычной выгрузкой (spb-amo / msk-amo / ekb-amo). Петрову — письмо с введёнными данными и номером
+ *    заявки. Без номера (только почта) или если заявку завести не вышло — письмо «создайте лид вручную».
  *    Один номер — не чаще раза в сутки.
  * 2) Заявка не попала в amo: заявка пришла на сайт (боевой домен), а сделки за 5 минут не создалось.
  * 3) Сбой отправки формы (событие form_error: сервер не ответил или ответил ошибкой) — письмо сразу,
@@ -27,16 +30,16 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env"), quiet: true
 
 const DRY = process.argv.includes("--dry");
 const TO = process.env.FORM_WATCH_TO || "ap@spt1.ru";
-const CC = process.env.FORM_WATCH_CC || "director@visa-sc.ru";
+const CC = process.env.FORM_WATCH_CC || "";      // копия — только если явно задана в .env
 const STATE_DIR = "/var/lib/form-abandon", STATE = path.join(STATE_DIR, "state.json");
 const GRACE = 30 * 60e3;            // ждём 30 минут: вдруг отправит или позвонит
 const LEAD_LAG = 5 * 60e3;          // заявка без сделки дольше 5 минут — сбой выгрузки
 const PER_PHONE = 24 * 3600e3;      // один номер — не чаще раза в сутки
 const MAX_MAILS = 15;               // писем за один прогон
 const SITES = [
-  { id: "spb", name: "spb.visa-sc.ru", dir: "/var/www/spbcopy", host: /^(www\.)?spb\.visa-sc\.ru$/i, amo: "spb-amo" },
-  { id: "msk", name: "visa-sc.ru", dir: "/var/www/mskcopy", host: /^(www\.)?visa-sc\.ru$|^(www\.)?visa-gum\.ru$/i, amo: "msk-amo" },
-  { id: "ekb", name: "ekb.visa-sc.ru", dir: "/var/www/ekbcopy", host: /^(www\.)?ekb\.visa-sc\.ru$/i, amo: "ekb-amo" }
+  { id: "spb", name: "spb.visa-sc.ru", dir: "/var/www/spbcopy", host: /^(www\.)?spb\.visa-sc\.ru$/i, amo: "spb-amo", port: 3006 },
+  { id: "msk", name: "visa-sc.ru", dir: "/var/www/mskcopy", host: /^(www\.)?visa-sc\.ru$|^(www\.)?visa-gum\.ru$/i, amo: "msk-amo", port: 3007 },
+  { id: "ekb", name: "ekb.visa-sc.ru", dir: "/var/www/ekbcopy", host: /^(www\.)?ekb\.visa-sc\.ru$/i, amo: "ekb-amo", port: 3009 }
 ];
 
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (_) { return d; } };
@@ -66,9 +69,33 @@ function events(site, sinceIso) {
 async function send(subject, html) {
   if (DRY) { console.log("[dry] письмо:", subject); return true; }
   const { sendMail } = require(path.join(__dirname, "..", "mail.js"));
-  const r = await sendMail({ to: TO, cc: CC, replyTo: CC, subject, html });
+  const r = await sendMail(Object.assign({ to: TO, subject, html }, CC ? { cc: CC } : {}));
   console.log(new Date().toISOString(), "письмо:", subject, JSON.stringify(r).slice(0, 120));
   return !!(r && r.ok);
+}
+// Заявка от имени посетителя на его же сайте: тот же разбор, номер, журнал и выгрузка в amo, что у
+// настоящей отправки формы. Возвращает номер заявки, 0 в пробном прогоне или null.
+async function createLead(site, e, d, phone) {
+  if (DRY) { console.log("[dry] заявка:", site.name, e.page, fmtPhone(phone)); return 0; }
+  const fields = [{ id: "abandon-phone", type: "phone", name: "Телефон", value: fmtPhone(phone) }];
+  for (const f of d.fields || []) {
+    if (digits10(f[1]) === phone || !String(f[1] || "").trim()) continue;
+    fields.push({ id: "abandon-" + fields.length, type: /@/.test(f[1]) ? "email" : "text", name: String(f[0]).slice(0, 120), value: String(f[1]).slice(0, 500) });
+  }
+  const page = String(e.page || "/").startsWith("/") ? e.page : "/";
+  try {
+    const r = await fetch(`http://127.0.0.1:${site.port}${page}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Host: site.name, "X-Forwarded-Host": site.name, "X-Forwarded-Proto": "https",
+        Referer: `https://${site.name}${page}`, Cookie: e.vid ? "spb_vid=" + e.vid : "", "User-Agent": "formAbandonWatch (abandoned form)" },
+      body: JSON.stringify({ name: "Брошенная форма", action: "", fields, is_ajax: true, utmData: JSON.stringify(e.utm || {}) }),
+      signal: AbortSignal.timeout(20000)
+    });
+    const j = await r.json().catch(() => ({}));
+    const n = j && j.success && j.lead_id > 100000 ? j.lead_id - 100000 : null;
+    console.log(new Date().toISOString(), "заявка из брошенной формы:", site.name, n ? "№" + n : "не создана (" + r.status + ")");
+    return n;
+  } catch (err) { console.log("заявка из брошенной формы не создана:", err.message); return null; }
 }
 const box = (inner) => `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;max-width:640px">${inner}</div>`;
 const utmLine = (u) => { u = u || {}; const p = [u.utm_source, u.utm_medium, u.utm_campaign, u.utm_term].filter(Boolean); return p.length ? esc(p.join(" · ")) : "без меток (прямой заход или поиск)"; };
@@ -139,8 +166,12 @@ const utmLine = (u) => { u = u || {}; const p = [u.utm_source, u.utm_medium, u.u
       const deal = phone && crmNewDeal(phone, Math.floor(from / 1000));
       if (sent || called || deal) { if (phone) st.phones[phone] = now; continue; }
       const fields = (d.fields || []).map((f) => `${esc(f[0])}: <b>${esc(f[1])}</b>`).join("<br>");
+      const leadNo = phone ? await createLead(site, e, d, phone) : null;
+      if (phone) st.phones[phone] = now;   // заявку по номеру — не чаще раза в сутки, даже если письмо не ушло
+      const what = leadNo ? `Заявка <b>№${leadNo}</b> создана автоматически и уходит в amoCRM («Новая заявка № ${leadNo} (Брошенная форма)»), вручную создавать не нужно.`
+        : leadNo === 0 ? "Заявка будет создана автоматически (пробный прогон)." : "Создайте лид вручную.";
       const ok = await send(`Брошенная форма: ${phone ? fmtPhone(phone) : email} — ${site.name}`, box(
-        `<p><b>Посетитель заполнил форму, но не отправил</b>. За 30 минут заявки, звонка и новой сделки в amoCRM от него нет — создайте лид вручную.</p>
+        `<p><b>Посетитель заполнил форму, но не отправил</b>. За 30 минут заявки, звонка и новой сделки в amoCRM от него нет. ${what}</p>
         <p>${fields || (phone ? fmtPhone(phone) : esc(email))}</p>
         <p>Сайт: <b>${esc(site.name)}</b>, страница <a href="https://${esc(site.name)}${esc(e.page)}">${esc(e.page)}</a><br>
         Форма: ${esc(String(d.f || "").replace(/\s+/g, " ").slice(0, 80))}<br>
@@ -168,7 +199,7 @@ const utmLine = (u) => { u = u || {}; const p = [u.utm_source, u.utm_medium, u.u
         `<p><b>Заявка пришла на сайт, но сделка в amoCRM за 5 минут не создалась.</b> Создайте лид вручную.</p>
         <p>${fields}</p>
         <p>Сайт: <b>${esc(site.name)}</b>, страница ${esc(l.pageUrl || l.page || "")}, форма «${esc((l.data && l.data.name) || "")}», ${esc(msk(l.at))} МСК.</p>
-        <p style="color:#888;font-size:12px">Выгрузка в amo (${esc(site.amo)}): ${proc ? esc(proc.pm2_env.status) : "процесс не найден"}${l.amo && l.amo.error ? ", ошибка: " + esc(String(l.amo.error).slice(0, 200)) : ""}. Андрей в копии — разберёмся с причиной.</p>`));
+        <p style="color:#888;font-size:12px">Выгрузка в amo (${esc(site.amo)}): ${proc ? esc(proc.pm2_env.status) : "процесс не найден"}${l.amo && l.amo.error ? ", ошибка: " + esc(String(l.amo.error).slice(0, 200)) : ""}.</p>`));
       if (ok) { st.leads[site.id + ":" + l.id] = now; mails++; }
     }
   }
