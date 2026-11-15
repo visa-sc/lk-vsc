@@ -2303,15 +2303,17 @@ function mount(app, opts) {
   // человек вернулся со страницы банка ни с чем. Только запись, без писем
   // клиентам: кому и что отправить, решает Андрей. Файл .esim/payfails.json.
   const PAYFAILS_FILE = path.join(DIR, "payfails.json");
-  function logPayFail(kind, order, why) {
+  // Храним бессрочно (Андрей, 15.11.2026: «для аналитики, пока бессрочно»): запись ~0,4 КБ.
+  function logPayFail(kind, order, why, extra) {
     try {
       const all = readJson(PAYFAILS_FILE, []);
       const o = order || {};
-      all.unshift({ ts: Date.now(), kind, why: String(why || "").slice(0, 300),
+      all.unshift(Object.assign({ ts: Date.now(), kind, why: String(why || "").slice(0, 300),
         orderId: o.id || null, label: o.label || null, rub: o.payTotalRub || o.priceRub || null,
         email: o.email || null, phone: o.phone || null, tgChatId: o.tgChatId || null,
-        terminal: String(process.env.TBANK_TERMINAL_KEY || "").slice(0, 10) || null });
-      writeJson(PAYFAILS_FILE, all.slice(0, 3000));
+        terminal: String(o.terminal || process.env.TBANK_TERMINAL_KEY || "").slice(0, 13) || null,
+        orderTs: o.ts || null, brand: o.brand || null, lang: o.lang || null }, extra || {}));
+      writeJson(PAYFAILS_FILE, all);
       console.error("esim: неудачная оплата (" + kind + ") " + (o.id || "") + " " + (o.email || o.phone || o.tgChatId || "") + " — " + why);
     } catch (e) { console.error("esim payfails:", e.message); }
   }
@@ -4510,6 +4512,8 @@ function mount(app, opts) {
         let st = null;
         try { const r = await tbank.getState(o.paymentId, o.terminal); st = (r && r.Status) || null; } catch (_) { continue; }
         if (!st) continue;
+        // где человек остановился (через ~полчаса): потом форма протухнет, и останется только DEADLINE_EXPIRED
+        if (!o.bankSt1) { o.bankSt1 = st; o.bankSt1At = now; changed = true; }
         // заплатил, а выдача не сработала — это не брошенная оплата, а авария
         if (BANK_PAID.indexOf(st) >= 0) { o.abandonMail = -1; o.abandonAdmin = -1; changed = true; continue; }
         const why = bankWhy(st);
@@ -4536,6 +4540,61 @@ function mount(app, opts) {
     } catch (e) { console.error("esim abandon:", e.message); }
     finally { _abandonRunning = false; }
   }
+
+  // ── Итог сорвавшихся оплат в журнал (15.11.2026, Андрей) ──
+  // Банк не шлёт вебхук, когда форма оплаты протухает (DEADLINE_EXPIRED, примерно через сутки-полтора):
+  // случай Дениса 31.10 (Сейшелы, карта Альфы застряла на 3-D Secure) в журнал не попал. Раз в час
+  // спрашиваем банк про заказы без оплаты старше 26 часов и пишем итог в payfails.json один раз
+  // (метка payFinal в заказе). Первый прогон добирает и все старые заказы.
+  const BANK_FINAL_FAIL = ["DEADLINE_EXPIRED", "REJECTED", "AUTH_FAIL", "CANCELED", "REVERSED"];
+  const BANK_ST_RU = {
+    NEW: "не открыл форму оплаты", FORM_SHOWED: "открыл форму, карту не ввёл или ушёл",
+    "3DS_CHECKING": "ввёл карту, но не прошёл подтверждение 3-D Secure (код из SMS или пуш банка)",
+    "3DS_CHECKED": "3-D Secure прошёл, банк не довёл списание", AUTHORIZING: "банк проверял карту и не ответил",
+    REJECTED: "банк отклонил карту", AUTH_FAIL: "карта не прошла проверку банка",
+    DEADLINE_EXPIRED: "форма оплаты протухла", CANCELED: "платёж отменён", REVERSED: "платёж отменён",
+  };
+  let _payFinalRunning = false;
+  async function runPayFinal() {
+    if (_payFinalRunning || !tbank.ready()) return;
+    _payFinalRunning = true;
+    let logged = 0;
+    try {
+      const now = Date.now();
+      // уже в журнале: отказ по вебхуку или наша прошлая запись (runAbandoned сохраняет заказы целиком
+      // и может затереть метку payFinal — второй раз один и тот же заказ не пишем)
+      const viaHook = new Set(readJson(PAYFAILS_FILE, []).filter((x) => /^(bank_rejected|expired|declined|unfinished)$/.test(x.kind)).map((x) => x.orderId));
+      const todo = readJson(ORDERS_FILE, []).filter((o) => o.status === "pending" && o.paymentId && !o.payFinal &&
+        now - (o.ts || 0) > 26 * 3600e3 && !/\btest\b/i.test(o.label || "") && !ourOwnEmail(o.email));
+      const patch = {};
+      for (const o of todo) {
+        let st = null;
+        try { const r = await tbank.getState(o.paymentId, o.terminal); st = (r && r.Status) || null; } catch (_) {}
+        await new Promise((r) => setTimeout(r, 300));       // не долбим банк
+        if (!st) continue;
+        if (BANK_PAID.indexOf(st) >= 0) { patch[o.id] = { payFinal: st, payFinalAt: now }; continue; }
+        const final = BANK_FINAL_FAIL.indexOf(st) >= 0;
+        if (!final && now - (o.ts || 0) < 7 * 864e5) continue;   // ещё может решиться
+        patch[o.id] = { payFinal: st, payFinalAt: now };
+        if (viaHook.has(o.id)) continue;                          // отказ уже записан по вебхуку
+        const kind = st === "DEADLINE_EXPIRED" ? "expired" : final ? "declined" : "unfinished";
+        const where = o.bankSt1 && o.bankSt1 !== st ? " Где остановился: " + (BANK_ST_RU[o.bankSt1] || o.bankSt1) + "." : "";
+        logPayFail(kind, o, "банк: " + st + " (" + (BANK_ST_RU[st] || st) + ")." + where,
+          { bankStatus: st, lastStep: o.bankSt1 || null, paymentId: String(o.paymentId), source: o.tgChatId ? "бот" : adsource.describeAds(o.ads) });
+        logged++;
+      }
+      if (Object.keys(patch).length) {
+        // поверх свежей копии и только свои поля: за время опроса банка заказы могли поменяться
+        const fresh = readJson(ORDERS_FILE, []);
+        for (const [id, f] of Object.entries(patch)) { const x = fresh.find((y) => y.id === id); if (x) Object.assign(x, f); }
+        writeJson(ORDERS_FILE, fresh);
+      }
+      if (logged) console.log("esim: в журнал сорвавшихся оплат добавлено", logged);
+    } catch (e) { console.error("esim pay final:", e.message); }
+    finally { _payFinalRunning = false; }
+  }
+  setTimeout(() => { runPayFinal(); }, 7 * 60 * 1000);
+  setInterval(() => { runPayFinal(); }, 60 * 60 * 1000);
 
   let _notifyRunning = false;
   async function runNotifications() {
