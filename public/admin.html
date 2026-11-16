@@ -5437,6 +5437,7 @@
             k["avg_" + dk] = seeded != null ? seeded : (d ? d.avg : null);
             const base = LOADK.indexOf(dk) >= 0 ? baseOf(m, dk) : null;
             k["load_" + dk] = (d && d.manDays && base != null) ? Math.round(base / d.manDays * 100) / 100 : null;
+            k["sum_" + dk] = (d && d.accrued != null) ? d.accrued : null;   // начислено отделу за месяц (блок «Зарплаты по отделам»)
           });
           const b = loadBase[m.month] || {};
           const pc0 = plFromPbx(m.mi, m.year) || (m.year === curY ? plCalls[String(m.mi)] : null);
@@ -5500,6 +5501,13 @@
               key: "load_" + k, color: PAL[(i + 1) % PAL.length],
               label: DT[k] + " — " + (k === "op" ? "лидов" : "сделок"), own: true
             })))
+        }, series));
+        // Динамика зарплат по отделам (Андрей 16.11.2026): одна кривая — сколько начислено отделу
+        // за месяц, как в блоке «Зарплаты по отделам». Шкала общая — все кривые в рублях.
+        box.appendChild(sub2("Графики — зарплаты по отделам"));
+        box.appendChild(vscLineChart({
+          key: "sum_op", label: "Зарплаты по отделам (начислено за месяц)", fmt: "money",
+          lines: DKS.map((k, i) => ({ key: "sum_" + k, color: PAL[i % PAL.length], label: DT[k] }))
         }, series));
 
         // ── Ввод ЗП управляющей за прошлый месяц (с 4 числа, пока не введена) ──

@@ -6553,8 +6553,13 @@ async function vscFillFromPlatform(months, extra) {
   const now = new Date(Date.now() + 3 * 3600 * 1000), nowYm = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");   // МСК
   const byYm = new Map(months.map((m) => [katedata.nameYm(m.name), m]));
   for (const ym of vscYmList(VSC_PLATFORM_FROM_YM, nowYm)) {
-    const P = await katedata.platformKpi(ym).catch(() => null);
-    if (!P) continue;
+    const P0 = await katedata.platformKpi(ym).catch(() => null);
+    if (!P0) continue;
+    // Сегодняшний день (МСК) не закончен — с платформы его НЕ берём, как будущий (16.11.2026):
+    // иначе прогноз прибыли считал утренние 5 контактов полным днём, темп месяца падал и
+    // прогноз за полдня съезжал на сотни тысяч. Сегодняшнюю выручку показывает отдельная плитка.
+    const todayIso = now.toISOString().slice(0, 10);
+    const P = Object.assign({}, P0, { rows: P0.rows.map((r) => (r && r.date >= todayIso ? Object.assign({}, r, { future: true }) : r)) });
     const rowOf = (dd) => P.rows[(+String(dd.date).slice(0, 2)) - 1];
     let m = byYm.get(ym);
     if (!m) {
@@ -7926,12 +7931,19 @@ async function vscBuildForecastBase() {
   // Фикс 20.07 («эффект понедельника»): в первый день новой недели старая формула брала
   // конец ЕЁ label (напр. 26-е при реальных 20 днях) → темп месяца делился на лишние 6 дней,
   // контакт-план падал на ~19% и все недельные карточки прогноза разом «краснели».
-  let elapsedDays = 0;
+  // Сегодняшний (и будущие) дни по МСК в темп НЕ идут, откуда бы ни пришли цифры — с платформы
+  // или из таблицы, внесённые днём: неполный день занижал темп, и прогноз за полдня падал на
+  // сотни тысяч (16.11.2026: +70 тыс. утром → −109 тыс. днём).
+  const _mskD = new Date(Date.now() + 3 * 3600 * 1000);
+  const _todayKey = _mskD.getUTCFullYear() * 10000 + (_mskD.getUTCMonth() + 1) * 100 + _mskD.getUTCDate();
+  const _dayKey = (s) => { const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(String(s || "")); return m ? (+m[3]) * 10000 + (+m[2]) * 100 + (+m[1]) : 0; };
+  let elapsedDays = 0, notClosedContacts = 0;
   (cur.weeks || []).forEach((w) => (w.days || []).forEach((dd) => {
+    if (_dayKey(dd.date) >= _todayKey) { notClosedContacts += +dd.processed || 0; return; }
     if ((dd.processed || 0) > 0 || (dd.budget || 0) > 0) { const dn = parseInt(String(dd.date || ""), 10); if (dn > elapsedDays) elapsedDays = dn; }
   }));
   if (!elapsedDays && dataWeeks.length) elapsedDays = wkEndDay(dataWeeks[dataWeeks.length - 1].label); // запасной вариант
-  const observedContacts = (cur.total && +cur.total.processed) || 0;
+  const observedContacts = Math.max(0, ((cur.total && +cur.total.processed) || 0) - notClosedContacts);
   const prevContacts = (prev.total && +prev.total.processed) || 0;
   let expectedContacts;
   if (observedContacts > 0 && elapsedDays > 0 && calMonthDays > 0) {
