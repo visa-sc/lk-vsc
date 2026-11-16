@@ -5243,6 +5243,36 @@
             + tbl(["Месяц"].concat(DK.map((k) => DT[k])), r2.concat(r2y), { collapse: true, minWidth: 640, rowYears: withDepts.map((m) => m.year), pastAvg: deptPast });
         }
 
+        // ── 2б. Зарплаты по отделам (Андрей 16.11.2026) — сумма начисленного за месяц по отделу, без
+        // взносов; отделы те же, что в средней ЗП выше (первая линия Осипова…Маркина, ОП Маслова…Челышева,
+        // ОРК МСК Рагоза…Ларионов, ОРК СПБ Кузнецова…Забельский, оформление Плинер…Кудрина). Январь–апрель
+        // разложены по отделам по именам из более поздних месяцев (на тех листах нет «Группы должности»).
+        const DKS = ["pl", "op", "orkMsk", "orkSpb", "oo"];
+        const withSum = list.filter((m) => (m.hasDepts || m.deptsFromNames) && m.depts && Object.keys(m.depts).length);
+        const withSumCur = withSum.filter((m) => m.year === curY);
+        const dSum = (m, k) => { const d = m.depts ? m.depts[k] : null; return d && d.accrued != null ? d.accrued : null; };
+        const dTot = (m) => { const v = DKS.map((k) => dSum(m, k)).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
+        let htmlDeptSum = "";
+        if (withSum.length) {
+          const rS = withSum.map(function (m) {
+            return '<tr><td ' + L + '>' + escapeHtml(m.month) + '</td>'
+              + DKS.map(function (k) {
+                const d = m.depts[k];
+                return '<td ' + TD + '>' + (d ? money(d.accrued) + '<span style="color:#9096a3;font-weight:400;"> · ' + d.staff + ' чел.</span>' : "—") + '</td>';
+              }).join("") + '<td ' + TD + '><b>' + money(dTot(m)) + '</b></td></tr>';
+          });
+          const avgS = (fn, sub) => { const v = sub.map(fn).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+          const sumAvgRow = (sub, label) => '<tr><td ' + TDY.replace("text-align:right", "text-align:left") + '>' + label + '</td>'
+            + DKS.map((k) => '<td ' + TDY + '>' + money(avgS((m) => dSum(m, k), sub)) + '</td>').join("")
+            + '<td ' + TDY + '>' + money(avgS(dTot, sub)) + '</td></tr>';
+          const sumPast = {}; pastYs.forEach((y) => { sumPast[y] = sumAvgRow(withSum.filter((m) => m.year === y), yLbl(y)); });
+          htmlDeptSum = secH("Зарплаты по отделам",
+              "Сколько начислено отделу за месяц, без взносов: сумма начисленного по его сотрудникам. Отделы те же, что в средней зарплате выше; Трембачева, Пятилова и руководство в отделы не входят, поэтому «Итого» меньше общего ФОТ."
+              + " Январь–апрель разложены по отделам по именам сотрудников из более поздних месяцев: на тех листах нет колонки «Группа должности». Строка «В среднем за год» — средняя сумма за месяц.", "0 0 8px")
+            + tbl(["Месяц"].concat(DKS.map((k) => DT[k])).concat(["Итого"]), rS.concat(sumAvgRow(withSumCur, "В среднем за " + curY)),
+              { collapse: true, compact: true, minWidth: 700, rowYears: withSum.map((m) => m.year), pastAvg: sumPast });
+        }
+
         // Текущий месяц — накопленный итог по вчерашний день (и в нагрузке, и в стафах). Ведомость по нему ещё не
         // закрыта (нет итога ФОТ и нормы часов), поэтому в таблицах выше его нет. Для
         // стафов берём штат и отпуска из уже заведённого листа месяца (или прошлого, если
@@ -5333,7 +5363,7 @@
         // Нагрузка — самое важное, поэтому идёт первой; дальше деньги и отделы.
         // Каждая секция — своя карточка, иначе три таблицы подряд сливаются в кашу.
         const card = (inner) => inner ? '<div class="vsc-chart" style="margin-bottom:16px;">' + inner + '</div>' : "";
-        html = card(htmlLoad) + card(htmlPay) + card(htmlDept);
+        html = card(htmlLoad) + card(htmlPay) + card(htmlDept) + card(htmlDeptSum);
 
         const upd = j.data.ts ? new Date(j.data.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
         // С сентября 2026 зарплаты считаются в модуле Кати на work.voyotravel.ru (05.10.2026):
