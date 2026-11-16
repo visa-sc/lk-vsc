@@ -57,6 +57,8 @@ function baseFor(req) {
   return ESIM_HOSTS[String((req && req.hostname) || "").toLowerCase()] || BASE_URL;
 }
 const DIR = path.join(__dirname, ".esim");
+// Почта Андрея для своих проверок и образцов писем: из .env (ESIM_OWNER_EMAIL), не в коде (16.11.2026)
+const OWNER_EMAIL = String(process.env.ESIM_OWNER_EMAIL || "").trim().toLowerCase();
 const CATALOG_FILE = path.join(DIR, "catalog.json");
 const ORDERS_FILE = path.join(DIR, "orders.json");
 const CUSTOMERS_FILE = path.join(DIR, "customers.json"); // баланс и реф-коды клиентов
@@ -2536,11 +2538,11 @@ function mount(app, opts) {
   // Образцы письма «eSIM готова» (одна и три штуки) — на director@, только с adm-кодом
   app.get("/esim/api/adm/letter-sample", async (req, res) => {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
-    const mine = readJson(ORDERS_FILE, []).filter((x) => x.status === "done" && x.myUrl && normEmail(x.email) === "komizarenko@gmail.com");
+    const mine = readJson(ORDERS_FILE, []).filter((x) => x.status === "done" && x.myUrl && normEmail(x.email) === OWNER_EMAIL);
     const urls = mine.slice(0, 3).map((x) => x.myUrl);
     while (urls.length < 3) urls.push(urls[0] || REF_SITE);
-    const c = getCustomer("komizarenko@gmail.com", true);
-    const order = { email: "komizarenko@gmail.com", label: "Вьетнам · 3 ГБ · 30 дней", base: REF_SITE,
+    const c = getCustomer(OWNER_EMAIL, true);
+    const order = { email: OWNER_EMAIL, label: "Вьетнам · 3 ГБ · 30 дней", base: REF_SITE,
       os: ["ios", "android"].indexOf(String(req.query.os || "")) >= 0 ? String(req.query.os) : undefined };
     // ?view=1 — показать письмо в браузере, ничего не отправляя (проверять вёрстку самим)
     if (String(req.query.view || "") === "1") {
@@ -2563,11 +2565,11 @@ function mount(app, opts) {
   app.get("/esim/api/adm/letters", async (req, res) => {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).send("Нет доступа.");
     const vsc = req.query.b === "vsc";
-    const mine = readJson(ORDERS_FILE, []).filter((x) => x.status === "done" && x.myUrl && normEmail(x.email) === "komizarenko@gmail.com");
+    const mine = readJson(ORDERS_FILE, []).filter((x) => x.status === "done" && x.myUrl && normEmail(x.email) === OWNER_EMAIL);
     const url = (mine[0] && mine[0].myUrl) || REF_SITE;
-    const c = getCustomer("komizarenko@gmail.com", true);
-    const order = { email: "komizarenko@gmail.com", label: "Турция · 3 ГБ · 30 дней", base: REF_SITE, os: "ios", priceRub: 459, id: "preview" };
-    const item = { esimId: "preview", email: "komizarenko@gmail.com", label: "Турция · 3 ГБ · 30 дней", myUrl: url, productId: "" };
+    const c = getCustomer(OWNER_EMAIL, true);
+    const order = { email: OWNER_EMAIL, label: "Турция · 3 ГБ · 30 дней", base: REF_SITE, os: "ios", priceRub: 459, id: "preview" };
+    const item = { esimId: "preview", email: OWNER_EMAIL, label: "Турция · 3 ГБ · 30 дней", myUrl: url, productId: "" };
     const list = [
       ["Письмо с QR, одна eSIM", readyLetter(order, [{ myUrl: url }], c.refCode)],
       ["Письмо с QR, три eSIM (Android)", readyLetter(Object.assign({}, order, { os: "android" }), [url, url, url].map((u) => ({ myUrl: u })), c.refCode)],
@@ -2578,7 +2580,7 @@ function mount(app, opts) {
       ["Пакет заканчивается сегодня (без продления)", notifyLetter({ kind: "expiry", item, days: 0, canTopup: false })],
       ["Брошенная оплата", abandonLetter(order, "abandoned")],
       ["Банк не пропустил оплату", abandonLetter(order, "declined")],
-      ["Приглашение друзей", refInviteLetter(Object.assign({}, c, { email: "komizarenko@gmail.com" }))],
+      ["Приглашение друзей", refInviteLetter(Object.assign({}, c, { email: OWNER_EMAIL }))],
     ];
     const brand = (L) => (vsc ? { subject: vscText(L.subject), html: vscText(L.html) } : L);
     const frame = (html, w) => '<iframe style="width:' + w + 'px;height:760px;border:1px solid #e6eaf2;border-radius:14px;background:#fff;flex:none" srcdoc="' +
@@ -4954,7 +4956,7 @@ function mount(app, opts) {
   // Кто свой: Андрей и Петров (Петров тестил 03.09 и заходил в бота). Узнаём по
   // почте, телефону и чату в боте — так тест не просочится ни через сайт, ни через бот.
   const listEnv = (name, dflt) => String(process.env[name] || dflt).split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
-  const TEST_EMAILS = listEnv("ESIM_TEST_EMAILS", "komizarenko@gmail.com,probe@example.com,ap@spt1.ru");
+  const TEST_EMAILS = listEnv("ESIM_TEST_EMAILS", [OWNER_EMAIL, "probe@example.com,ap@spt1.ru"].filter(Boolean).join(","));
   const TEST_PHONES = listEnv("ESIM_TEST_PHONES", "79959189058,79826404543");
   const TEST_TG = listEnv("ESIM_TEST_TG", "405697446");
   const digits = (p) => String(p || "").replace(/\D/g, "");
