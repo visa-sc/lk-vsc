@@ -396,6 +396,10 @@ function mount(app) {
       return res.type("html").send(guidePage(slug, GUIDES[slug], min));
     }
     if (own.call(ARTICLES, slug)) {
+      // витрина VSC mobile внутри сайта визового центра (visa-sc.ru/esim, 16.11.2026): страна открывается
+      // в той же витрине на том же сайте, а не уводит на voyomobile.ru
+      if (/(^|\.)(visa-sc|visa-gum)\.ru$/i.test(String(req.hostname || "")) && ARTICLES[slug].iso)
+        return res.redirect(302, "/esim?c=" + encodeURIComponent(ARTICLES[slug].iso));
       if (!onSeoHost(req)) return res.redirect(301, SEO_BASE + req.originalUrl);
       const a = ARTICLES[slug];
       const products = await catalog();
