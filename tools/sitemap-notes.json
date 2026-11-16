@@ -93,7 +93,7 @@
     },
     "/esim": {
       "group": "Клиент",
-      "desc": "VOYO mobile: каталог eSIM (MobiMatter), оплата Т-Кассой и СБП."
+      "desc": "VOYO mobile: каталог eSIM (MobiMatter), оплата Т-Кассой и СБП. С 16.11.2026 та же витрина под знаком VSC mobile открывается и на visa-sc.ru/esim (пункт меню eSIM на главной visa-sc.ru; nginx msk-voyotravel ведёт в основное приложение только адреса витрины, noindex). Корзина витрины — esim-cart.js: кнопка с тележкой только при возврате без оплаты."
     },
     "/esim/adm": {
       "group": "Управление",
