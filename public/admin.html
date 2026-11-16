@@ -8320,7 +8320,7 @@
               if (!sepDone && e.ts < since.ts) { html += sepRow(); sepDone = true; afterSep = true; }
               const over = e.diff < 0; // перебор: приход больше, чем нужно по курсу
               const dcell = over ? '<span style="color:#1f8f4d;">+' + ru0(-e.diff) + ' ₽</span>' : '<span style="color:#b0263a;">−' + ru0(e.diff) + ' ₽</span>';
-              html += '<tr style="' + (i && !afterSep ? "border-top:1px solid rgba(0,0,0,.05);" : "") + '"><td>' + escapeHtml(e.date) + '</td><td style="color:#8a8a8e;">' + escapeHtml(e.time) + '</td><td style="text-align:right;">' + ru2(e.mustEur) + '</td><td style="text-align:right;">' + ru2(e.rate) + ' ₽</td><td style="text-align:right;">' + ru0(e.needRub) + ' ₽</td><td style="text-align:right;">' + ru0(e.prihod) + ' ₽</td><td style="text-align:right;font-weight:700;">' + dcell + '</td></tr>';
+              html += '<tr style="' + (i && !afterSep ? "border-top:1px solid rgba(0,0,0,.05);" : "") + '"><td>' + escapeHtml(e.date) + '</td><td style="color:#8a8a8e;">' + escapeHtml(e.time) + (e.src === "portal" ? '<div style="font-size:11px;color:#8a8a8e;white-space:nowrap;">портал' + (e.deal ? ' · сделка ' + escapeHtml(e.deal) : '') + '</div>' : '') + '</td><td style="text-align:right;">' + ru2(e.mustEur) + '</td><td style="text-align:right;">' + ru2(e.rate) + ' ₽</td><td style="text-align:right;">' + ru0(e.needRub) + ' ₽</td><td style="text-align:right;">' + ru0(e.prihod) + ' ₽</td><td style="text-align:right;font-weight:700;">' + dcell + '</td></tr>';
               afterSep = false;
             });
             if (!sepDone) html += sepRow(); // все записи уже нового периода — пометка в конце списка

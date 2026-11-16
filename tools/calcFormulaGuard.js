@@ -19,7 +19,9 @@
 // Запуск: cron каждую минуту, cd /var/www/voyo && node tools/calcFormulaGuard.js
 //         --dry               — только показать, что было бы сделано
 //         --files a,b,c       — проверить другие файлы (для тестов)
-//         --kate-test         — с --files: проверять в них и откат страховки, как у Зайцевой
+//         --kate-test         — с --files: проверять в них откат страховки и сверку в евро, как у Зайцевой
+//         --no-mail           — не слать писем (тесты)
+// Плюс (16.11.2026): у Зайцевой следит за правкой VS-EURCHECK — если пропала, письмо Андрею.
 // ═══════════════════════════════════════════════════════════════════════════
 const fs = require("fs");
 const path = require("path");
@@ -27,6 +29,7 @@ const ROOT = path.join(__dirname, "..");
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes("--dry");
+const NOMAIL = argv.includes("--no-mail");                              // для тестов: писем не слать
 const STATE = path.join(ROOT, ".calcFormulaGuard.json");
 const BACKUPS = "/root/voyo-backups";
 
@@ -34,10 +37,10 @@ let COPIES = [
   { id: "public", name: "voyotravel.ru/calc (копия Андрея)", file: path.join(ROOT, "public/calc.html") },
   { id: "vsc", name: "вкладка «Калькулятор ВНЖ» в /vsc", file: path.join(ROOT, "public/admin.html") },
   // бэкап Катиного файла кладём рядом с ним — ей видно, что и когда восстанавливалось
-  { id: "kate", name: "work.voyotravel.ru → Инструменты → Калькуляторы (копия Зайцевой)", file: "/var/www/kateadmin/public/calc.html", backupNear: true, insurance: true },
+  { id: "kate", name: "work.voyotravel.ru → Инструменты → Калькуляторы (копия Зайцевой)", file: "/var/www/kateadmin/public/calc.html", backupNear: true, insurance: true, eurcheck: true },
 ];
 const fi = argv.indexOf("--files");
-if (fi >= 0 && argv[fi + 1]) COPIES = argv[fi + 1].split(",").map((f, i) => ({ id: "t" + i, name: f, file: f, backupNear: true, insurance: argv.includes("--kate-test") }));
+if (fi >= 0 && argv[fi + 1]) COPIES = argv[fi + 1].split(",").map((f, i) => ({ id: "t" + i, name: f, file: f, backupNear: true, insurance: argv.includes("--kate-test"), eurcheck: argv.includes("--kate-test") }));
 
 const WANT = "usd";
 const NOTE = "// ⚠ ПРАВИЛО АНДРЕЯ (06.10.2026): в режиме USDT и приход, и долг партнёру — по курсу ЦБ (usd). Сервер проверяет эту строку каждую минуту и восстанавливает её автоматически; поменять правило — через Андрея.";
@@ -194,12 +197,57 @@ function healInsurance(c, st) {
   log(c.name + ": залита версия старше 02.10 — вернул Совкомбанк, возраст по дате рождения и вёрстку. Бэкап: " + bak);
 }
 
+// ═══ Сверка рублёвых приходов в евро у Зайцевой (VS-EURCHECK, 16.11.2026) ═══
+// Андрей: поле «Клиент должен был в евро» на портале шлёт рублёвые приходы в его журнал
+// расхождений; если правку затрут — прислать ему письмо. Сам сторож её НЕ возвращает:
+// Катин калькулятор активно меняется, чинить вслепую нельзя. Письмо — только при переходе
+// «на месте → пропала»; возврат правки пишется в лог. Первый запуск при целой правке — молча.
+const EUR_PARTS = [
+  ['id="vsEurBox"', "поле «Клиент должен был в евро»"],
+  ["window.vsEurCheck = {", "модуль сверки"],
+  ["vsEurCheck.onChoose", "показ поля при выборе прихода"],
+  ["vsEurCheck.onDone", "отправка в журнал при «Завершить расчёт»"],
+];
+function mailAndrey(subject, html) {
+  if (NOMAIL) { log("[no-mail] письмо не отправлено (тест): " + subject); return Promise.resolve(); }
+  try {
+    try { require("dotenv").config({ path: path.join(ROOT, ".env"), quiet: true }); } catch (_) {}
+    const mail = require(path.join(ROOT, "mail"));
+    return mail.sendMail({ to: "director@visa-sc.ru", subject, html })
+      .then((r) => log("письмо Андрею: " + (r && r.ok ? "отправлено" : "ошибка " + (r && r.error))))
+      .catch((e) => log("письмо Андрею: ошибка " + (e && e.message)));
+  } catch (e) { log("письмо Андрею: ошибка " + (e && e.message)); return Promise.resolve(); }
+}
+function checkEurCheck(c, st) {
+  let src; try { src = fs.readFileSync(c.file, "utf8"); } catch (_) { return; }   // нечитаемость пишет heal()
+  const missing = EUR_PARTS.filter(([k]) => !src.includes(k)).map(([, n]) => n);
+  const KEY = c.id + ":eur", was = st[KEY], now = missing.length ? "missing" : "ok";
+  if (now === was) return;
+  if (DRY) { log("[dry] " + c.name + ": сверка в евро — " + (missing.length ? "нет: " + missing.join(", ") : "на месте")); return; }
+  st[KEY] = now;
+  if (was === undefined && now === "ok") return;
+  if (now === "ok") { log(c.name + ": сверка рублёвых приходов в евро снова на месте"); return; }
+  log(c.name + ": сверка рублёвых приходов в евро ПРОПАЛА (" + missing.join(", ") + ") — пишу Андрею");
+  return mailAndrey("Портал Кати: пропала сверка рублёвых приходов в евро",
+    '<div style="font-family:-apple-system,\'Segoe UI\',Roboto,Arial,sans-serif;font-size:15px;color:#1d1d1f;line-height:1.55;max-width:620px;">'
+    + '<p>Андрей, в калькуляторе на портале Кати (work.voyotravel.ru → Инструменты → Калькуляторы) пропала правка '
+    + '«Клиент должен был в евро» для рублёвых приходов. Похоже, файл перезалили или переделали.</p>'
+    + '<p>Не хватает: <b>' + missing.join(", ") + '</b>.</p>'
+    + '<p>Пока её нет, рублёвые приходы с портала не попадают в твою историю расхождений. Сам сторож правку '
+    + 'не возвращает — её калькулятор активно меняется. Скажи — верну и согласую с Катей. Описание правки у неё '
+    + 'в ПРАВКИ-АНДРЕЯ.md, раздел «сверка рублёвых приходов в евро».</p>'
+    + '<p style="color:#8a8a8e;font-size:13px;margin-top:18px;">VOYO · Visa Services Center</p></div>');
+}
+
 const st = loadState();
+const pending = [];
 for (const c of COPIES) {
+  if (c.eurcheck) { try { const p = checkEurCheck(c, st); if (p) pending.push(p); } catch (e) { log(c.name + ": ошибка сторожа (сверка в евро) — " + (e && e.message)); } }
   if (c.insurance) { try { healInsurance(c, st); } catch (e) { log(c.name + ": ошибка сторожа (страховка) — " + (e && e.message)); } }
   try { heal(c, st); } catch (e) { log(c.name + ": ошибка сторожа — " + (e && e.message)); }
 }
 saveState(st);
+Promise.all(pending).catch(() => {});
 if (DRY) for (const c of COPIES) {
   try { const m = fs.readFileSync(c.file, "utf8").match(RE); console.log((m && m[1] === WANT ? "OK   " : "НАДО ") + c.name + " — " + (m ? "«" + m[1] + "»" : "строка не найдена")); }
   catch (e) { console.log("НЕТ  " + c.name + " — " + (e && e.code)); }

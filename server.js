@@ -7452,6 +7452,11 @@ app.post("/api/calc-mismatch", (req, res) => {
   if (![prihod, mustEur, rate].every((x) => isFinite(x) && x > 0) || prihod > 1e12 || mustEur > 1e9 || rate > 1e6) {
     return res.status(400).json({ success: false, message: "bad input" });
   }
+  // Источник записи (с 16.11.2026): рублёвые приходы с портала Зайцевой (work.voyotravel.ru →
+  // Инструменты → Калькуляторы) шлют src:"portal" и номер сделки — в истории Андрея строка
+  // помечается «портал · сделка N». Без пометки — как раньше, из этого калькулятора.
+  const src = b.src === "portal" ? "portal" : "";
+  const deal = String(b.deal || "").replace(/\D/g, "").slice(0, 12);
   const needRub = Math.round(mustEur * rate * 100) / 100;
   const diff = Math.round((needRub - prihod) * 100) / 100;
   if (Math.abs(diff) <= 0.5) return res.json({ success: true, skipped: "no-diff" }); // сошлось до копеек — не пишем
@@ -7464,7 +7469,7 @@ app.post("/api/calc-mismatch", (req, res) => {
   //  (2) в пределах 6 часов — тот же рублёвый приход ИЛИ его ошибочный вариант «без одного нуля» (×10),
   //      независимо от евро (сотрудник переввёл ту же операцию, в т.ч. опечатался в нуле).
   // Иная дата / вне 6ч с другими суммами — допустимо. Курс в ключ не входит (авто).
-  const dup = log.some((e) => {
+  const dup = log.find((e) => {
     if (e.date === p.date && e.prihod === prihod && e.mustEur === mustEur) return true;
     if ((now - e.ts) < SIX_H) {
       if (e.prihod === prihod) return true;
@@ -7472,8 +7477,17 @@ app.post("/api/calc-mismatch", (req, res) => {
     }
     return false;
   });
-  if (dup) return res.json({ success: true, skipped: "dup" });
-  log.push({ ts: now, date: p.date, time: p.time, prihod, mustEur, rate, needRub, diff });
+  if (dup) {
+    // Ту же оплату уже записали из этого калькулятора — не дублируем, но дописываем к ней
+    // пометку портала и сделку, чтобы было видно, к какой сделке относится строка.
+    if (src && !dup.src) {
+      dup.src = src; if (deal) dup.deal = deal;
+      try { fs.writeFileSync(CALC_MISMATCH_FILE, JSON.stringify(log)); } catch (e) { console.error("calc-mismatch write:", e && e.message); }
+      return res.json({ success: true, skipped: "dup", tagged: true });
+    }
+    return res.json({ success: true, skipped: "dup" });
+  }
+  log.push(Object.assign({ ts: now, date: p.date, time: p.time, prihod, mustEur, rate, needRub, diff }, src ? { src } : {}, deal ? { deal } : {}));
   if (log.length > 2000) log = log.slice(-2000);
   try { fs.writeFileSync(CALC_MISMATCH_FILE, JSON.stringify(log)); } catch (e) { console.error("calc-mismatch write:", e && e.message); }
   return res.json({ success: true });
