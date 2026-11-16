@@ -5431,7 +5431,9 @@ function mount(app, opts) {
     const known = list.filter((x) => Number.isFinite(x.usd));
     const totalUsd = Math.round(known.reduce((a, x) => a + x.usd, 0) * 100) / 100;
     return { list, totalUsd, totalRub: Math.round(totalUsd * rate),
-      low: known.some((x) => x.usd < x.low), stale: known.some((x) => x.ts && Date.now() - x.ts > 3 * 3600e3) };
+      // TSim (кредит) в красный не красит: при остатке ниже резерва его пакеты прячутся сами, а с 07.10.2026
+      // он на паузе с нулём — плитка баланса горела красным постоянно при полных EA и MM (аудит 16.11.2026)
+      low: known.some((x) => !x.credit && x.usd < x.low), stale: known.some((x) => x.ts && Date.now() - x.ts > 3 * 3600e3) };
   }
 
   function refundsSum(from, to, kind) {
@@ -6632,6 +6634,9 @@ function mount(app, opts) {
       if (!c || !c.refCode) return;
       const tg = String(key).indexOf("tg:") === 0 ? String(key).slice(3) : null;
       if (!tg && !validEmail(c.email)) return;
+      // проверочные адреса (probe@example.com и т.п.): почта их не принимает, и письмо уходило
+      // в повтор каждый час (аудит 16.11.2026: 38 ошибок за сутки)
+      if (!tg && (/@example\.(com|org|net)$/i.test(c.email) || TEST_EMAILS.indexOf(normEmail(c.email)) >= 0)) return;
       out.push({ key, email: c.email, refCode: c.refCode, tgChatId: tg, firstPaid: ts });
     });
     return out.sort((a, b) => a.firstPaid - b.firstPaid);
@@ -6652,6 +6657,12 @@ function mount(app, opts) {
           .catch((e) => ({ ok: false, error: e.message }));
         ok = !r || r.ok !== false;
         if (!ok) console.error("esim refinvite mail:", t.email, (r && r.error) || "");
+        // адрес не существует (почта ответила 5xx) — больше не пробуем, иначе повтор каждый час
+        if (!ok && /\b5\d\d\b|rejected/i.test(String((r && r.error) || ""))) {
+          const sent = readJson(REFINVITE_FILE, {});
+          sent[t.key] = -Date.now();
+          writeJson(REFINVITE_FILE, sent);
+        }
       }
       if (ok) {
         const sent = readJson(REFINVITE_FILE, {});

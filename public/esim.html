@@ -1380,7 +1380,7 @@
     mrp.hidden = !p.note; if(p.note) mrp.textContent = p.note;
     document.getElementById("mSpecs").innerHTML =
       '<div class="b"><div class="k">Интернет</div><div class="v">'+gb+'</div></div>'+
-      '<div class="b"><div class="k">Срок</div><div class="v">'+RU(p.days)+' дней</div></div>'+
+      '<div class="b"><div class="k">Срок</div><div class="v">'+RU(p.days)+' '+plural(p.days,["день","дня","дней"])+'</div></div>'+
       '<div class="b"><div class="k">Сеть</div><div class="v">'+(p.fiveG?"5G / 4G LTE":"4G LTE")+'</div></div>'+
       '<div class="b"><div class="k">Раздача Wi-Fi</div><div class="v">'+(p.hotspot!==false?"Да":"Нет")+'</div></div>'+
       '<div class="b wide"><div class="k">Продление</div><div class="v">'+(p.topup
