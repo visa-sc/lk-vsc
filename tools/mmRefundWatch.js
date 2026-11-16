@@ -90,6 +90,27 @@ function api(p) {
     console.log(now + " " + o.mmOrderId + " напоминание поставщику: " + (r2 && r2.ok ? "отправлено" : (r2 && r2.error)));
     if (r2 && r2.ok) patch[o.id] = Object.assign(patch[o.id] || {}, { followUpAt: Date.now() });
   }
+  // Напоминание АНДРЕЮ (16.11.2026): в заказе remindAt — если к этой дате денег нет, одно письмо ему с
+  // готовым текстом для поддержки. Писать MobiMatter надо с его адреса (кабинет на нём), не с почты сервера.
+  for (const o of wait) {
+    const r = o.supplierRefund;
+    if (!r.remindAt || r.remindedAt || Date.now() < r.remindAt || (patch[o.id] && patch[o.id].state === "Refunded")) continue;
+    const cost = Number(o.costUsd || 0).toFixed(2);
+    const r3 = await mail.sendMail({
+      to: TO,
+      subject: "Напоминание: MobiMatter не вернул $" + cost + " за " + o.mmOrderId + ", напишите им повторно",
+      text: "Деньги за " + o.mmOrderId + " (" + (o.label || "") + ", $" + cost + ") на кошелёк MobiMatter так и не пришли. " +
+        "Кошелёк сейчас: $" + (Number.isFinite(wallet) ? wallet.toFixed(2) : "?") + ", статус заказа у них: " +
+        ((await api("/order/" + o.mmOrderId).then((x) => x && x.result && x.result.orderState).catch(() => null)) || "?") + ".\n\n" +
+        "Напишите им со своей почты (кабинет MobiMatter на ней) ответом на тикет Zendesk от 16.11 или новым письмом на support@mobimatter.com:\n\n" +
+        "---\nSubject: Re: refund for order " + o.mmOrderId + "\n\nHello,\n\nFollowing up on our refund request for order " + o.mmOrderId +
+        " (ICCID " + (o.iccid || "-") + ", USD " + cost + "). The profile never registered on any network in Japan, 0 MB used, " +
+        "and we replaced it with another provider. We still have not received the refund. Could you please process USD " + cost +
+        " to our MobiMatter balance?\n\nThank you,\nAndrei Komisarenko\n---",
+    }).catch((e) => ({ ok: false, error: e.message }));
+    console.log(now + " " + o.mmOrderId + " напоминание Андрею: " + (r3 && r3.ok ? "отправлено" : (r3 && r3.error)));
+    if (r3 && r3.ok) patch[o.id] = Object.assign(patch[o.id] || {}, { remindedAt: Date.now() });
+  }
   if (Object.keys(patch).length) {
     // пишем поверх свежей копии и только свои поля — сервер мог за это время поменять заказы
     const fresh = read();
