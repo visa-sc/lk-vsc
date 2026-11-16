@@ -5860,7 +5860,7 @@ function mount(app, opts) {
   // пусть через свой Claude решает проблемы с клиентами»). Ключ ESIM_SUP_KEYS="petrov:<ключ>",
   // заголовок X-Sup-Key. Здесь контакты клиентов видны (без них не ответить), но денег и
   // поставщиков эти ручки не трогают: возврат, замена за наш счёт, бонусы — только Андрей.
-  // Письма «нужен ответ» уходят на ESIM_SUPPORT_TO (Андрей и Петров), отвечать можно и
+  // Письма «нужен ответ» уходят на ESIM_SUPPORT_TO (Андрей, Петров, с 16.11.2026 и Зайцева), отвечать можно и
   // обычным ответом на письмо — см. esimchat.js.
   function supWho(req) {
     const k = String(req.headers["x-sup-key"] || "").trim();   // только заголовок: адреса запросов пишутся в журналы
@@ -5882,7 +5882,7 @@ function mount(app, opts) {
     console.log("esim sup: " + who + " " + req.method + " " + req.path);
     return who;
   }
-  const SUP_NAME = { petrov: "Андрей Петров", admin: "Андрей" };
+  const SUP_NAME = { petrov: "Андрей Петров", kate: "Екатерина Зайцева", admin: "Андрей" };   // kate с 16.11.2026
   const supOrder = (o) => ({ id: o.id, paidAt: o.paidAt ? new Date(o.paidAt + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ") : null,
     label: o.label, email: o.email || null, phone: o.phone || null, priceRub: o.payTotalRub || o.priceRub, promo: o.promoCode || null,
     via: o.tgChatId ? "бот" : "сайт", brand: o.brand || "voyo", supplier: o.src || null, iccid: o.iccid || null,
@@ -6149,7 +6149,7 @@ function mount(app, opts) {
           (chat ? "\nЧат: " + chat.id : ""),
       });
       // Андрей 21.10.2026: «если Петров выдаёт за наш счёт симку — автоматически письмо ему, что надо другую аннулировать»
-      const ME = { petrov: "ap@spt1.ru", admin: "director@visa-sc.ru" }[who] || "director@visa-sc.ru";
+      const ME = { petrov: "ap@spt1.ru", kate: "ekaterina.z@visa-sc.ru", admin: "director@visa-sc.ru" }[who] || "director@visa-sc.ru";
       if (opts && opts.sendMail) {
         opts.sendMail({ to: ME, subject: "VOYO eSIM: замена выдана — аннулируйте старую eSIM " + o.mmOrderId,
           text: "Вы выдали замену клиенту " + (o.email || "—") + ".\n\nНовая: " + (plan.title || "") + " (" + gift.mmOrderId + ")\n" +

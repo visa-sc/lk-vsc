@@ -251,7 +251,7 @@ async function pollMailbox() {
         const body2 = stripReply(parsed.text || "");
         // кто ответил: письма о проблемах с 20.10.2026 приходят и Андрею Петрову (ESIM_SUPPORT_TO)
         const fromAddr = String(((parsed.from && parsed.from.value && parsed.from.value[0]) || {}).address || "").toLowerCase();
-        const by = fromAddr === "ap@spt1.ru" ? "Андрей Петров" : null;
+        const by = { "ap@spt1.ru": "Андрей Петров", "ekaterina.z@visa-sc.ru": "Екатерина Зайцева" }[fromAddr] || null;   // Зайцева с 16.11.2026
         if (body2) { operatorMessage(m[1], body2, by); done++; }
       }
       writeJson(IMAP_STATE, { ids: Array.from(ids).slice(-1000) });
