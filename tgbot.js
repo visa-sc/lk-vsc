@@ -485,7 +485,8 @@ async function showPack(chatId, productId, messageId) {
   const p = c.products.find((x) => x.id === productId);
   if (!p) return send(chatId, "Пакет больше не доступен, выберите другой.", { reply_markup: homeKeyboard() });
   const prev = getState(chatId);
-  const st = setState(chatId, prev.productId === productId ? { productId } : { productId, qty: 1 });
+  // packAt — когда смотрел карточку пакета: по нему напоминание, если ушёл без оплаты (nudgeTick)
+  const st = setState(chatId, prev.productId === productId ? { productId, packAt: Date.now() } : { productId, qty: 1, packAt: Date.now() });
   const price = await priceFor(chatId, p);
   const multi = p.countries.length > 1;
   const where = multi ? p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : cname(p.countries[0]);
@@ -1702,8 +1703,59 @@ function webhookRetry() {
 }
 
 // ─────────────────────────── подключение ───────────────────────────
+// ── Напоминание о выбранном и не оплаченном пакете (16.11.2026, Андрей) ──
+// Человек открыл карточку пакета и час ничего не делал, а оплаты из этого чата нет — одно
+// сообщение с кнопкой «Оформить» (та же карточка со свежей ценой). Не чаще раза в неделю на чат,
+// ночью (22–9 МСК) не пишем — утром, если выбор был не раньше чем за 16 часов.
+// Задержка — ESIM_TG_NUDGE_MIN (минуты, по умолчанию 60), выключить — ESIM_TG_NUDGE=0.
+const NUDGE_MS = Number(process.env.ESIM_TG_NUDGE_MIN || 60) * 60000;
+let _nudgeBusy = false;
+async function nudgeTick() {
+  if (_nudgeBusy || process.env.ESIM_TG_NUDGE === "0") return;
+  const mskH = (new Date().getUTCHours() + 3) % 24;
+  if (mskH >= 22 || mskH < 9) return;
+  _nudgeBusy = true;
+  try {
+    const now = Date.now();
+    const all = readJson(STATE_FILE, {});
+    const due = Object.keys(all).filter((k) => {
+      const st = all[k];
+      return st.productId && st.packAt && now - st.packAt >= NUDGE_MS && now - st.packAt < 16 * 3600e3 &&
+        now - (st.ts || 0) >= NUDGE_MS &&                       // с тех пор ничего не делал
+        !(st.nudgedAt && now - st.nudgedAt < 7 * 864e5);       // раз в неделю, не чаще
+    });
+    if (!due.length) return;
+    const orders = readJson(path.join(DIR, "orders.json"), []);
+    const c = await catalog();
+    for (const chatId of due) {
+      const st = all[chatId];
+      // оплатил после выбора (этот или другой пакет) — молчим, только помечаем
+      const paid = orders.some((o) => String(o.tgChatId || "") === chatId && o.paidAt && o.paidAt > st.packAt - 60000);
+      const p = c.products.find((x) => x.id === st.productId);
+      if (paid || !p) { setState(chatId, { nudgedAt: now, nudgeSkip: paid ? "paid" : "gone" }); continue; }
+      let price = null;
+      try { price = await priceFor(chatId, p); } catch (_) {}
+      const sum = (price && (price.grandTotal || price.total)) || p.priceRub;
+      const where = p.countries.length > 1 ? p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : cname(p.countries[0]);
+      const r = await send(chatId,
+        "Вы выбирали eSIM: <b>" + esc(where) + " · " + gbOf(p) + "</b>, " + RU(p.days) + " дн., " + RU(sum) + " ₽.\n\n" +
+        "Оформление займёт минуту, QR-код придёт сюда же, в чат. Если остались вопросы, напишите в поддержку.",
+        { reply_markup: { inline_keyboard: [
+          [{ text: "Оформить за " + RU(sum) + " ₽", callback_data: "p:" + p.id }],
+          [{ text: "Подобрать другой пакет", callback_data: "home" }],
+          [{ text: "🛟 Поддержка", callback_data: "support" }],
+        ] } }).catch(() => null);
+      setState(chatId, { nudgedAt: now, nudgedPack: p.id });
+      console.log("tgbot: напоминание о пакете", p.id, "чат", chatId, r && r.ok !== false ? "отправлено" : "не ушло");
+      await new Promise((res) => setTimeout(res, 300));
+    }
+  } catch (e) { console.error("tgbot nudge:", e.message); }
+  finally { _nudgeBusy = false; }
+}
+
 function mount(app, opts) {
   if (!ready()) { console.log("tgbot: ESIM_TG_TOKEN не задан, бот выключен"); return { onIssued: () => {} }; }
+  setInterval(() => { nudgeTick(); }, 5 * 60 * 1000);
   const hook = webhookPath();
 
   // Вебхук оставлен на случай, если однажды до нас начнут доходить запросы
