@@ -42,6 +42,23 @@ const MAX_STEPS = 30;
 const OUT_LIMIT = 15000;
 const DAY = 86400 * 1000;
 
+// ── Режим «без Андрея» (решение Андрея 16.11.2026) ──
+// С 22.11 по 10.12.2026 включительно робот делает ВСЁ, о чём просит Катя, сам — и то, что обычно
+// идёт кнопкой (правки сервера и кода, доступы, пакеты, ключи, пароли, прибыль, зарплаты,
+// деньги VSC): скрипт выполняется в этом же ночном прогоне, без письма. Вне этих дат — как раньше.
+// День считаем по МСК за 5 минут до запуска: прогон в 00:00 разбирает просьбы ПРОШЕДШЕГО дня,
+// поэтому первый такой прогон — в ночь на 23.11 (просьбы 22.11), последний — в ночь на 11.12.
+// Страховка: явно разрушительные команды (форматирование, стирание корня, перезагрузка сервера,
+// удаление пользователей, сброс фаервола и т. п.) и в эти дни идут Андрею кнопкой.
+const AUTO_FROM = process.env.KATE_HELPER_AUTO_FROM || "2026-11-22";
+const AUTO_TO = process.env.KATE_HELPER_AUTO_TO || "2026-12-10";
+function mskDay(ms) { return new Date(ms + 3 * 3600 * 1000).toISOString().slice(0, 10); }
+function autoMode() {
+  const day = process.env.KATE_HELPER_TODAY || mskDay(Date.now() - 5 * 60 * 1000);   // TODAY — для проверки
+  return day >= AUTO_FROM && day <= AUTO_TO;
+}
+const DANGER_RE = /\brm\s+(-[a-z]*\s+)*\/(\*|\s|$)|\bmkfs|\bwipefs|\bdd\s[^\n]*of=\/dev\/|\b(shutdown|reboot|poweroff|halt)\b|\binit\s+[06]\b|crontab\s+-r|\b(userdel|deluser|passwd|chpasswd|usermod)\b|iptables\s+-(F|X)|\bufw\s+(disable|reset)|\bDROP\s+(TABLE|DATABASE)|\bchmod\s+(-R\s+)?[0-7]*7{3}\s+\/(\s|$)|authorized_keys|\/etc\/(shadow|sudoers|ssh\/sshd_config)|pm2\s+(kill|delete\s+all)|\bsystemctl\s+(stop|disable)\s+(nginx|ssh|sshd|pm2)/i;
+
 // ── Что можно читать ──
 const READ_ROOTS = ["/var/www/voyo", "/var/www/kateadmin", "/home/kateadmin", "/mnt/data", KATE_NGINX];
 const OWN_ROOTS = ["/var/www/kateadmin", "/home/kateadmin"];       // её — точки разрешены
@@ -240,6 +257,15 @@ async function doTool(name, a, ctx) {
     case "request_approval": {
       const id = crypto.randomBytes(4).toString("hex"), token = crypto.randomBytes(18).toString("base64url");
       const item = { id, token, at: new Date().toISOString(), status: "wait", title: a.title, request: a.request, plan: a.plan, script: a.script, verify: a.verify, sensitive: !!a.sensitive };
+      // В дни «без Андрея» — разрешено заранее: выполнится в этом же прогоне, письма нет.
+      if (autoMode() && !DANGER_RE.test(a.script + "\n" + a.verify)) {
+        item.status = "yes"; item.auto = true; item.decidedAt = item.at;
+        if (dry) { console.log("[dry] выполнил бы сразу (без Андрея):", JSON.stringify(item, null, 1)); return "[dry] выполнилось бы сразу"; }
+        const st0 = load(); st0.pending = (st0.pending || []).concat(item); save(st0);
+        ctx.done.push("выполняю сам (Андрей разрешил заранее): " + a.title);
+        ctx.auto = true;
+        return "Андрей заранее разрешил такие просьбы на " + AUTO_FROM + "…" + AUTO_TO + ": скрипт выполнится сразу после твоего ответа в этом же прогоне, итог (сделано / не получилось) робот допишет к ответу сам. В ответе пиши «выполняю», не «сделано».";
+      }
       if (dry) { console.log("[dry] запрос подтверждения:", JSON.stringify(item, null, 1)); return "[dry] письмо Андрею не отправлено"; }
       const st = load(); st.pending = (st.pending || []).concat(item); save(st);
       const link = (d) => `${SITE}/kh/a/${id}/${token}?d=${d}`;
@@ -271,7 +297,7 @@ async function runApproved(dry) {
     it.status = r.code || v.code ? "failed" : "done"; it.doneAt = new Date().toISOString();
     it.log = cut((r.out + r.err).slice(-3000) + "\n# проверка:\n" + (v.out + v.err).slice(-1500), 5000);
     // у секретного вывод скрипта в чат не идёт: там может оказаться значение
-    out.push(it.status === "done" ? `Сделано (разрешил Андрей): ${it.title}.` : `Не получилось: ${it.title}.` + (it.sensitive ? " Подробности у Андрея." : " " + it.log.slice(-600)));
+    out.push(it.status === "done" ? `Сделано (${it.auto ? "Андрей разрешил заранее" : "разрешил Андрей"}): ${it.title}.` : `Не получилось: ${it.title}.` + (it.sensitive ? " Подробности у Андрея." : " " + it.log.slice(-600)));
     if (it.status === "failed") await mail("Помощники: не выполнено — " + it.title, `<p>Скрипт или проверка упали.</p><pre style="font-size:11px;white-space:pre-wrap">${esc(it.log)}</pre>`);
   }
   // в файле держим месяц истории
@@ -293,11 +319,17 @@ const SYSTEM = [
   "5. В конце напиши ОДИН ответ в комнату: по каждой просьбе — сделано / передано Андрею на подтверждение (выполнится ночью после его «да») / почему нельзя. Коротко, по делу, но со всеми нюансами, без вступлений и пересказа просьбы. Чат не понимает разметку: простой текст, без **, # и обратных кавычек, пункты — «•» или «1)». Обращайся к Кате и её Claude. Если отвечать не на что (благодарности, уведомления) — верни пустой ответ.",
 ].join("\n");
 
+const SYSTEM_AUTO = [
+  "СЕЙЧАС ДНИ «БЕЗ АНДРЕЯ» (" + AUTO_FROM + "…" + AUTO_TO + ", его решение 16.11.2026): request_approval не ждёт кнопки — скрипт выполняется автоматически сразу после твоего ответа, в том числе sensitive (ключи, пароли, прибыль, зарплаты, деньги VSC — правила про закрытый файл 600 и «ничего секретного в вывод» остаются).",
+  "Поэтому скрипт пиши как для работы без присмотра: копия каждого файла перед правкой, никаких удалений данных без копии, рестарт pm2 «voyo» — только если в работе нет заказов eSIM в статусе fulfilling, после правок кода — проверка синтаксиса (node --check) и verify, который ловит поломку. Явно разрушительные команды (форматирование, стирание, перезагрузка сервера, пользователи, фаервол, ssh) всё равно уйдут Андрею кнопкой — не предлагай их без крайней нужды.",
+  "В ответе по таким просьбам пиши «выполняю» — итог (сделано / не получилось) робот допишет сам.",
+].join("\n");
+
 async function claude(messages) {
   const Anthropic = require("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, baseURL: process.env.ANTHROPIC_BASE_URL || undefined, timeout: 10 * 60 * 1000 });
   const params = { model: MODEL, max_tokens: 16000, output_config: { effort: "medium" },
-    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }].concat(autoMode() ? [{ type: "text", text: SYSTEM_AUTO }] : []),
     tools: TOOLS.map((t, i) => (i === TOOLS.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t)), messages };
   let msg;
   try {
@@ -354,7 +386,9 @@ async function nightly(dry) {
       return;                                             // отметку не двигаем — разберём следующей ночью
     }
   }
-  const text = [...lines, reply].filter(Boolean).join("\n\n");
+  // Дни «без Андрея»: заранее разрешённое из этого разбора выполняем сразу, итог — тем же сообщением.
+  const lines2 = fresh.length && autoMode() ? await runApproved(dry) : [];
+  const text = [...lines, reply, ...lines2].filter(Boolean).join("\n\n");
   if (text) await say(text, "kh-" + t0.slice(0, 13), dry);
   if (!dry) { const s2 = load(); s2.lastAt = fresh.length ? fresh[fresh.length - 1].at : s2.lastAt; s2.lastRun = t0; delete s2.lastError; save(s2); }
   // перепроверка: сайты и процессы живы
