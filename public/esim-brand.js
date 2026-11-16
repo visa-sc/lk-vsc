@@ -13,7 +13,9 @@
   var qs = new URLSearchParams(location.search);
   // utm_source=sms — SMS нашим клиентам визового центра из amoCRM (sms.ru/88GPH и др.):
   // им тоже витрина VSC (Андрей, 14.10.2026)
-  var vsc = /^\/vsc(\/|$)/i.test(location.pathname) || qs.get("b") === "vsc" || String(qs.get("utm_source") || "").toLowerCase() === "sms";
+  // Витрина внутри сайта визового центра (visa-sc.ru/esim, 16.11.2026): там всегда VSC mobile
+  var onVscSite = /(^|\.)(visa-sc|visa-gum)\.ru$/i.test(location.hostname);
+  var vsc = onVscSite || /^\/vsc(\/|$)/i.test(location.pathname) || qs.get("b") === "vsc" || String(qs.get("utm_source") || "").toLowerCase() === "sms";
   try {
     if (vsc) localStorage.setItem(KEY, "vsc");
     else if (store && location.pathname === "/") localStorage.removeItem(KEY);   // главная VOYO mobile
@@ -62,7 +64,8 @@
     }
   }
   // витрина VSC: на сайтах eSIM — /vsc, с других доменов (кабинет на voyotravel.ru) — полный адрес
-  var STORE = /(^|\.)voyomobile\.(ru|com)$/.test(location.hostname) ? "/vsc" : "https://voyomobile.ru/vsc";
+  // на сайте визового центра — его же /esim, чтобы человек не уходил на другой домен
+  var STORE = onVscSite ? "/esim" : /(^|\.)voyomobile\.(ru|com)$/.test(location.hostname) ? "/vsc" : "https://voyomobile.ru/vsc";
   function apply(scope) {
     var q = scope.querySelectorAll ? scope : document;
     var brands = q.querySelectorAll(".brand");

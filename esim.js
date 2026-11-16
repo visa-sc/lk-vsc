@@ -52,6 +52,9 @@ const ESIM_HOSTS = {
   "esim.voyotravel.ru": "https://esim.voyotravel.ru",
   "voyomobile.ru": "https://voyomobile.ru",
   "voyomobile.com": "https://voyomobile.com",
+  // витрина VSC mobile внутри сайта визового центра: visa-sc.ru/esim (nginx ведёт сюда только /esim*, 16.11.2026)
+  "visa-sc.ru": "https://visa-sc.ru",
+  "visa-gum.ru": "https://visa-gum.ru",
 };
 function baseFor(req) {
   return ESIM_HOSTS[String((req && req.hostname) || "").toLowerCase()] || BASE_URL;

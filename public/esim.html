@@ -1423,10 +1423,16 @@
       document.getElementById("mPhoneLb").textContent = "Email — пришлём чек и доступ к вашей eSIM";
       document.getElementById("mNote").textContent = "Оплата картой в рублях через Т-Банк. Сразу после оплаты придёт QR-код.";
     }
+    // корзина (esim-cart.js): выбранный пакет запоминаем, покажем, только если уйдёт без оплаты и вернётся
+    try{ if(window.voyoCart && !EMBED) voyoCart.add({id:p.id, title:document.getElementById("mTitle").textContent,
+      sub:RU(p.days)+" дней"+(p.operator?" · сеть "+p.operator:""), flag:document.getElementById("mFlag").textContent, price:p.priceRub}); }catch(e){}
     ovl.classList.add("on");
     tellLk(true);
     document.body.style.overflow="hidden";
   }
+  // для корзины: найти пакет в свежем каталоге и открыть его окно покупки
+  window.voyoPackById = function(id){ for(var i=0;i<CATALOG.length;i++) if(CATALOG[i].id===id) return CATALOG[i]; return null; };
+  window.voyoOpenPack = function(id){ var p = window.voyoPackById(id); if(!p) return false; openModal(p); return true; };
   // Промокод из ссылки применяем молча: сработал — зелёная строка, уже
   // использован — убираем его и не мешаем человеку покупать.
   async function applyAuto(){
@@ -1618,6 +1624,7 @@
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){
+          try{ if(window.voyoCart) voyoCart.paying(mP.id); }catch(e){}
           if(EMBED){ try{ window.top.location.href = pj.url; }catch(e){ location.href = pj.url; } }
           else location.href = pj.url;
           return;
@@ -1686,5 +1693,6 @@
 })();
 </script>
 <script src="/esim-support.js" defer></script>
+<script src="/esim-cart.js" defer></script>
 </body>
 </html>
