@@ -4943,6 +4943,8 @@ function mount(app, opts) {
     direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", lk: "Личный кабинет VOYO",
     sms: "SMS", sms_mass: "SMS-рассылка", email: "Email", tg: "Telegram-рассылка",
     instagram: "Instagram", tg_channel: "Telegram-канал", referral: "Рекомендации (рефералы)", meta: "Meta (реклама FB/Instagram)",
+    office: "QR в офисах",   // QR-коды в офисах VSC, ссылка ?utm_source=office (Петров, 16.11.2026)
+    main: "Меню сайта visa-sc.ru", gifts: "visa-sc.ru: страница «Подарки»",   // ссылки ?utm_source=main / gifts
   };
   function channelName(k) { return CHANNEL_NAMES[k] || k; }
   const mskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -5012,7 +5014,7 @@ function mount(app, opts) {
   const SRC_NAMES = { sms: "SMS", meta: "Meta (реклама)", instagram: "Instagram", yandex: "Яндекс Директ", google: "Google Ads",
     tgch: "Telegram-канал", telegram: "Telegram", search_yandex: "Поиск Яндекса", search_google: "Поиск Google",
     referral: "Рекомендации", email: "Письма", direct: "Прямые заходы", other: "Другие сайты",
-    site: "Бот: кнопка на сайте", blogger: "Блогеры", sms_mass: "SMS-рассылка" };
+    site: "Бот: кнопка на сайте", blogger: "Блогеры", sms_mass: "SMS-рассылка", office: "QR в офисах", main: "Меню сайта visa-sc.ru", gifts: "visa-sc.ru: «Подарки»" };
   function srcOfTag(t) {
     const s = String(t.s || "").toLowerCase(), m = String(t.m || "").toLowerCase(), rh = String(t.rh || "").toLowerCase();
     if (t.r) return "referral";
@@ -5698,7 +5700,7 @@ function mount(app, opts) {
         const ch = chans.get("sms") || { key: "sms", name: channelName("sms"), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 };
         ch.spend += smsSpend; chans.set("sms", ch);
       }
-      ["tg_channel", "meta", "referral"].forEach((k) => {
+      ["tg_channel", "meta", "referral", "office"].forEach((k) => {   // office — QR в офисах, строка видна и без оплат
         if (!chans.has(k)) chans.set(k, { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 });
       });
       const adSpend = spend.items.filter((x) => inRange(String(x.date || "")))
