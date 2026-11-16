@@ -5665,6 +5665,21 @@ function mount(app, opts) {
         if (o.tgChatId) ch.revBot += o.priceRub; else ch.revSite += o.priceRub;
         chans.set(k, ch);
       });
+      // Замены за наш счёт (цена 0 ₽) — тоже себестоимость. До 16.11.2026 их в расходах не было вовсе:
+      // фильтр оплат требует priceRub, и замена KDDI в Японии за $22,55 прибыль не уменьшала.
+      // Отменённая замена (деньги вернулись на баланс) и возвращённая поставщиком — 0, как и у продаж.
+      let giftCost = 0;
+      all.filter((g) => g.giftFor && g.status === "done" && g.paidAt && !g.priceRub && inRange(mskDay(g.paidAt))).forEach((g) => {
+        const c = costOf(g);
+        if (!c) return;
+        giftCost += c; cost += c;
+        const day = mskDay(g.paidAt);
+        const d = days.get(day) || { day, revenue: 0, orders: 0, esims: 0, cost: 0 };
+        d.cost += c; days.set(day, d);
+        const orig = all.find((x) => x.id === g.giftFor);
+        const ch = orig && chans.get(channelOf(orig));
+        if (ch) ch.cost += c;
+      });
       spend.items.filter((x) => inRange(String(x.date || ""))).forEach((x) => {
         const ch = chans.get(x.channel) || { key: x.channel, name: channelName(x.channel), orders: 0, revenue: 0, cost: 0, spend: 0, revSite: 0, revBot: 0 };
         ch.spend += Number(x.rub) || 0; chans.set(x.channel, ch);
@@ -5703,7 +5718,8 @@ function mount(app, opts) {
         if (o.status === "lead") return "Оставил заявку, до оплаты не дошёл";
         return "";
       };
-      all.filter((o) => !isTestOrder(o)).forEach((o) => {
+      // замена за наш счёт — не покупка клиента (16.11.2026: из-за неё считалось 23 «повторных» вместо 21)
+      all.filter((o) => !isTestOrder(o) && !o.giftFor).forEach((o) => {
         const key = o.custKey || normEmail(o.email) || (o.tgChatId ? "tg:" + o.tgChatId : "") || (o.phone ? digits(o.phone) : "");
         if (!key) return;
         const c = byCust.get(key) || { key, orders: 0, revenue: 0, first: Infinity, last: 0, channel: null, term: "",
@@ -5764,6 +5780,7 @@ function mount(app, opts) {
         balances: supplierBalances(rate),
         totals: {
           revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct, acqPctIp: rates.ip, adSpend,
+          giftCost: Math.round(giftCost),   // из них замены за наш счёт (уже внутри cost)
           refunds: refundsSum(from, to, "card"), refundsBalance: refundsSum(from, to, "balance"),
           refundPct: revenue ? Math.round(refundsSum(from, to, "card") / revenue * 1000) / 10 : 0,
           profit: Math.round(revenue - cost - acq - adSpend - refundsSum(from, to, "card")),
