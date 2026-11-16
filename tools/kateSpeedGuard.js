@@ -32,7 +32,8 @@ const CHECKS = [
   ["clients-api.js", /AMOU_MEM/g, 3, "клиенты: справочник amo из памяти"],
   ["public/chat.html", /voyo_chat_mem_v1|onRooms\(|thumbUrl|liveStart/g, 8, "страница чата: память на устройстве, мгновенное переключение, лёгкие картинки, живой канал"],
   ["public/chat-sw.js", /isShell/g, 2, "служебный работник: запросы к серверу мимо него"],
-  ["public/chat.html", /unreadOffNow/g, 2, "страница чата: счётчик непрочитанного гаснет сразу при открытии"]
+  ["public/chat.html", /unreadOffNow/g, 2, "страница чата: счётчик непрочитанного гаснет сразу при открытии"],
+  ["public/chat.html", /rmNow/g, 5, "страница чата: отметка «непрочитано», «не беспокоить» и булавка — сразу"]
 ];
 
 function count(file, re) {
