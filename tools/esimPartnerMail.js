@@ -8,7 +8,7 @@
 //
 // Боевая: по одному письму раз в 75 секунд (mail.ru режет пачки), журнал отправленных
 // .esim/partner-mail.json — повторно тому же адресу не уйдёт, можно перезапускать.
-// Ответы приходят на director@visa-sc.ru. Без длинных тире: правило клиентских текстов.
+// Ответы приходят на ящик отправителя и складываются в .esim/partner-replies.json (tools/esimPartnerReplies.js). Без длинных тире: правило клиентских текстов.
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env"), quiet: true });
 const fs = require("fs");
 const path = require("path");
@@ -16,7 +16,7 @@ const { sendMail } = require("../mail.js");
 
 const LOG = path.join(__dirname, "..", ".esim", "partner-mail.json");
 const KIT = path.join(__dirname, "..", ".esim", "partner-kit");
-const REPLY = "director@visa-sc.ru";
+const REPLY = process.env.SMTP_USER || "noreply@voyotravel.ru";   // ответы агентств складывает tools/esimPartnerReplies.js (Андрей 17.11: себе на почту не надо)
 const BOT = process.env.ESIM_TG_USERNAME || "esimvoyo_bot";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const RU = (n) => Math.round(n).toLocaleString("ru-RU").replace(/ /g, " ");
@@ -90,6 +90,7 @@ function build(p, pr) {
   '<div style="padding:2px 0 20px"><a href="' + esc(p.cabinetAuto) + '" style="display:inline-block;background:#2c6f96;background-image:linear-gradient(135deg,#4aa3d4,#2c6f96);color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 22px;border-radius:12px">Мой кабинет: клиенты и начисления</a>' +
   '<div style="font-size:13px;color:' + C.mut + ';margin:8px 0 0">' + esc(p.cabinet.replace(/^https:\/\//, "")) + ", пароль " + esc(p.pass) + "</div></div>" +
   "</td></tr></table></td></tr>" +
+  '<tr><td align="center" style="padding:14px 6px 0;text-align:center;font-size:11px;line-height:1.4;color:#9aa3b3">Данный email не является регулярной email-рассылкой.</td></tr>' +
   "</table></td></tr></table></body></html>";
 
   const text = [
@@ -100,6 +101,7 @@ function build(p, pr) {
     "", "15% бессрочно: с первой и со всех следующих покупок клиента. Выплаты раз в месяц.",
     "", "Начать пользоваться (всё уже работает):", "Промокод: " + p.code + " (клиенту −100 ₽)", "Ссылка на сайт: " + p.link, "Ссылка на Telegram-бот: " + tg,
     "QR-код для стойки: во вложении (табличка A5 и QR-код в PDF).", "Кабинет: " + p.cabinet + ", пароль " + p.pass,
+    "", "Данный email не является регулярной email-рассылкой.",
   ].join("\n");
   const dir = path.join(KIT, String(p.code));
   const attachments = [["tablichka-voyo-mobile-A5.pdf", "Табличка VOYO mobile A5.pdf"], ["qr-voyo-mobile.pdf", "QR-код VOYO mobile.pdf"]]
