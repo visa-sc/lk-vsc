@@ -16,6 +16,7 @@ const { sendMail } = require("../mail.js");
 
 const LOG = path.join(__dirname, "..", ".esim", "partner-mail.json");
 const KIT = path.join(__dirname, "..", ".esim", "partner-kit");
+const DIR_ESIM = path.join(__dirname, "..", ".esim");
 const REPLY = process.env.SMTP_USER || "noreply@voyotravel.ru";   // ответы агентств складывает tools/esimPartnerReplies.js (Андрей 17.11: себе на почту не надо)
 const BOT = process.env.ESIM_TG_USERNAME || "esimvoyo_bot";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -124,7 +125,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const list = JSON.parse(fs.readFileSync(a1, "utf8"));
   const lim = process.argv.includes("--limit") ? Number(process.argv[process.argv.indexOf("--limit") + 1]) : Infinity;
   const log = fs.existsSync(LOG) ? JSON.parse(fs.readFileSync(LOG, "utf8")) : {};
-  let n = 0;
+  let n = 0, errRun = 0;
   for (const p of list) {
     const to = String(p.email || "").trim().toLowerCase();
     if (!to || log[to]) continue;
@@ -135,7 +136,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     fs.writeFileSync(LOG, JSON.stringify(log, null, 1), "utf8");
     console.log(new Date().toISOString().slice(11, 19), r.ok ? "ok " : "ERR", to, r.ok ? "" : r.error);
     n++;
-    await sleep(75000);
+    // Автостоп (Андрей 17.11): почта отказала по лимиту/спаму или две ошибки подряд — встаём,
+    // чтобы не задеть клиентские письма с этого же ящика (QR eSIM)
+    errRun = r.ok ? 0 : errRun + 1;
+    if (!r.ok && (/spam|limit|rate|block|quota|too many|421|451|452|550 5\.7|554/i.test(String(r.error)) || errRun >= 2)) {
+      console.log("АВТОСТОП: почта отказывает —", r.error);
+      fs.writeFileSync(path.join(DIR_ESIM, "partner-mail-stop.json"), JSON.stringify({ at: Date.now(), error: String(r.error), to }), "utf8");
+      break;
+    }
+    if (n < lim) await sleep(75000);
   }
   console.log("отправлено:", n);
 })();
