@@ -1283,13 +1283,23 @@ function hasOrders(key) {
 // ═══ Промокоды ═══
 // { "КОД": { rub: 100, active: true, maxUses: null, uses: 0, note: "" } }
 function loadPromos() { return readJson(PROMOS_FILE, {}); }
+// Только для чтения (17.11.2026): промокодов станет ~1 900 из-за партнёров-агентств, а
+// проверка цены читала файл 3–5 раз за запрос. Разбор кэшируется до изменения файла
+// (время и размер). Возвращаемый объект НЕ менять — для правок есть loadPromos().
+let _promoRO = { key: "", data: {} };
+function promosRO() {
+  let st = null; try { st = fs.statSync(PROMOS_FILE); } catch (_) { return {}; }
+  const key = st.mtimeMs + ":" + st.size;
+  if (_promoRO.key !== key) _promoRO = { key, data: readJson(PROMOS_FILE, {}) };
+  return _promoRO.data;
+}
 // Возвращает скидку либо причину отказа — клиенту важно понимать, почему код не сработал
 let _promoReason = null;
 function checkPromo(code, listPrice, email, channel) {
   _promoReason = null;
   code = String(code || "").trim().toUpperCase();
   if (!code) return null;
-  const p = loadPromos()[code];
+  const p = promosRO()[code];
   if (!p) { _promoReason = "not_found"; return null; }
   if (p.active === false) { _promoReason = "inactive"; return null; }
   // Срок акции по московскому времени: from — с начала дня, to — до конца дня
@@ -1343,14 +1353,14 @@ function activateTestCode(code, channel) {
   if (p && p.testWindowMin && !p[f.at]) { p[f.at] = Date.now(); writeJson(PROMOS_FILE, all); console.log("esim: тестовый код " + code + " включён (" + f.name + ") на " + p.testWindowMin + " мин"); }
 }
 function testCodeUntil(code, channel) {
-  const p = loadPromos()[String(code || "").toUpperCase()] || {};
+  const p = promosRO()[String(code || "").toUpperCase()] || {};
   const t = p[TEST_CH[channel === "tg" ? "tg" : "site"].at];
   return t && p.testWindowMin ? t + p.testWindowMin * 60000 : null;
 }
-function isTestCode(code) { const p = loadPromos()[String(code || "").toUpperCase()]; return !!(p && p.testPct); }
+function isTestCode(code) { const p = promosRO()[String(code || "").toUpperCase()]; return !!(p && p.testPct); }
 function giftOffer(code, who) {
   code = String(code || "").trim().toUpperCase();
-  const p = code && loadPromos()[code];
+  const p = code && promosRO()[code];
   if (!p || !(Number(p.gift) > 0) || p.active === false || !who) return null;
   if (p.giftTo && p.giftTo !== who) return null;
   return { code, rub: Number(p.gift), claimed: p.giftTo === who };
@@ -1375,7 +1385,7 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
   // промокод (?ref=ALEX, t.me/…?start=ref_ALEX), — работает как промокод (14.10.2026)
   if (refCode && !promoCode) {
     const rc = String(refCode).trim().toUpperCase();
-    if (!customerByRef(rc) && loadPromos()[rc]) { promoCode = rc; refCode = null; }
+    if (!customerByRef(rc) && promosRO()[rc]) { promoCode = rc; refCode = null; }
   }
   const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, promoReason: null, refBy: null,
                 balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, balanceBlockedBy: null, total: listPrice };
@@ -4208,7 +4218,8 @@ function mount(app, opts) {
   app.get("/esim/api/ref-admin", (req, res) => {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
     const promosRaw = loadPromos();
-    const promos = Object.entries(promosRaw).map(([code, v]) => ({
+    // коды агентств из рассылки (17.11) без применений не выводим — их ~1 900; сработавшие видны
+    const promos = Object.entries(promosRaw).filter(([, v]) => !(v && v.partner && v.partner.email && !(v.uses > 0))).map(([code, v]) => ({
       code, rub: v.rub, pct: v.pct || 0, firstOnly: !!v.firstOnly, oncePerUser: v.oncePerUser !== false,
       uses: v.uses || 0, maxUses: v.maxUses || null,
       active: v.active !== false, note: v.note || "", ts: v.ts || null,
@@ -4281,7 +4292,11 @@ function mount(app, opts) {
       }
     }
     res.set("Content-Type", "text/html; charset=utf-8");
-    const rows = Object.entries(loadPromos()).map(([k, v]) =>
+    const _allP = loadPromos();
+    const _quiet = (v) => !!(v && v.partner && v.partner.email && !(v.uses > 0));   // агентства из рассылки 17.11 без применений
+    const _outreach = Object.values(_allP).filter(_quiet).length;   // агентства из рассылки 17.11
+    const rows = (_outreach ? '<tr><td colspan="5" style="color:#888">+ ' + _outreach + ' кодов агентств из рассылки без применений (кабинеты voyomobile.ru/p/…), в список не выводятся</td></tr>' : "") +
+      Object.entries(_allP).filter(([, v]) => !_quiet(v)).map(([k, v]) =>
       "<tr><td><b>" + esc(k) + "</b></td><td>" + (v.pct ? "−" + v.pct + " %" : v.rub + " ₽") + "</td><td>" + (v.active === false ? "выключен" : "активен") +
       "</td><td>" + (v.uses || 0) + (v.maxUses ? " / " + v.maxUses : "") + "</td><td>" + esc(v.note || "") + "</td></tr>").join("");
     res.send('<meta name="viewport" content="width=device-width,initial-scale=1"/>' +
