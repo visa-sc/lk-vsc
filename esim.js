@@ -1541,7 +1541,9 @@ function esimsOfPhone(phone) {
     .filter((o) => o.status === "done" && o.mmOrderId && !o.email && samePhone(o.phone, phone))
     .map((o) => ({
       label: o.label, ts: o.ts, priceRub: o.priceRub, topup: !!o.parentOrderId,
-      url: BASE_URL + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || o.mmOrderId) +
+      // относительная ссылка (аудит 17.11.2026): клиент остаётся на том сайте, где открыл кабинет
+      // (voyomobile.ru, .com, visa-sc.ru), а не уходит на voyotravel.ru
+      url: "/esim/my?o=" + encodeURIComponent(o.parentOrderId || o.mmOrderId) +
            "&t=" + signOrder(o.parentOrderId || o.mmOrderId),
     }));
 }
@@ -1550,7 +1552,9 @@ function esimsOf(email) {
     .filter((o) => o.email === email && o.status === "done" && o.mmOrderId)
     .map((o) => ({
       label: o.label, ts: o.ts, priceRub: o.priceRub, topup: !!o.parentOrderId,
-      url: BASE_URL + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || o.mmOrderId) +
+      // относительная ссылка (аудит 17.11.2026): клиент остаётся на том сайте, где открыл кабинет
+      // (voyomobile.ru, .com, visa-sc.ru), а не уходит на voyotravel.ru
+      url: "/esim/my?o=" + encodeURIComponent(o.parentOrderId || o.mmOrderId) +
            "&t=" + signOrder(o.parentOrderId || o.mmOrderId),
     }));
 }
@@ -4076,7 +4080,7 @@ function mount(app, opts) {
       success: true, email, t: signEmail(email), esims: list, lk: !!lk,
       balanceRub: c.balanceRub || 0,
       refCode: c.refCode,
-      refLink: BASE_URL + "/esim?ref=" + c.refCode,
+      refLink: REF_SITE + "/?ref=" + c.refCode,   // как в письмах (аудит 17.11.2026), а не voyotravel.ru
       refBonus: REF_BONUS_RUB,
       invitedCount: invited.length,
       ledger: (c.ledger || []).slice(0, 10),
