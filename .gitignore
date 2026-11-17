@@ -225,3 +225,6 @@ vscom/ads/_upload/
 .vscRadar.json
 .dataRoLog.json
 .vscGidCache.json
+
+# ключ стенда чата Кати (tools/katechat-stand.js)
+.vt
