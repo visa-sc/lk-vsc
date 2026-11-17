@@ -66,14 +66,19 @@ function mskNow() { const d = new Date(Date.now() + 3 * 3600e3); return { h: d.g
   const rx = ask.reactions || {};
   const yes = (rx[YES] || []).indexOf(KATE) >= 0, no = (rx[NO] || []).indexOf(KATE) >= 0;
 
-  // ответы словами: цитата этого сообщения или ветка под ним — от Кати или её Claude
+  // Ответы словами: цитата этого сообщения, ветка под ним или (с 17.11, Кате в ЛС сказано «нажмите
+  // кнопку или напишите ответ») любое её сообщение про дизайн после предложения — в «Помощниках» или в ЛС.
   st.fwd = st.fwd || [];
-  const words = list.filter((m) => !m.deleted && st.fwd.indexOf(m.id) < 0 &&
-    ((m.reply && m.reply.id === st.msgId) || m.thread === st.msgId) &&
-    (m.from === KATE || m.from === "robot:claude-kate"));
-  for (const m of words) {
+  const ABOUT = /дизайн|by\s*vsc|оформлен|делаем|отклон|не надо|согласн/i;
+  const fromKate = (m) => m.from === KATE || m.from === "robot:claude-kate";
+  const isWord = (m, inAsk) => !m.deleted && st.fwd.indexOf(m.id) < 0 && fromKate(m) && m.at > st.postedAt &&
+    ((inAsk && ((m.reply && m.reply.id === st.msgId) || m.thread === st.msgId)) || ABOUT.test(m.text || ""));
+  let dmList = []; try { dmList = monthList(DM); } catch (_) {}
+  const words = list.filter((m) => isWord(m, true)).map((m) => ({ m, where: "в «Помощниках»" }))
+    .concat(dmList.filter((m) => isWord(m, false)).map((m) => ({ m, where: "в личке" })));
+  for (const { m, where } of words) {
     await mail("Катя ответила на предложение по дизайну чата",
-      "<p><b>" + (m.from === KATE ? "Екатерина" : "Claude Кати") + "</b> в «Помощниках»:</p><blockquote>" +
+      "<p><b>" + (m.from === KATE ? "Екатерина" : "Claude Кати") + "</b> " + where + ":</p><blockquote>" +
       esc(m.text).replace(/\n/g, "<br>") + "</blockquote><p>Кнопку " +
       (yes ? "«Делаем» нажала" : no ? "«Нет» нажала" : "пока не нажимала") + ".</p>");
     st.fwd.push(m.id);
