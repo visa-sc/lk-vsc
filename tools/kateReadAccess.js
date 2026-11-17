@@ -44,7 +44,10 @@ const SECRET = [
   /\.(pem|key|p12|pfx)$/i,
   /^id_(rsa|ed25519|ecdsa)/i,
   /^\.npmrc$|^\.git-credentials$|^\.netrc$/i,
-  /cookies?\.(json|txt)$/i
+  /cookies?\.(json|txt)$/i,
+  // Не ключ, но деликатное: список к планёркам с самой Катей (ФОТ, сокращения, «воспитательная
+  // беседа»). С 05.08 — только админ; закрыто до явного решения Андрея (17.11.2026).
+  /^\.vscPlanerka/i
 ];
 const isSecret = (p) => SECRET.some((re) => re.test(path.basename(p)));
 
