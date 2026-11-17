@@ -77,6 +77,11 @@ function webhookPath() {
 
 // ─────────────────────────── состояние диалога ───────────────────────────
 // Один файл на всех: чатов немного, а переживать рестарты нужно.
+// партнёрский промокод агентства (поле partner в промокоде) или null
+function partnerCode(c) {
+  const code = String(c || "").toUpperCase(), p = readJson(path.join(DIR, "promos.json"), {})[code];
+  return p && p.active !== false && p.partner ? code : null;
+}
 function readJson(f, dflt) { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (_) { return dflt; } }
 function writeJson(f, d) {
   try { fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(f, JSON.stringify(d, null, 1), "utf8"); }
@@ -1019,6 +1024,11 @@ async function onText(chatId, text) {
     if (payload.indexOf("ref_") === 0) {
       setState(chatId, { ref: payload.slice(4).toUpperCase(), step: null });
       await send(chatId, "Вы пришли по приглашению друга — скидка на первую eSIM применится сама.");
+    } else if (/^p_[a-z0-9]{3,20}$/.test(payload) && partnerCode(payload.slice(2))) {
+      // ссылка агентства-партнёра: t.me/<бот>?start=p_<код> (17.11.2026) — код подставится сам,
+      // покупка засчитается агентству так же, как на сайте
+      setState(chatId, { promo: partnerCode(payload.slice(2)), step: null });
+      await send(chatId, "Скидка 100 ₽ от вашего агентства уже учтена, увидите её в цене пакета.");
     } else if (UTM_PROMOS[payload]) {
       setState(chatId, { promo: UTM_PROMOS[payload], step: null });
       await send(chatId, "Ваша скидка по ссылке уже учтена — увидите её в цене пакета.");
