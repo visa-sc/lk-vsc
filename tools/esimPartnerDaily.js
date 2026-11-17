@@ -52,7 +52,10 @@ function overall() {
     if (!last) return console.log("партий ещё нет");
     const s = batchStats(last), o = overall();
     const left = rj(F.queue, []).filter((x) => !rj(F.log, {})[String(x.email).toLowerCase()]).length;
-    const plan = (state.plan || {})[mskDate()];
+    // вечерний отчёт (после 15:00 МСК) говорит про завтрашнюю партию, утренний — про сегодняшнюю
+    const evening = new Date(Date.now() + 3 * 3600e3).getUTCHours() >= 15;
+    const planDay = evening ? mskDate(Date.now() + 864e5) : mskDate();
+    const plan = (state.plan || {})[planDay];
     const pct = s.ok ? Math.round(s.bounce / s.ok * 100) : 0;
     const text = "Итог партии " + last.date + " (" + s.total + " агентств):\n" +
       "• ушло " + s.ok + ", ошибок отправки " + s.err + ", не доставлено " + s.bounce + " (" + pct + "%)\n" +
@@ -61,9 +64,10 @@ function overall() {
       "Осталось в очереди: " + left + ".\n\n" +
       (fs.existsSync(F.stop) ? "⚠️ Сработал автостоп: почта отказала в отправке. Сегодня не шлю, жду вашего решения.\n"
         : pct > 15 ? "⚠️ Недоставленных больше 15% — сегодня не шлю, разберусь с адресами и напишу.\n"
-        : plan ? "Сегодня в 10:00 запускаю " + plan + " писем.\n" : "На сегодня партия не запланирована.\n") +
+        : plan ? (evening ? "Завтра" : "Сегодня") + " в 10:00 запускаю " + plan + " писем.\n" : (evening ? "На завтра" : "На сегодня") + " партия не запланирована.\n") +
+      "С почтой: " + (fs.existsSync(F.stop) ? "есть отказ, см. выше." : s.err ? "были ошибки отправки (" + s.err + "), ящик работает." : "проблем нет, отказов не было, клиентские письма уходят как обычно.") + "\n" +
       "Ответы агентств лежат на сервере, спросите — покажу.";
-    return mail("eSIM: рассылка агентствам — итог " + last.date + ", план на сегодня", text);
+    return mail("eSIM: рассылка агентствам — итог " + last.date + (evening ? ", план на завтра" : ", план на сегодня"), text);
   }
 
   if (mode === "send") {
