@@ -43,10 +43,16 @@ for (const x of list) {
   const mail = String(x.email || "").trim().toLowerCase();
   let code = mail && byMail[mail];
   if (!code) {
-    let slug = baseSlug(x), n = 1;
-    while (bySlug[slug] || slug === "visazen") slug = baseSlug(x).slice(0, 21) + "-" + (++n);
-    code = slug.replace(/-/g, "").toUpperCase().slice(0, 16);
-    let m = 1; while (all[code]) code = slug.replace(/-/g, "").toUpperCase().slice(0, 14) + (++m);
+    let slug, n = 1;
+    // заранее назначенные код и слаг (очередь рассылки: таблички нарисованы заранее под этот код)
+    if (x.code && x.slug && !all[String(x.code).toUpperCase()] && !bySlug[String(x.slug).toLowerCase()]) {
+      slug = String(x.slug).toLowerCase(); code = String(x.code).toUpperCase();
+    } else {
+      slug = baseSlug(x);
+      while (bySlug[slug] || slug === "visazen") slug = baseSlug(x).slice(0, 21) + "-" + (++n);
+      code = slug.replace(/-/g, "").toUpperCase().slice(0, 16);
+      let m = 1; while (all[code]) code = slug.replace(/-/g, "").toUpperCase().slice(0, 14) + (++m);
+    }
     const pass = String(crypto.randomInt(100000, 999999));
     all[code] = {
       rub: 0, pct: 0, firstOnly: false, oncePerUser: true, active: true, uses: 0, maxUses: null, from: null, to: null,
@@ -57,7 +63,7 @@ for (const x of list) {
     bySlug[slug] = code; if (mail) byMail[mail] = code; added++;
   }
   const p = all[code].partner;
-  out.push(Object.assign({}, x, { code, slug: p.slug, pass: p.pass,
+  out.push(Object.assign({}, x, { code, slug: p.slug, pass: p.pass, preCode: x.code || null,
     link: "https://voyomobile.ru/?promo=" + code,
     cabinet: "https://voyomobile.ru/p/" + p.slug,
     cabinetAuto: "https://voyomobile.ru/p/" + p.slug + "#k=" + p.pass }));

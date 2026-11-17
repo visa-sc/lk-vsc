@@ -144,7 +144,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       fs.writeFileSync(path.join(DIR_ESIM, "partner-mail-stop.json"), JSON.stringify({ at: Date.now(), error: String(r.error), to }), "utf8");
       break;
     }
-    if (n < lim) await sleep(75000);
+    if (n < lim) await sleep(Number(process.env.PARTNER_MAIL_GAP_MS) || 75000);   // интервал задаёт esimPartnerDaily.js
   }
   console.log("отправлено:", n);
 })();
