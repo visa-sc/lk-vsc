@@ -57,6 +57,7 @@ const ESIM_PRICE_PATHS = ["67"];
 const ESIM_BRAND_PATHS = ["vsc"];
 const ESIM_HOST_ALLOW = new RegExp(
   "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.concat(ESIM_PARTNER_PATHS, ESIM_PRICE_PATHS, ESIM_BRAND_PATHS).join("|") + ")\\/?$|" +
+  "p\\/[a-z0-9_-]{2,40}\\/?$|" +   // кабинеты партнёров voyomobile.ru/p/<слаг>, заводятся без правки этого файла (17.11.2026)
   "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|esim-support\\.js$|esim-a2hs\\.js$|esim-brand\\.js$|esim-cart\\.js$|esim-lands\\.json$|vsc-icon[^/]*\\.png$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
 // dev.voyomobile.ru — панель показателей eSIM (18.09.2026): выручка и пакеты
 // по дням, реклама и её окупаемость, клиенты, промокоды, итог. Отдельное имя,

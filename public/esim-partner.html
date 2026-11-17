@@ -85,6 +85,20 @@
     </div>
 
     <div class="card">
+      <h2>Ссылка для клиентов</h2>
+      <p class="lead" style="margin:0 0 10px">Отправьте её клиенту в мессенджер или почту: промокод подставится сам.</p>
+      <p style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0">
+        <span class="codebox" id="plink" style="font-size:15px;word-break:break-all"></span>
+        <button type="button" id="pcopy" style="height:42px;padding:0 18px;margin:0;border:0;border-radius:14px;background:var(--grad);color:#fff;font:inherit;font-weight:600;cursor:pointer">Скопировать</button>
+      </p>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-top:16px">
+        <div id="pqr" style="background:#fff;padding:10px;border-radius:12px;line-height:0"></div>
+        <div class="lead" style="flex:1;min-width:200px;margin:0">QR-код с той же ссылкой: распечатайте и поставьте на стойку в офисе или добавьте в памятку туриста.<br/>
+          <a href="#" id="pqrdl" style="display:inline-block;margin-top:8px">Скачать QR-код</a></div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Клиенты по вашему коду</h2>
       <div style="overflow:auto"><table id="tClients"></table></div>
     </div>
@@ -109,7 +123,7 @@
 <script>
 (function(){
   "use strict";
-  var slug = location.pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+  var slug = location.pathname.replace(/^\/+|\/+$/g, "").toLowerCase().split("/").pop();   // /visazen и /p/<слаг>
   var KEY = "voyo_partner_" + slug;
   var el = function(id){ return document.getElementById(id); };
   var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
@@ -134,7 +148,31 @@
     el("sub").textContent = "Вы получаете " + s.pct + "% с каждой покупки клиентов, пришедших по вашему коду. " +
       (s.discountRub > 0 ? "Клиенту по коду скидка " + RU(s.discountRub) + " ₽ сразу при первой покупке." : "Клиенту по коду начисляется " + RU(s.bonusRub) + " ₽ на счёт VOYO mobile.");
     el("code").textContent = s.code;
-    el("how").innerHTML = "Клиент вводит код в поле «У меня есть промокод» при оплате eSIM на <b>voyomobile.ru</b>. " +
+    var link = location.origin + "/?promo=" + encodeURIComponent(s.code);
+    el("plink").textContent = link;
+    el("pcopy").onclick = function(){
+      var done = function(){ el("pcopy").textContent = "Скопировано"; setTimeout(function(){ el("pcopy").textContent = "Скопировать"; }, 1600); };
+      try { navigator.clipboard.writeText(link).then(done, function(){ prompt("Скопируйте ссылку", link); }); } catch(e){ prompt("Скопируйте ссылку", link); }
+    };
+    var drawQr = function(){
+      try {
+        el("pqr").innerHTML = "";
+        new QRCode(el("pqr"), { text: link, width: 168, height: 168, correctLevel: QRCode.CorrectLevel.M });
+        el("pqrdl").onclick = function(ev){
+          ev.preventDefault();
+          var c = el("pqr").querySelector("canvas"), im = el("pqr").querySelector("img");
+          var a = document.createElement("a"); a.download = "qr-" + s.code.toLowerCase() + ".png";
+          a.href = c ? c.toDataURL("image/png") : (im ? im.src : ""); if (a.href) a.click();
+        };
+      } catch(e){ el("pqr").parentNode.style.display = "none"; }
+    };
+    if (window.QRCode) drawQr(); else {
+      var sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+      sc.onload = drawQr; sc.onerror = function(){ el("pqr").parentNode.style.display = "none"; };
+      document.head.appendChild(sc);
+    }
+    el("how").innerHTML = "Клиент переходит по вашей ссылке (ниже) или вводит код в поле «У меня есть промокод» при оплате eSIM на <b>voyomobile.ru</b>. " +
       (s.discountRub > 0 ? "Скидка " + RU(s.discountRub) + " ₽ сразу видна в цене (на самые дешёвые пакеты, где цена и так минимальная, не действует). "
         : "Цена для него не меняется, а " + RU(s.bonusRub) + " ₽ падают ему на счёт и спишутся со следующей покупки. ") +
       "Ваш процент начисляется и за первую покупку, и за все следующие покупки этого клиента, даже если код он больше не вводит.";
@@ -186,6 +224,9 @@
 
   var saved = "";
   try{ saved = sessionStorage.getItem(KEY) || ""; }catch(e){}
+  // вход по личной ссылке из письма: …/p/<слаг>#k=<пароль> (решётка на сервер не уходит)
+  var hk = /[#&]k=([^&]+)/.exec(location.hash || "");
+  if (hk){ try{ saved = decodeURIComponent(hk[1]); }catch(e){} try{ history.replaceState(null, "", location.pathname); }catch(e){} }
   if (saved) tryPass(saved); else el("pass").focus();
 })();
 </script>

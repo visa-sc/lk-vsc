@@ -2755,6 +2755,15 @@ function mount(app, opts) {
     if (!found) return res.status(404).json({ success: false });
     res.json({ success: true, stats: partner.addPayout(found.code, req.query.rub, req.query.note) });
   });
+  // Новые партнёры (рассылка агентствам, 17.11.2026): кабинет voyomobile.ru/p/<слаг>.
+  // Ищется по промокодам на каждый запрос, поэтому нового партнёра видно сразу,
+  // без перезапуска и без правки server.js. Старый адрес /visazen остаётся.
+  app.get("/p/:slug", (req, res, next) => {
+    if (!partnerBySlug(req.params.slug)) return next();
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("X-Robots-Tag", "noindex, nofollow");
+    res.sendFile(esimPage(req, "esim-partner.html"));
+  });
   partnerCodes().forEach((x) => {
     const slug = String(x.cfg.slug || "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
     if (!slug) return;
