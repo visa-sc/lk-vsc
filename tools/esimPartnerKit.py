@@ -82,5 +82,6 @@ if __name__ == "__main__":
     for p in lst:
         dd = os.path.join(outdir, p["code"]); os.makedirs(dd, exist_ok=True)
         qr_card(p, os.path.join(dd, "qr-voyo-mobile.png"))
+        Image.open(os.path.join(dd, "qr-voyo-mobile.png")).convert("RGB").save(os.path.join(dd, "qr-voyo-mobile.pdf"), "PDF", resolution=300.0)
         stand(p, os.path.join(dd, "tablichka-voyo-mobile-A5"))
     print("готово:", len(lst))
