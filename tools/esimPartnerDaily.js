@@ -57,17 +57,37 @@ function overall() {
     const planDay = evening ? mskDate(Date.now() + 864e5) : mskDate();
     const plan = (state.plan || {})[planDay];
     const pct = s.ok ? Math.round(s.bounce / s.ok * 100) : 0;
-    const text = "Итог партии " + last.date + " (" + s.total + " агентств):\n" +
-      "• ушло " + s.ok + ", ошибок отправки " + s.err + ", не доставлено " + s.bounce + " (" + pct + "%)\n" +
-      "• ответов от людей по этой партии: " + s.human + "\n\n" +
-      "Всего с начала рассылки: ушло " + o.sent + ", ответов " + o.human + ", не доставлено " + o.bounce + ", оплат по кодам агентств " + o.paid + (o.revenue ? " на " + o.revenue + " ₽" : "") + ".\n" +
-      "Осталось в очереди: " + left + ".\n\n" +
-      (fs.existsSync(F.stop) ? "⚠️ Сработал автостоп: почта отказала в отправке. Сегодня не шлю, жду вашего решения.\n"
-        : pct > 15 ? "⚠️ Недоставленных больше 15% — сегодня не шлю, разберусь с адресами и напишу.\n"
-        : plan ? (evening ? "Завтра" : "Сегодня") + " в 10:00 запускаю " + plan + " писем.\n" : (evening ? "На завтра" : "На сегодня") + " партия не запланирована.\n") +
-      "С почтой: " + (fs.existsSync(F.stop) ? "есть отказ, см. выше." : s.err ? "были ошибки отправки (" + s.err + "), ящик работает." : "проблем нет, отказов не было, клиентские письма уходят как обычно.") + "\n" +
-      "Ответы агентств лежат на сервере, спросите — покажу.";
-    return mail("eSIM: рассылка агентствам — итог " + last.date + (evening ? ", план на завтра" : ", план на сегодня"), text);
+    // реакции копим в журнале: кабинеты /p/<слаг> и переходы ?promo=КОД из журналов nginx (сегодня и вчера)
+    const promos = rj(F.promos, {});
+    const ours = {}; Object.keys(promos).forEach((c) => { const pp = promos[c].partner; if (pp && pp.email) ours[c] = pp; });
+    const bySlug = {}; Object.keys(ours).forEach((c) => { bySlug[ours[c].slug] = c; });
+    state.react = state.react || { cab: {}, link: {} };
+    ["/var/log/nginx/access.log", "/var/log/nginx/access.log.1"].forEach((lf) => {
+      let txt = ""; try { txt = fs.readFileSync(lf, "utf8"); } catch (_) { return; }
+      txt.split("\n").forEach((ln) => {
+        if (/curl|bot|spider|crawl|preview|Yandex|Google/i.test(ln)) return;
+        let m = /"GET \/p\/([a-z0-9-]+)[ ?#]/.exec(ln); if (m && bySlug[m[1]]) state.react.cab[bySlug[m[1]]] = state.react.cab[bySlug[m[1]]] || Date.now();
+        m = /[?&]promo=([A-Za-z0-9]+)/.exec(ln); if (m && ours[m[1].toUpperCase()]) state.react.link[m[1].toUpperCase()] = state.react.link[m[1].toUpperCase()] || Date.now();
+      });
+    });
+    fs.writeFileSync(F.state, JSON.stringify(state, null, 1), "utf8");
+    const nm = (c) => (ours[c] && ours[c].name) || c;
+    const cab = Object.keys(state.react.cab), lnk = Object.keys(state.react.link);
+    const reps = rj(F.replies, { items: [] }).items.filter((x) => !x.bounce && !x.auto);
+    const ord = rj(F.orders, []).filter((x) => ours[String(x.promoCode || "").toUpperCase()] && x.status === "done");
+    const text = "Рассылка агентствам — сводка на " + mskDate().split("-").reverse().join(".") + "\n\n" +
+      "• Ушло писем всего: " + o.sent + ", не доставлено " + o.bounce + " (" + (o.sent ? Math.round(o.bounce / o.sent * 100) : 0) + "%). Осталось в очереди: " + left + ".\n" +
+      "• Ответов от агентств (без автоответов): " + reps.length + "\n" +
+      reps.slice(-10).map((x) => "   – " + (x.name || x.from) + ": " + String(x.text || "").replace(/\s+/g, " ").slice(0, 160)).join("\n") + (reps.length ? "\n" : "") +
+      "• Открыли свой кабинет: " + cab.length + (cab.length ? " (" + cab.slice(0, 8).map(nm).join(", ") + (cab.length > 8 ? "…" : "") + ")" : "") + "\n" +
+      "• Переходы клиентов по ссылкам агентств: " + lnk.length + (lnk.length ? " (" + lnk.slice(0, 8).map(nm).join(", ") + ")" : "") + "\n" +
+      "• Оплат по кодам агентств: " + ord.length + (ord.length ? " на " + ord.reduce((a, x) => a + (x.payTotalRub || x.priceRub || 0), 0) + " ₽ (" + [...new Set(ord.map((x) => nm(String(x.promoCode).toUpperCase())))].join(", ") + ")" : "") + "\n\n" +
+      "Вчерашняя партия (" + last.date + "): ушло " + s.ok + " из " + s.total + ", не доставлено " + s.bounce + ".\n" +
+      (fs.existsSync(F.stop) ? "⚠️ Сработал автостоп: почта отказала в отправке. Не шлю, жду вашего решения.\n"
+        : pct > 15 ? "⚠️ Недоставленных больше 15% — не шлю, разберусь с адресами и напишу.\n"
+        : plan ? (evening ? "Завтра" : "Сегодня") + " в 10:00 — " + plan + " писем.\n" : left ? "" : "Очередь пуста, рассылка завершена.\n") +
+      "С почтой: " + (fs.existsSync(F.stop) ? "есть отказ, см. выше." : "проблем нет, клиентские письма уходят как обычно.");
+    return mail("eSIM: рассылка агентствам — сводка на " + mskDate().split("-").reverse().join("."), text);
   }
 
   if (mode === "send") {
