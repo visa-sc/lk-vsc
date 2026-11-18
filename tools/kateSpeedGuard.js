@@ -82,6 +82,7 @@ const CHECKS = [
   ["public/chat.html", /fitVV/g, 3, "страница (телефон): шапка не уезжает при открытой клавиатуре (visualViewport, 18.11)"],
   ["public/chat.html", /--vvTop/g, 3, "страница (телефон): без дрожания при прокрутке и без прыжка шапки (18.11)"],
   ["public/chat.html", /body\.air\{position:fixed;left:0;right:0;top:var\(--vvTop/g, 1, "страница (айфон): страница закреплена — шапка не уезжает при клавиатуре (18.11)"],
+  ["public/chat.html", /voyo_chat_kbh/g, 1, "страница (айфон): поле поднимается до клавиатуры — шапка не сползает при нажатии (18.11)"],
   ["public/chat.html", /overscroll-behavior:none/g, 1, "страница (телефон): страница не оттягивается при прокрутке (18.11)"],
   ["public/calc.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "calc.html: просто VOYO, без by VSC (18.11)"],
   ["public/cq.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "cq.html: просто VOYO, без by VSC (18.11)"],
