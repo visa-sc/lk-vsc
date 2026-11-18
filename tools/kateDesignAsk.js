@@ -78,12 +78,23 @@ function mskNow() { const d = new Date(Date.now() + 3 * 3600e3); return { h: d.g
 
 (async () => {
   const st = readState();
-  if (!st || !st.msgId || st.decided || Date.now() > UNTIL) return;
+  if (!st || !(st.msgId || st.asks) || st.decided || Date.now() > UNTIL) return;
+  // С 18.11 предложение висит в нескольких местах (повтор в «Помощниках» и ответом Кате в личке) —
+  // кнопка считается, где бы она ни нажала.
+  const asks = st.asks || [{ room: ROOM, id: st.msgId }];
+  const ids = asks.map((a) => a.id);
   const list = monthList(ROOM);
-  const ask = list.find((m) => m.id === st.msgId);
-  if (!ask) { console.log(new Date().toISOString() + " сообщение не найдено"); return; }
-  const rx = ask.reactions || {};
-  const yes = (rx[YES] || []).indexOf(KATE) >= 0, no = (rx[NO] || []).indexOf(KATE) >= 0;
+  let dmList = []; try { dmList = monthList(DM); } catch (_) {}
+  let yes = false, no = false, found = 0;
+  for (const a of asks) {
+    const m = (a.room === DM ? dmList : list).find((x) => x.id === a.id);
+    if (!m || m.deletedAt) continue;
+    found++;
+    const rx = m.reactions || {};
+    if ((rx[YES] || []).indexOf(KATE) >= 0) yes = true;
+    if ((rx[NO] || []).indexOf(KATE) >= 0) no = true;
+  }
+  if (!found) { console.log(new Date().toISOString() + " сообщения не найдены"); return; }
 
   // Ответы словами: цитата этого сообщения, ветка под ним или (с 17.11, Кате в ЛС сказано «нажмите
   // кнопку или напишите ответ») любое её сообщение про дизайн после предложения — в «Помощниках» или в ЛС.
@@ -91,8 +102,7 @@ function mskNow() { const d = new Date(Date.now() + 3 * 3600e3); return { h: d.g
   const ABOUT = /дизайн|by\s*vsc|оформлен|делаем|отклон|не надо|согласн/i;
   const fromKate = (m) => m.from === KATE || m.from === "robot:claude-kate";
   const isWord = (m, inAsk) => !m.deleted && st.fwd.indexOf(m.id) < 0 && fromKate(m) && m.at > st.postedAt &&
-    ((inAsk && ((m.reply && m.reply.id === st.msgId) || m.thread === st.msgId)) || ABOUT.test(m.text || ""));
-  let dmList = []; try { dmList = monthList(DM); } catch (_) {}
+    ((m.reply && ids.indexOf(m.reply.id) >= 0) || ids.indexOf(m.thread) >= 0 || ABOUT.test(m.text || ""));
   const words = list.filter((m) => isWord(m, true)).map((m) => ({ m, where: "в «Помощниках»" }))
     .concat(dmList.filter((m) => isWord(m, false)).map((m) => ({ m, where: "в личке" })));
   for (const { m, where } of words) {
@@ -113,6 +123,8 @@ function mskNow() { const d = new Date(Date.now() + 3 * 3600e3); return { h: d.g
           ROOM, "design-ask-yes");
       await mail("Катя: дизайн чата — ДЕЛАЕМ",
         "<p>Екатерина нажала «Делаем» под предложением по дизайну чата и убиранию «by VSC».</p>" +
+        "<p>Claude начнёт сам в ближайшие полчаса (задача «Дизайн чата Кати» в приложении на маке, нужен включённый мак): " +
+        "редизайн, затем полный аудит, выкладка и письмо вам. Если мак выключен — сделайте скрин блока ниже и отправьте в Claude.</p>" +
         TASK_HTML);
     } else {
       say("Екатерина, принято: ничего не меняем. Спасибо, что посмотрели!", ROOM, "design-ask-no");
