@@ -6474,7 +6474,9 @@ function vscApplyFreeze(months) {
   // сейчас paid traf conv МСК/СПБ, 22.07): если у снимка поля нет, а свежий парс его
   // отдал — дописываем в снимок один раз. Существующие значения снимка НЕ трогаем,
   // семантика заморозки сохраняется.
-  const graftKeys = ["trafConvMsk", "trafConvSpb"];
+  // + возвраты (18.11.2026): если месяц замёрз без возвратов (так было с октябрём — собран с платформы
+  // без них), снимок дозаполняется возвратами из свежих данных, а не остаётся пустым навсегда.
+  const graftKeys = ["trafConvMsk", "trafConvSpb", "retUslugi", "returnsPct", "returnsOurPct", "returnsNotOurPct", "returnsUnknownPct"];
   const graftObj = (dst, src) => { if (!dst || !src) return; graftKeys.forEach((k) => { if (dst[k] == null && src[k] != null) { dst[k] = src[k]; changed = true; } }); };
   Object.keys(fr.months).forEach((name) => {
     const live = byName[name], snap = fr.months[name];
@@ -6625,7 +6627,11 @@ async function vscFetchAll() {
   const months = results.filter(Boolean);
   // Возвраты и налоги (item 11/13): мерджим в месяцы. Возвраты — по дням (для недель),
   // итог по месяцу = сумма всех возвратов месяца. % возвратов = Услуги / выручка (бюджет).
-  months.forEach((m) => {
+  // Отдельной функцией (18.11.2026): её зовём ещё раз ПОСЛЕ сборки месяцев с платформы Кати —
+  // месяц, которого нет в таблице KPI (октябрь 2026), собирается там целиком уже после этого
+  // места и раньше оставался без возвратов («пропал октябрь»). Повторный вызов безопасен:
+  // те же поля пересчитываются от тех же возвратов и уже окончательной выручки.
+  const vscMergeReturns = (m) => {
     const rd = (extra.ret && extra.ret[m.name]) || { byDay: {}, fault: null };
     const byDay = rd.byDay || {};
     (m.days || []).forEach((d) => { d.retUslugi = (byDay[d.date] != null) ? byDay[d.date] : null; });
@@ -6646,7 +6652,8 @@ async function vscFetchAll() {
       }
     }
     m.taxes = (extra.tax && extra.tax[m.name]) || null;
-  });
+  };
+  months.forEach(vscMergeReturns);
   // % пропущенных звонков, если в листе колонки АТС пустые (в ноябре 2026 там #DIV/0!), — из
   // данных АТС «Стаффа» Кати тем же счётом, что у таблицы: рабочее время, без нерабочей линии.
   // Неделя и месяц — Σпропущенных ÷ Σвходящих по закрытым дням.
@@ -6694,6 +6701,9 @@ async function vscFetchAll() {
   });
   // Нет в таблице месяца, дня или поля — берём с платформы (модуль «Маркетинг» Кати).
   try { await vscFillFromPlatform(months, extra); } catch (e) { console.error("KPI платформы:", e && e.message); }
+  // Возвраты — ещё раз, теперь уже для ВСЕХ месяцев, включая собранные с платформы и дополненные ею
+  // (у них появилась или поменялась выручка — от неё считается % возвратов). 18.11.2026, «пропал октябрь».
+  months.forEach(vscMergeReturns);
   // Заморозка истории: подставляем/фиксируем снимки старых месяцев ДО годового агрегата,
   // чтобы год считался по стабильным значениям и вмороженные месяцы не пропадали.
   vscApplyFreeze(months);
