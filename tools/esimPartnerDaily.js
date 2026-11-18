@@ -50,7 +50,10 @@ function overall() {
   if (mode === "report") {
     spawnSync("node", [path.join(__dirname, "esimPartnerReplies.js"), "--days", "3"], { cwd: ROOT, stdio: "ignore" });
     if (!last) return console.log("партий ещё нет");
-    const s = batchStats(last), o = overall();
+    // итог дня — по всем партиям этой даты (их может быть две)
+    const s = state.batches.filter((b) => b.date === last.date).map(batchStats)
+      .reduce((a, x) => ({ ok: a.ok + x.ok, err: a.err + x.err, bounce: a.bounce + x.bounce, human: a.human + x.human, total: a.total + x.total }), { ok: 0, err: 0, bounce: 0, human: 0, total: 0 });
+    const o = overall();
     const left = rj(F.queue, []).filter((x) => !rj(F.log, {})[String(x.email).toLowerCase()]).length;
     // вечерний отчёт (после 15:00 МСК) говорит про завтрашнюю партию, утренний — про сегодняшнюю
     const evening = new Date(Date.now() + 3 * 3600e3).getUTCHours() >= 15;
@@ -98,7 +101,9 @@ function overall() {
     const log = rj(F.log, {});
     const next = rj(F.queue, []).filter((x) => !log[String(x.email).toLowerCase()]).slice(0, N);
     if (!next.length) return mail("eSIM: рассылка агентствам завершена", "Очередь пуста — письма ушли всем агентствам.");
-    const file = "partner-batch-" + mskDate() + ".json";
+    // вторая партия за день (Андрей 18.11: «сегодня 500, а не 300») — свой файл, первую не трогаем
+    let file = "partner-batch-" + mskDate() + ".json";
+    for (let k = 2; fs.existsSync(path.join(D, file)); k++) file = "partner-batch-" + mskDate() + "-" + k + ".json";
     fs.writeFileSync("/tmp/partner-day.json", JSON.stringify(next), "utf8");
     const add = spawnSync("node", [path.join(__dirname, "esimPartnersAdd.js"), "/tmp/partner-day.json", path.join(D, file)], { cwd: ROOT, encoding: "utf8" });
     console.log(add.stdout, add.stderr);
