@@ -79,6 +79,7 @@ const CHECKS = [
   ["public/chat.html", /#go::after/g, 1, "страница: круглая кнопка отправки со стрелкой (18.11)"],
   ["public/chat.html", /send #fmtB,body\.air \.send #fmtU\{display:inline-block\}/g, 1, "страница (телефон): Ж и Ч кружками над полем (18.11)"],
   ["public/chat.html", /send:focus-within\{padding-bottom:12px\}/g, 1, "страница (телефон): при открытой клавиатуре поле прямо над ней, как в MAX (18.11)"],
+  ["public/chat.html", /fitVV/g, 3, "страница (телефон): шапка не уезжает при открытой клавиатуре (visualViewport, 18.11)"],
   ["public/chat-manifest.json", /VOYO · Центр уведомлений/g, 1, "значок чата: просто VOYO, без by VSC (18.11)"]
 ];
 
