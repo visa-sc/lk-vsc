@@ -80,6 +80,21 @@ const CHECKS = [
   ["public/chat.html", /send #fmtB,body\.air \.send #fmtU\{display:inline-block\}/g, 1, "страница (телефон): Ж и Ч кружками над полем (18.11)"],
   ["public/chat.html", /send:focus-within\{padding-bottom:12px\}/g, 1, "страница (телефон): при открытой клавиатуре поле прямо над ней, как в MAX (18.11)"],
   ["public/chat.html", /fitVV/g, 3, "страница (телефон): шапка не уезжает при открытой клавиатуре (visualViewport, 18.11)"],
+  ["public/chat.html", /--vvTop/g, 3, "страница (телефон): без дрожания при прокрутке и без прыжка шапки (18.11)"],
+  ["public/chat.html", /overscroll-behavior:none/g, 1, "страница (телефон): страница не оттягивается при прокрутке (18.11)"],
+  ["public/calc.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "calc.html: просто VOYO, без by VSC (18.11)"],
+  ["public/cq.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "cq.html: просто VOYO, без by VSC (18.11)"],
+  ["public/fot.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "fot.html: просто VOYO, без by VSC (18.11)"],
+  ["public/grafik.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "grafik.html: просто VOYO, без by VSC (18.11)"],
+  ["public/kassa.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "kassa.html: просто VOYO, без by VSC (18.11)"],
+  ["public/marketing.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "marketing.html: просто VOYO, без by VSC (18.11)"],
+  ["public/potok.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "potok.html: просто VOYO, без by VSC (18.11)"],
+  ["public/staffperf.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "staffperf.html: просто VOYO, без by VSC (18.11)"],
+  ["public/sverki.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "sverki.html: просто VOYO, без by VSC (18.11)"],
+  ["public/translate.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "translate.html: просто VOYO, без by VSC (18.11)"],
+  ["public/vozvraty.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "vozvraty.html: просто VOYO, без by VSC (18.11)"],
+  ["public/zp.html", /\.brand-by,\.vsc-wm\{display:none/g, 1, "zp.html: просто VOYO, без by VSC (18.11)"],
+  ["public/kateadmin.html", /<title>VOYO · admin<\/title>/g, 1, "вход в портал: просто VOYO (18.11)"],
   ["public/chat-manifest.json", /VOYO · Центр уведомлений/g, 1, "значок чата: просто VOYO, без by VSC (18.11)"]
 ];
 

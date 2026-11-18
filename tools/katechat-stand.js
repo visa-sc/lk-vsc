@@ -13,6 +13,16 @@ http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
     return res.end(fs.readFileSync(PAGE));
   }
+  // STAND_PAGES=<папка>: любые страницы и файлы из неё (fot.html, air-portal.css…) отдаются местные —
+  // так проверяются правки остальных страниц площадки Кати до выкладки (18.11.2026).
+  if (process.env.STAND_PAGES && /^\/[\w.-]+\.(html|css|js)$/.test(u)) {
+    const lp = path.join(process.env.STAND_PAGES, u.slice(1));
+    if (fs.existsSync(lp)) {
+      const ct = u.endsWith(".css") ? "text/css" : u.endsWith(".js") ? "text/javascript" : "text/html";
+      res.writeHead(200, { "Content-Type": ct + "; charset=utf-8", "Cache-Control": "no-store" });
+      return res.end(fs.readFileSync(lp));
+    }
+  }
   if (req.method !== "GET") { res.writeHead(200, { "Content-Type": "application/json" }); return res.end('{"ok":false,"error":"стенд: только просмотр"}'); }
   const headers = { "User-Agent": "chat-local-check", Authorization: "Bearer " + TOKEN };
   if (req.headers["if-none-match"]) headers["If-None-Match"] = req.headers["if-none-match"];
