@@ -9,7 +9,7 @@
  *    Через 30 минут проверяем: не пришла ли от него заявка (тот же телефон, почта или посетитель) на любом
  *    из трёх сайтов, не звонил ли на номера сайта, не появилась ли у контакта с этим телефоном новая сделка
  *    в amoCRM (копия CRM). Если нет и введён полный номер — сами заводим заявку на сайте (POST формы на
- *    локальный порт сайта, как от посетителя: его vid и utm, форма «Брошенная форма»), она уходит в amoCRM
+ *    локальный порт сайта, как от посетителя: его vid и utm, форма «Заявка» — для ОП как обычная заявка с сайта, с 19.11), она уходит в amoCRM
  *    обычной выгрузкой (spb-amo / msk-amo / ekb-amo). Петрову — письмо с введёнными данными и номером
  *    заявки. Без номера (только почта) или если заявку завести не вышло — письмо «создайте лид вручную».
  *    Один номер — не чаще раза в сутки.
@@ -118,7 +118,9 @@ async function createLead(site, e, d, phone) {
       method: "POST",
       headers: { "Content-Type": "application/json", Host: site.name, "X-Forwarded-Host": site.name, "X-Forwarded-Proto": "https",
         Referer: `https://${site.name}${page}`, Cookie: e.vid ? "spb_vid=" + e.vid : "", "User-Agent": "formAbandonWatch (abandoned form)" },
-      body: JSON.stringify({ name: "Брошенная форма", action: "", fields, is_ajax: true, utmData: JSON.stringify(e.utm || {}) }),
+      // Для ОП — обычная заявка с сайта (Андрей 19.11.2026): форма «Заявка», без слов «брошенная».
+      // Наша пометка остаётся на сервере: ua «formAbandonWatch (abandoned form)» в leads.json сайта.
+      body: JSON.stringify({ name: "Заявка", action: "", fields, is_ajax: true, utmData: JSON.stringify(e.utm || {}) }),
       signal: AbortSignal.timeout(20000)
     });
     const j = await r.json().catch(() => ({}));
@@ -200,7 +202,7 @@ const utmLine = (u) => { u = u || {}; const p = [u.utm_source, u.utm_medium, u.u
       const fields = (d.fields || []).map((f) => `${esc(f[0])}: <b>${esc(f[1])}</b>`).join("<br>");
       const leadNo = phone ? await createLead(site, e, d, phone) : null;
       if (phone) st.phones[phone] = now;   // заявку по номеру — не чаще раза в сутки, даже если письмо не ушло
-      const what = leadNo ? `Заявка <b>№${leadNo}</b> создана автоматически и уходит в amoCRM («Новая заявка № ${leadNo} (Брошенная форма)»), вручную создавать не нужно.`
+      const what = leadNo ? `Заявка <b>№${leadNo}</b> создана автоматически и уходит в amoCRM («Новая заявка № ${leadNo} (Заявка)» — для ОП выглядит как обычная заявка с сайта), вручную создавать не нужно.`
         : leadNo === 0 ? "Заявка будет создана автоматически (пробный прогон)." : "Создайте лид вручную.";
       const ok = await send(`Брошенная форма: ${phone ? fmtPhone(phone) : email} — ${site.name}`, box(
         `<p><b>Посетитель заполнил форму, но не отправил</b>. За 30 минут заявки, звонка и новой сделки в amoCRM от него нет. ${what}</p>
