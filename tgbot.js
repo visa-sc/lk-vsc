@@ -826,10 +826,12 @@ async function showMy(chatId) {
   const mine = myOrders(chatId);
   if (!mine.length) {
     const st = getState(chatId);
+    // 19.11.2026: купивший на сайте заходил сюда и не находил свою eSIM — ссылку на кабинет сайта показываем всем
     return send(chatId,
-      "Здесь появятся ваши eSIM после первой покупки." +
-      (st.email ? "\n\nЕсли покупали на сайте, все ваши eSIM здесь: " + BASE_URL + "/esim/account" : ""),
-      { reply_markup: homeKeyboard() });
+      "Здесь появятся eSIM, купленные в боте.\n\n" +
+      "<b>Покупали на сайте?</b> Ваши eSIM, остаток трафика и QR-коды в кабинете на сайте, вход по почте, на которую пришёл QR-код." +
+      (st.email ? "\nПочта в боте: " + esc(st.email) : ""),
+      { reply_markup: { inline_keyboard: [[{ text: "📱 Мои eSIM на сайте", url: BASE_URL + "/esim/account" }], [{ text: "🌍 Купить eSIM", callback_data: "home" }]] } });
   }
   const num = (o) => (o.groupOf ? " · eSIM " + (String(o.id).split("-").pop()) : (Number(o.qty) > 1 ? " · eSIM 1" : ""));
   const rows = mine.slice(0, 8).map((o) => [{ text: ((o.label || "eSIM").slice(0, 50) + num(o)), callback_data: "m:" + o.id }]);

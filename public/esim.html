@@ -96,6 +96,9 @@
   /* самые узкие телефоны (320): у кнопки бота только значок, знак VOYO чуть меньше — шапка в одну строку без вылезания за край */
   @media (max-width:350px){ .hdr .mine.tgb .tgl-s{display:none;} .hdr .mine.tgb{padding:7px 8px;} .brand .wm{font-size:15px;} .brand .lg{height:15px;} .brandrow{gap:6px;} }
   .hdr .mine:hover{border-color:#aed3ea;transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(53,137,189,.45);}
+  /* «Мои eSIM» — главная кнопка шапки (19.11.2026): синяя с белым, чтобы купивший сразу находил свою eSIM */
+  .hdr .mine.my{color:#fff;background:var(--grad);border-color:transparent;box-shadow:0 6px 16px -8px rgba(44,111,150,.6);}
+  .hdr .mine.my:hover{color:#fff;border-color:transparent;box-shadow:0 10px 22px -10px rgba(44,111,150,.7);}
 
   /* подпись «by V|S|C» — буквы фирменного знака VSC, без плашки */
   .byvsc{display:block;font-size:9px;letter-spacing:.02em;color:#a7b0bf;margin-top:6px;white-space:nowrap;
@@ -477,7 +480,7 @@
       <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="12" fill="#27A6E5"/><path d="M5.4 11.7l11.3-4.4c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z" fill="#fff"/></svg>
       <span class="tgl-l">Оформить в Tg-боте</span><span class="tgl-s">Tg-бот</span>
     </a>
-    <a class="mine" href="/esim/account">
+    <a class="mine my" href="/esim/account">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex:none">
         <rect x="6" y="2.5" width="12" height="19" rx="2.6" stroke="currentColor" stroke-width="2"/>
         <path d="M10 18.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
