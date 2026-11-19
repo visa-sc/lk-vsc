@@ -66,6 +66,36 @@ function events(site, sinceIso) {
   return out;
 }
 
+// ── Тесты не превращать в заявки (19.11.2026, Андрей) ─────────────────────────
+// Проверки форм (аудиты сайтов, headless Chrome) пишут события form_abandon, но визита у такого
+// «посетителя» нет: stat.js не записывает визиты ботов и HeadlessChrome. У ВСЕХ настоящих брошенных
+// форм 13–19.11 визит есть (12 из 12), у тестовых — нет (4 из 4). Поэтому: нет визита — не заявка.
+// Плюс явно тестовые данные (номер +7 900 123-45-67, семь одинаковых цифр в конце,
+// имя «Тест», почта @example.*). Если файл визитов не прочитался — фильтр по визиту не включаем,
+// чтобы не потерять настоящего клиента.
+const _visitVids = {};
+function hasVisit(site, vid) {
+  if (!vid) return true;
+  if (!_visitVids[site.id]) {
+    const set = new Set(); const now = new Date();
+    const months = [new Date(now.getFullYear(), now.getMonth() - 1, 15), now].map((d) => d.toISOString().slice(0, 7));
+    for (const m of [...new Set(months)]) {
+      try {
+        const txt = fs.readFileSync(path.join(site.dir, "stat", `visits-${m}.jsonl`), "utf8");
+        let i = 0; while ((i = txt.indexOf('"vid":"', i)) >= 0) { const j = txt.indexOf('"', i + 7); set.add(txt.slice(i + 7, j)); i = j; }
+      } catch (_) {}
+    }
+    _visitVids[site.id] = set;
+  }
+  const set = _visitVids[site.id];
+  return set.size === 0 || set.has(vid);
+}
+function looksTest(phone, email, d) {
+  if (phone && (phone === "9001234567" || /(\d)\1{6}$/.test(phone) || /^9{3}0{7}$/.test(phone))) return true;
+  if (email && /@(example|test)\./i.test(email)) return true;
+  return ((d && d.fields) || []).some((x) => /^(тест|test)$/i.test(String((x || [])[1] || "").trim()));
+}
+
 async function send(subject, html) {
   if (DRY) { console.log("[dry] письмо:", subject); return true; }
   const { sendMail } = require(path.join(__dirname, "..", "mail.js"));
@@ -146,6 +176,7 @@ const utmLine = (u) => { u = u || {}; const p = [u.utm_source, u.utm_medium, u.u
         // сбой отправки: письмо сразу, с черновиком этого посетителя, если есть
         const key = (e.vid || "") + "|" + e.at.slice(0, 16);
         if (st.errors[key]) continue;
+        if (!hasVisit(site, e.vid)) { console.log(new Date().toISOString(), "тест/бот, сбой формы без визита — пропуск:", site.name, e.page); st.errors[key] = now; continue; }
         const dr = drafts.filter((x) => x.vid && x.vid === e.vid).map((x) => { try { return JSON.parse(x.value || "{}"); } catch (_) { return {}; } }).pop() || {};
         const ph = digits10(dr.p);
         const sentLead = allLeads.some((l) => (ph && leadPhone(l) === ph) || (e.vid && l.vid === e.vid) ? Math.abs(Date.parse(l.at) - t) < 2 * 3600e3 : false);
@@ -159,6 +190,7 @@ const utmLine = (u) => { u = u || {}; const p = [u.utm_source, u.utm_medium, u.u
       }
       // брошенная форма
       if (!phone && !/@.+\./.test(email)) continue;
+      if (!hasVisit(site, e.vid) || looksTest(phone, email, d)) { if (DRY) console.log("[dry] тест — пропуск:", site.name, e.page, e.vid); continue; }
       if (phone && st.phones[phone] && now - st.phones[phone] < PER_PHONE) continue;
       const from = t - 2 * 3600e3;
       const sent = allLeads.some((l) => { const lt = Date.parse(l.at); return lt >= from && lt <= now && ((phone && leadPhone(l) === phone) || (email && leadEmail(l) === email) || (e.vid && l.vid === e.vid)); });
