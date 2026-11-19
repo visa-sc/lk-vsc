@@ -23,17 +23,23 @@ const rj = (f, d) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } ca
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const send = (o) => DRY ? Promise.resolve(console.log("[без отправки] кому:", o.to, "| тема:", o.subject, "\n" + o.text + "\nвложения:", (o.attachments || []).map((a) => a.filename).join(", "))) : sendMail(o);
 
+// 19.11: смотрим не только три файла, а все файлы витрины из его основы — вдруг до 30.11 поправим ещё что-то
 function pending() {
   const st = rj(DEPLOY, {});
-  return FILES.filter((f) => {
+  const names = Array.from(new Set(FILES.concat(Object.keys(st.base || {}))));
+  return names.filter((f) => {
     let prod; try { prod = fs.readFileSync(path.join(__dirname, "..", "esim-site", f)); } catch (_) { return false; }
     return !(st.base && st.base[f] === sha(prod));
   });
 }
 
+// разница «его основа (current/ = то, что он забрал) → боевой файл», собирается в момент отправки
 function instruction(files) {
+  const { spawnSync } = require("child_process");
   const diffs = files.map((f) => {
-    let d = ""; try { d = fs.readFileSync(path.join(DIR, f + ".diff"), "utf8"); } catch (_) {}
+    const r = spawnSync("diff", ["-u", path.join(path.dirname(DEPLOY), "current", f), path.join(__dirname, "..", "esim-site", f)], { encoding: "utf8", maxBuffer: 1 << 24 });
+    let d = r.stdout || "";
+    if (!d) { try { d = fs.readFileSync(path.join(DIR, f + ".diff"), "utf8"); } catch (_) {} }
     return "### " + f + "\n\n```diff\n" + d.trim() + "\n```\n";
   }).join("\n");
   return `# Правки в файлах витрины eSIM, внесённые 16–19.11.2026 (Андрей Комисаренко)
