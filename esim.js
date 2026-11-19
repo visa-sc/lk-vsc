@@ -4161,6 +4161,67 @@ function mount(app, opts) {
     });
   });
 
+  // «Мои eSIM» в боте для купивших на сайте (Андрей 19.11.2026): бот спрашивает почту, мы ищем
+  // по ней eSIM и шлём на эту почту код из 6 цифр. Код — чтобы по чужой почте нельзя было
+  // увидеть чужие QR-коды. После кода заказы помечаются tgLinked = чат и видны в боте,
+  // а eSIM, купленные в боте без почты, получают эту почту и видны на сайте.
+  const tgMailCodes = new Map();   // чат → { email, code, exp, tries, sentAt, hist[] }
+  const tgSecretOk = (req) => {
+    const secret = crypto.createHash("sha256").update("tg:" + (process.env.ESIM_TG_TOKEN || "")).digest("hex").slice(0, 24);
+    return !!process.env.ESIM_TG_TOKEN && String(req.headers["x-tg-secret"] || "") === secret;
+  };
+  const byMail = (o, email) => o.status === "done" && o.myUrl && normEmail(o.email || o.custKey) === email;
+  app.post("/esim/api/tg/find-email", async (req, res) => {
+    if (!tgSecretOk(req)) return res.status(403).json({ success: false });
+    const b = req.body || {};
+    const email = normEmail(b.email), chat = String(b.tgChatId || "");
+    if (!validEmail(email) || !chat) return res.status(400).json({ success: false });
+    const found = readJson(ORDERS_FILE, []).filter((o) => byMail(o, email)).length;
+    const accountUrl = REF_SITE + "/esim/account";
+    if (!found) return res.json({ success: true, found: 0, accountUrl });
+    const now = Date.now(), prev = tgMailCodes.get(chat);
+    const hist = ((prev && prev.hist) || []).filter((t) => now - t < 3600e3);
+    if (prev && prev.email === email && now - prev.sentAt < 60e3 && now < prev.exp) return res.json({ success: true, found, sent: true });
+    if (hist.length >= 5) return res.json({ success: true, found, limit: true, accountUrl });
+    const code = String(crypto.randomInt(100000, 1000000));
+    let ok = false;
+    try {
+      const r = opts && opts.sendMail ? await opts.sendMail({
+        to: email,
+        subject: "Код для бота VOYO mobile: " + code,
+        text: "Код для бота VOYO mobile: " + code + "\n\nПришлите его в чат с ботом, и ваши eSIM появятся в разделе «Мои eSIM».\nКод действует 15 минут.\n\nЕсли вы не запрашивали код, просто проигнорируйте письмо.\n\nVOYO mobile",
+        html: '<div style="font:15px/1.55 -apple-system,Segoe UI,Arial,sans-serif;color:#1c2b36;max-width:480px">' +
+          "<p>Код для бота VOYO mobile:</p>" +
+          '<p style="font-size:30px;font-weight:700;letter-spacing:6px;margin:6px 0 14px">' + code + "</p>" +
+          "<p>Пришлите его в чат с ботом, и ваши eSIM появятся в разделе «Мои eSIM». Код действует 15 минут.</p>" +
+          '<p style="color:#7a8894;font-size:13px">Если вы не запрашивали код, просто проигнорируйте письмо.</p><p>VOYO mobile</p></div>',
+      }) : null;
+      ok = !!(r && r.ok);
+    } catch (_) { ok = false; }
+    if (!ok) return res.json({ success: false, found });
+    hist.push(now);
+    tgMailCodes.set(chat, { email, code, exp: now + 15 * 60e3, tries: 0, sentAt: now, hist });
+    res.json({ success: true, found, sent: true });
+  });
+  app.post("/esim/api/tg/confirm-email", (req, res) => {
+    if (!tgSecretOk(req)) return res.status(403).json({ success: false });
+    const b = req.body || {};
+    const chat = String(b.tgChatId || ""), code = String(b.code || "").replace(/\D/g, "");
+    const r = tgMailCodes.get(chat);
+    if (!r || Date.now() > r.exp || r.tries >= 5) return res.json({ success: true, ok: false, reason: "expired" });
+    if (code !== r.code) { r.tries++; return res.json({ success: true, ok: false, reason: r.tries >= 5 ? "expired" : "wrong" }); }
+    tgMailCodes.set(chat, { hist: r.hist, sentAt: 0, exp: 0 });
+    const orders = readJson(ORDERS_FILE, []);
+    let n = 0, m = 0;
+    orders.forEach((o) => {
+      if (byMail(o, r.email) && String(o.tgChatId || "") !== chat && String(o.tgLinked || "") !== chat) { o.tgLinked = chat; n++; }
+      if (String(o.tgChatId || "") === chat && !o.email) { o.email = r.email; o.custKey = r.email; m++; }
+    });
+    if (n || m) writeJson(ORDERS_FILE, orders.slice(0, 5000));
+    getCustomer(r.email, true);
+    res.json({ success: true, ok: true, linked: n, email: r.email });
+  });
+
   // Приветственные баллы новичку бота. Идемпотентно: карточка помечается, и
   // повторный /start второй сотни не даёт.
   app.post("/esim/api/tg/welcome", (req, res) => {

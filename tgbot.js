@@ -820,18 +820,19 @@ async function payLink(chatId) {
 // действительно ли человек владеет чужой почтой.
 function myOrders(chatId) {
   const orders = readJson(path.join(DIR, "orders.json"), []);
-  return orders.filter((o) => String(o.tgChatId || "") === String(chatId) && o.status === "done" && o.myUrl);
+  // tgLinked — купленные на сайте, которые человек подтвердил кодом с почты (19.11.2026)
+  return orders.filter((o) => (String(o.tgChatId || "") === String(chatId) || String(o.tgLinked || "") === String(chatId)) && o.status === "done" && o.myUrl);
 }
 async function showMy(chatId) {
   const mine = myOrders(chatId);
   if (!mine.length) {
-    const st = getState(chatId);
-    // 19.11.2026: купивший на сайте заходил сюда и не находил свою eSIM — ссылку на кабинет сайта показываем всем
+    // 19.11.2026 (Андрей): купивший на сайте заходил сюда и не находил свою eSIM. Спрашиваем почту,
+    // находим по ней eSIM и после кода с почты показываем их здесь.
+    setState(chatId, { step: "myemail" });
     return send(chatId,
       "Здесь появятся eSIM, купленные в боте.\n\n" +
-      "<b>Покупали на сайте?</b> Ваши eSIM, остаток трафика и QR-коды в кабинете на сайте, вход по почте, на которую пришёл QR-код." +
-      (st.email ? "\nПочта в боте: " + esc(st.email) : ""),
-      { reply_markup: { inline_keyboard: [[{ text: "📱 Мои eSIM на сайте", url: BASE_URL + "/esim/account" }], [{ text: "🌍 Купить eSIM", callback_data: "home" }]] } });
+      "<b>Покупали на сайте?</b> Напишите почту, на которую пришёл QR-код, и я покажу ваши eSIM здесь.",
+      { reply_markup: { inline_keyboard: [[{ text: "🌍 Купить eSIM", callback_data: "home" }]] } });
   }
   const num = (o) => (o.groupOf ? " · eSIM " + (String(o.id).split("-").pop()) : (Number(o.qty) > 1 ? " · eSIM 1" : ""));
   const rows = mine.slice(0, 8).map((o) => [{ text: ((o.label || "eSIM").slice(0, 50) + num(o)), callback_data: "m:" + o.id }]);
@@ -941,6 +942,46 @@ async function linkMail(chatId, email) {
       [{ text: "Открыть кабинет на сайте", url: j.accountUrl }],
       [{ text: "📱 Мои eSIM", callback_data: "my" }],
     ] } });
+}
+
+// ── «Мои eSIM» для купивших на сайте: почта → код с почты → eSIM в боте (19.11.2026) ──
+const TG_SECRET = () => crypto.createHash("sha256").update("tg:" + TOKEN).digest("hex").slice(0, 24);
+async function myFindEmail(chatId, email) {
+  let j = null;
+  try { j = await api("post", "/esim/api/tg/find-email", { tgChatId: String(chatId), email }, { "X-Tg-Secret": TG_SECRET() }, 30000); } catch (_) { j = null; }
+  const site = (j && j.accountUrl) || "https://voyomobile.ru/esim/account";
+  if (j && j.success && !j.found) {
+    return send(chatId,
+      "По почте <b>" + esc(email) + "</b> eSIM не нашлось.\n\n" +
+      "Проверьте, нет ли опечатки, и пришлите почту ещё раз. Или поищите письмо с QR-кодом в почте и посмотрите на сайте:",
+      { reply_markup: { inline_keyboard: [[{ text: "📱 Мои eSIM на сайте", url: site }], [{ text: "🛟 Поддержка", callback_data: "support" }]] } });
+  }
+  if (j && j.limit) {
+    setState(chatId, { step: null });
+    return send(chatId, "Слишком много попыток за час. Ваши eSIM можно открыть на сайте по почте:",
+      { reply_markup: { inline_keyboard: [[{ text: "📱 Мои eSIM на сайте", url: site }]] } });
+  }
+  if (!j || !j.success || !j.sent) {
+    return send(chatId, "Не получилось отправить код, попробуйте через минуту. Или откройте eSIM на сайте:",
+      { reply_markup: { inline_keyboard: [[{ text: "📱 Мои eSIM на сайте", url: site }]] } });
+  }
+  setState(chatId, { step: "mycode" });
+  return send(chatId,
+    "Нашёл " + j.found + " " + plural(j.found, ["eSIM", "eSIM", "eSIM"]) + " на почте <b>" + esc(email) + "</b>.\n\n" +
+    "Чтобы чужие не увидели ваши QR-коды, отправил на эту почту код из 6 цифр. Пришлите его сюда.\n" +
+    "<i>Письмо не пришло? Загляните в «Спам».</i>");
+}
+async function myConfirmCode(chatId, code) {
+  let j = null;
+  try { j = await api("post", "/esim/api/tg/confirm-email", { tgChatId: String(chatId), code }, { "X-Tg-Secret": TG_SECRET() }, 30000); } catch (_) { j = null; }
+  if (j && j.ok) {
+    setState(chatId, { step: null, email: j.email });
+    await send(chatId, "Готово, ваши eSIM теперь и в боте, и на сайте.");
+    return showMy(chatId);
+  }
+  if (j && j.reason === "wrong") return send(chatId, "Код не подошёл. Проверьте и пришлите ещё раз.");
+  setState(chatId, { step: "myemail" });
+  return send(chatId, "Код устарел. Пришлите почту ещё раз, отправлю новый.");
 }
 
 // Полное покрытие по регионам — как на сайте, чтобы не гадать по названию
@@ -1083,6 +1124,11 @@ async function onText(chatId, text) {
     return send(chatId, why + "\n\nПришлите другой код или вернитесь к пакету.",
       { reply_markup: { inline_keyboard: [[{ text: "‹ К пакету", callback_data: "back:pay" }]] } });
   }
+  // «Мои eSIM» для купивших на сайте: почта → код на почту → eSIM в боте (19.11.2026).
+  // Пишет не почту / не код — значит, передумал: шаг сбрасываем и разбираем текст как обычно.
+  if (st.step === "myemail" && validEmail(t)) return myFindEmail(chatId, t.toLowerCase());
+  if (st.step === "mycode" && /^\d[\d\s-]{4,8}\d$/.test(t)) return myConfirmCode(chatId, t);
+  if (st.step === "myemail" || st.step === "mycode") { setState(chatId, { step: null }); }
   if (st.step === "linkmail") {
     if (!validEmail(t)) return send(chatId, "Похоже, в адресе опечатка. Напишите почту целиком, например ivan@mail.ru");
     setState(chatId, { email: t.toLowerCase(), step: null });
