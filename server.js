@@ -10331,6 +10331,8 @@ async function amoGetPageWithRetry(url, params, page, limit, maxAttempts = 3) {
 // Данные только на чтение для своих Claude по личному ключу (dataro.js, Андрей 19.10.2026):
 // amoCRM — через этот же лимитер в низкой очереди (amoBg), копия amo, SMS.ru, АТС, Директ, KPI.
 require("./dataro").mount({ app, amoBg, amoGet, amoBase: () => `https://${AMO_SUBDOMAIN}.amocrm.ru` });
+// Комната «Помощники Андрей-Андрей» для Claude Петрова — тем же ключом petrov (19.11.2026).
+require("./helpersroom").mount({ app, express });
 // Робот комнаты «Помощники»: кнопки «Разрешить/Отказать» из писем Андрею (katehelper.js, 12.11.2026).
 require("./katehelper").mount({ app });
 
