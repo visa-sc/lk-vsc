@@ -10,7 +10,8 @@ const [room, as, key, attach] = process.argv.slice(2);
 if (!room || !/^(claude|claude-petrov)$/.test(as || "")) { console.log(JSON.stringify({ ok: false, error: "нужны комната и as" })); process.exit(1); }
 process.chdir("/var/www/kateadmin");
 const C = require("/var/www/kateadmin/notify-chat.js");
-C.useCenter({ ownerEmail: "director@visa-sc.ru", resolve: () => [] });
+// ownerEmail — ФУНКЦИЯ (чат зовёт N.ownerEmail() для пушей; строкой пуш молча не уходил — 19.11).
+C.useCenter({ ownerEmail: () => "ekaterina.z@visa-sc.ru", resolve: () => [] });
 const I = C._int;
 const text = fs.readFileSync(0, "utf8").trim();
 // MENTION=почта[,почта] в окружении — упомянуть (пуш человеку), напр. первое сообщение Петрову.
