@@ -66,28 +66,35 @@ ${diffs}`;
 (async () => {
   const w = rj(STATE, { sent: [], done: null });
   if (w.done) return console.log("уже забрал", new Date(w.done).toISOString());
+  // 19.11 (Андрей): всё одним письмом — правки витрины и бота в одном файле. Раздел про бота уходит
+  // в первом письме 30.11 обязательно, даже если файлы витрины он к тому времени уже забрал.
   const left = pending();
-  if (!left.length) {
+  const early = Date.now() < START && !DRY;
+  if (!left.length && (w.botSent || early)) {
+    if (early && !w.botSent) return console.log("витрину забрал, письмо про бот — 30.11");
     w.done = Date.now(); fs.mkdirSync(DIR, { recursive: true }); if (!DRY) fs.writeFileSync(STATE, JSON.stringify(w, null, 1));
     return send({ to: ANDREY, subject: "eSIM: Петров забрал правки витрины",
-      text: "Петров сделал esimdeploy pull: наши правки 16–17.11 (корзина, кабинеты агентств, тексты) у него, затереть их он не сможет." + (w.sent.length ? "\nНапоминаний ушло: " + w.sent.length + "." : "\nПисьмо ему не понадобилось.") });
+      text: "Петров сделал esimdeploy pull: наши правки 16–19.11 (корзина, кабинеты агентств, тексты, кнопка «Мои eSIM») у него, затереть их он не сможет." + (w.sent.length ? "\nПисем ему ушло: " + w.sent.length + "." : "") });
   }
-  if (Date.now() < START && !DRY) return console.log("до 30.11 молчу, не забраны:", left.join(", "));
-  const md = instruction(left);
-  const file = path.join(DIR, "ПРАВКИ-витрины-16-17.11.md");
+  if (early) return console.log("до 30.11 молчу, не забраны:", left.join(", "));
+  const bot = require("./petrovBotNotice.js").MD;
+  const md = (left.length ? instruction(left) + "\n\n---\n\n" : "") + bot;
+  const NAME = "ПРАВКИ-eSIM-витрина-и-бот-16-19.11.md";
+  const file = path.join(DIR, NAME);
   fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(file, md, "utf8");
   const first = !w.sent.length;
   const r = await send({ to: PETROV, replyTo: ANDREY,
-    subject: (first ? "" : "Напоминание: ") + "eSIM: в файлы витрины внесены правки — сделайте esimdeploy pull, чтобы их не затереть",
+    subject: (first ? "" : "Напоминание: ") + "eSIM: правки витрины и бота за 16–19.11 — отдайте файл своему Claude, чтобы не затереть",
     text: "Андрей, добрый день!\n\n" +
-      "16–19.11 в ваши файлы витрины внесены правки: корзина, кабинеты агентств для партнёрской рассылки, пара текстов в окне покупки, синяя кнопка «Мои eSIM». Файлы: " + left.join(", ") + ".\n\n" +
-      "Чтобы не затереть их при следующей выкладке:\n" +
-      "1. esimdeploy pull\n" +
-      "2. Отдайте вложенный файл своему Claude: там точный список изменений и что сделать, он перенесёт ваши правки поверх.\n\n" +
-      "Служба выкладки и так не даст выложить файл на старой основе, но лучше забрать заранее.\n" +
-      (first ? "" : "Пока pull не сделан, это письмо будет приходить каждый день в 9:00.\n") +
+      (left.length ? "16–19.11 в ваши файлы витрины внесены правки: корзина, кабинеты агентств для партнёрской рассылки, пара текстов в окне покупки, синяя кнопка «Мои eSIM». Файлы: " + left.join(", ") + ".\n" : "") +
+      "В боте изменён раздел «Мои eSIM» (купившие на сайте видят свои eSIM после кода с почты) и появились новые тексты.\n\n" +
+      "Чтобы ничего не затереть:\n" +
+      (left.length ? "1. esimdeploy pull\n2. " : "") +
+      "Отдайте вложенный файл своему Claude: там точный список изменений и что сделать, он перенесёт ваши правки поверх.\n\n" +
+      (left.length ? "Служба выкладки и так не даст выложить файл на старой основе, но лучше забрать заранее.\n" : "") +
+      (first || !left.length ? "" : "Пока pull не сделан, это письмо будет приходить каждый день в 9:00.\n") +
       "\nАндрей Комисаренко",
-    attachments: [{ filename: "ПРАВКИ-витрины-16-17.11.md", path: file }] });
-  if (!DRY && r && r.ok) { w.sent.push(Date.now()); fs.writeFileSync(STATE, JSON.stringify(w, null, 1)); }
+    attachments: [{ filename: NAME, path: file }] });
+  if (!DRY && r && r.ok) { w.sent.push(Date.now()); w.botSent = true; fs.writeFileSync(STATE, JSON.stringify(w, null, 1)); }
   console.log(DRY ? "проверка" : (r && r.ok ? "отправлено Петрову" : "не ушло: " + (r && r.error)));
 })().catch((e) => { console.error("petrov sync:", e.message); process.exit(1); });

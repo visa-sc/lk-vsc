@@ -1,12 +1,12 @@
 // Отдельное письмо Петрову про «Мои eSIM» в боте (Андрей 19.11.2026: «отдельное письмо, чтобы закинул
 // в свой Claude и не затёр изменения, 30 ноября в 9 утра»). Петров правит тексты бота через
 // esim-bot-texts.json — пусть его Claude знает новые строки и не возвращает старую.
-//   cron: 0 9 30 11 *  node tools/petrovBotNotice.js     (шлёт один раз, повторно не шлёт)
+//   по расписанию НЕ запускается (19.11): текст MD уходит Петрову в общем письме petrovSyncWatch.js
 //   node tools/petrovBotNotice.js --dry                   — показать, не отправлять
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env"), quiet: true });
 const fs = require("fs");
 const path = require("path");
-const { sendMail } = require("../mail.js");
+const sendMail = (o) => require("../mail.js").sendMail(o);   // лениво: при require ради MD почта не нужна
 
 const DIR = path.join(__dirname, "..", ".esim", "petrov-sync");
 const FLAG = path.join(DIR, "bot-notice-sent.json");
@@ -43,7 +43,10 @@ const MD = `# Бот eSIM: изменён раздел «Мои eSIM» (19.11.20
 3. На витрине (esim.html) кнопка «Мои eSIM» в шапке теперь синяя с белым (класс \`mine my\`) — это есть в отдельном письме про правки витрины, при выкладке не затирать.
 `;
 
-(async () => {
+// 19.11: Андрей — всё одним письмом. Текст ниже вкладывается в общий файл tools/petrovSyncWatch.js;
+// сам по себе скрипт больше не запускается по расписанию.
+module.exports = { MD };
+if (require.main === module) (async () => {
   if (!DRY && fs.existsSync(FLAG)) return console.log("уже отправлено");
   fs.mkdirSync(DIR, { recursive: true });
   const file = path.join(DIR, NAME);
