@@ -6283,8 +6283,11 @@ async function vscGoogleReturns() {                    // { "Сентябрь 20
     const tabs = vscMonthTabs(disc, VSC_RETURNS_GID);
     const out = {};
     await Promise.all(tabs.map(async (t) => {
-      try { const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + t.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] }); out[t.name] = vscParseCsv(r.data); }
-      catch (e) { console.error("возвраты Google " + t.name + ":", e.message); }
+      // Google периодически отвечает таймаутом (ETIMEDOUT) — до двух повторов с паузой.
+      for (let a = 1; a <= 3 && !out[t.name]; a++) {
+        try { const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + t.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] }); out[t.name] = vscParseCsv(r.data); }
+        catch (e) { console.error("возвраты Google " + t.name + " (попытка " + a + "):", e.message || e.code); if (a < 3) await new Promise((ok) => setTimeout(ok, 3000 * a)); }
+      }
     }));
     if (_gRet.months) Object.keys(_gRet.months).forEach((k) => { if (!out[k]) out[k] = _gRet.months[k]; });
     _gRet = { at: Date.now(), months: out };
@@ -6396,17 +6399,43 @@ function vscRetByEntG(R) {
 const VSC_EXTRA_LASTGOOD_FILE = path.join(__dirname, ".vscExtraLastGood.json");
 let _vscExtraLG = null;
 function vscExtraLGLoad() { if (_vscExtraLG) return _vscExtraLG; try { _vscExtraLG = JSON.parse(fs.readFileSync(VSC_EXTRA_LASTGOOD_FILE, "utf8")) || {}; } catch (_) { _vscExtraLG = {}; } if (!_vscExtraLG.ret) _vscExtraLG.ret = {}; if (!_vscExtraLG.tax) _vscExtraLG.tax = {}; return _vscExtraLG; }
+// Порядок источников возвратов месяца (19.11.2026 — «ноябрь упал до 0,7%»):
+//   1) свежая вкладка Google; 2) последняя удачная вкладка Google (.vscExtraLastGood.json);
+//   3) только если Google этого месяца не было НИКОГДА — модуль возвратов Кати.
+// Раньше при таймауте Google (бывает несколько раз в сутки, а после перезапуска нет и
+// памяти процесса) подставлялся модуль Кати ДО last-good — а текущий месяц она переносит
+// с отставанием (ноябрь: 38 тыс. против 320 тыс.), и этот неполный месяц ещё и записывался
+// в last-good поверх правильного. Теперь запись Кати в last-good не попадает (src "work").
+// Защита от провала: сумма месяца Google не уменьшается больше чем на 30% от прошлой
+// удачной без подтверждения — такое значение держится «на проверке» и принимается, только
+// если продержалось 6 часов (настоящая правка таблицы), до этого показываем прошлое.
+const VSC_RET_DROP_HOLD_MS = 6 * 3600 * 1000;
 async function vscFetchExtra() {
   const ret = {}, tax = {};
-  const gR = await vscGoogleReturns().catch(() => ({}));
-  Object.keys(gR).forEach((name) => { const r = vscReturnsByDay(gR[name]); if (r && (r.totalAll || Object.keys(r.byDay).length)) ret[name] = r; });
-  katedata.returnMonths().forEach((ym) => { const n = katedata.ymName(ym); if (!ret[n]) { const r = katedata.returnsForDashboard(ym); if (r) ret[n] = r; } });   // запасной вариант
-  katedata.amoMonths().forEach((ym) => { const t = katedata.taxesMonth(ym); if (t) tax[katedata.ymName(ym)] = Object.assign({ src: "work" }, t); });
-  // Слой «последнего удачного»: свежие месяцы → в last-good; не прочитавшиеся → из него.
   const lg = vscExtraLGLoad();
-  Object.keys(ret).forEach((k) => { lg.ret[k] = ret[k]; });
+  if (!lg.retHold) lg.retHold = {};
+  const gR = await vscGoogleReturns().catch(() => ({}));
+  Object.keys(gR).forEach((name) => {
+    const r = vscReturnsByDay(gR[name]);
+    if (!(r && (r.totalAll || Object.keys(r.byDay).length))) return;
+    r.src = "g";
+    const prev = lg.ret[name];
+    const prevG = prev && prev.src !== "work" ? prev : null;   // у старых записей метки нет — это Google
+    if (prevG && prevG.totalAll > 0 && (r.totalAll || 0) < prevG.totalAll * 0.7) {
+      const h = lg.retHold[name];
+      if (!h || Math.abs((h.total || 0) - (r.totalAll || 0)) > 1) lg.retHold[name] = { total: r.totalAll || 0, since: Date.now() };
+      if (Date.now() - lg.retHold[name].since < VSC_RET_DROP_HOLD_MS) {
+        console.error("возвраты " + name + ": Google отдал " + Math.round(r.totalAll || 0) + " вместо " + Math.round(prevG.totalAll) + " — держу прежнее, жду подтверждения 6 ч");
+        ret[name] = prevG; return;
+      }
+    }
+    delete lg.retHold[name];
+    ret[name] = r; lg.ret[name] = r;
+  });
+  Object.keys(lg.ret).forEach((k) => { if (!ret[k] && lg.ret[k] && lg.ret[k].src !== "work") ret[k] = lg.ret[k]; });   // прошлое удачное Google
+  katedata.returnMonths().forEach((ym) => { const n = katedata.ymName(ym); if (!ret[n]) { const r = katedata.returnsForDashboard(ym); if (r) ret[n] = Object.assign({}, r, { src: "work" }); } });   // запасной вариант — только где Google не было
+  katedata.amoMonths().forEach((ym) => { const t = katedata.taxesMonth(ym); if (t) tax[katedata.ymName(ym)] = Object.assign({ src: "work" }, t); });
   Object.keys(tax).forEach((k) => { lg.tax[k] = tax[k]; });
-  Object.keys(lg.ret).forEach((k) => { if (!(k in ret)) ret[k] = lg.ret[k]; });
   Object.keys(lg.tax).forEach((k) => { if (!(k in tax) || tax[k] == null) tax[k] = lg.tax[k]; });
   try { fs.writeFileSync(VSC_EXTRA_LASTGOOD_FILE, JSON.stringify(lg), "utf8"); } catch (_) {}
   return { ret, tax };
