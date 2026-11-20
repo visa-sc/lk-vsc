@@ -3803,6 +3803,15 @@ function flexOrphanTick() {
 setTimeout(flexOrphanTick, 90 * 1000);           // первый проход вскоре после старта
 setInterval(flexOrphanTick, 10 * 60 * 1000);
 console.log("FLEXORPHAN: сторож сделок Flexbe без контакта, раз в 10 минут");
+// Окно «Не дозвонились? Перезвоним» на сайтах (Андрей 20.11.2026): сайт (msk/spb/ekb-копия на этом же
+// сервере) спрашивает, были ли входящие на номер после нажатия. Только изнутри сервера: снаружи сюда
+// ходят через nginx, а он всегда ставит X-Forwarded-For/X-Real-IP — такие запросы отбиваем.
+app.get("/internal/pbx-inbound", async (req, res) => {
+  const ra = String((req.socket && req.socket.remoteAddress) || "");
+  if (req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(ra)) return res.status(404).end();
+  try { res.json({ ok: true, rows: await pbx.recentInbound() }); }
+  catch (e) { res.json({ ok: false, error: String(e && e.message || e).slice(0, 120) }); }
+});
 app.get("/admin/api/yd-stops", requireAdmin, (req, res) => {
   return res.json(Object.assign({ success: true }, ydStopsPayload()));
 });

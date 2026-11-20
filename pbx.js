@@ -241,4 +241,24 @@ async function run(opts) {
   return cur;
 }
 
-module.exports = { run, load, fetchMonth, fetchRoster, EXT_FALLBACK, PL_FALLBACK };
+// Входящие за последние 20 минут — для окна «Не дозвонились? Перезвоним» на сайтах (Андрей 20.11.2026).
+// Сайт спрашивает только после того, как посетитель нажал на номер и вернулся, поэтому запросов мало;
+// плюс общий ответ на 15 секунд — сколько бы сайтов ни спросили, к АТС уходит не больше 4 запросов в минуту.
+let _recent = { at: 0, rows: [] }, _recentP = null;
+async function recentInbound() {
+  if (Date.now() - _recent.at < 15000) return _recent.rows;
+  if (_recentP) return _recentP;
+  _recentP = (async () => {
+    const a = await auth();
+    const now = Math.floor(Date.now() / 1000);
+    const r = await axios.post(BASE + "/mongo_history/search.json", `start_stamp_from=${now - 20 * 60}&start_stamp_to=${now + 60}&limit=2000`,
+      { headers: { "x-pbx-authentication": a.key_id + ":" + a.key, "Content-Type": "application/x-www-form-urlencoded" }, timeout: 8000 });
+    const rows = ((r.data && r.data.data) || []).filter((c) => c.accountcode === "inbound")
+      .map((c) => ({ gw: String(c.gateway || "").replace(/\D/g, "").slice(-10), ts: +c.start_stamp || 0 }));
+    _recent = { at: Date.now(), rows };
+    return rows;
+  })();
+  try { return await _recentP; } finally { _recentP = null; }
+}
+
+module.exports = { run, load, fetchMonth, fetchRoster, recentInbound, EXT_FALLBACK, PL_FALLBACK };
