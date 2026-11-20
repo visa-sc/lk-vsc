@@ -2693,7 +2693,10 @@
               + '<span style="color:#737988;">' + escapeHtml(formatDateMsk(e.ts)) + '</span> · <b>' + escapeHtml(e.name || ((isGroup ? "Группа " : "Кампания ") + e.id)) + '</b>'
               + (isGroup && e.campaign ? ' · <span style="color:#3a4256;">' + escapeHtml(e.campaign) + '</span>' : "")
               + ' · <span style="color:#9096a3;">' + (isGroup ? "группа" : "кампания") + '</span>'
-              + ' · <span style="color:#b8602a;">' + escapeHtml(YD_STATE_RU[e.to] || e.to) + '</span></div>';
+              + ' · <span style="color:#b8602a;">' + escapeHtml(YD_STATE_RU[e.to] || e.to) + '</span>'
+              + (e.backTs ? ' · <span style="color:#2e7a43;">снова работает с ' + escapeHtml(formatDateMsk(e.backTs)) + '</span>' : "")
+              + (!isGroup && e.why ? '<div style="color:#9096a3;font-size:12px;margin-top:2px;">' + escapeHtml(e.why) + '</div>' : "")
+              + '</div>';
           });
           h += '</div>';
         }

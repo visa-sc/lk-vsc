@@ -3541,7 +3541,11 @@ const YD_API_URL = "https://api.direct.yandex.com/json/v5/";
 const YD_TOKEN = process.env.YANDEX_DIRECT_TOKEN || "";
 const YD_LOGIN = process.env.YANDEX_DIRECT_LOGIN || "";
 const YD_STOP_FILE = path.join(__dirname, ".ydStopLog.json");
-const YD_STOPPED_STATES = { SUSPENDED: "приостановлена" }; // ТОЛЬКО ручная остановка (SUSPENDED). OFF/ENDED/ARCHIVED не считаем — по требованию Андрея (ловим только остановку руками).
+// Кампании (20.11.2026, Андрей): фиксируем ЛЮБУЮ остановку — руками (SUSPENDED), Директом (OFF:
+// кончились деньги, модерация и т.п.) и завершение (ENDED). Вернулась в ON — у записи пометка backTs.
+// Группы — только если выключилась и НЕ включилась в тот же день по МСК (см. ydRunCheck, pendingGroups).
+const YD_STOPPED_STATES = { SUSPENDED: "приостановлена", OFF: "остановлена", ENDED: "завершена" };
+const ydMskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
 let _ydLog = null, _ydRunning = false, _ydUnits = null; // _ydUnits = остаток баллов API (из заголовка Units)
 function loadYdLog() {
   if (_ydLog) return _ydLog;
@@ -3550,6 +3554,17 @@ function loadYdLog() {
   if (!_ydLog.snapshot) _ydLog.snapshot = {};   // { id: { name, state } }
   if (!Array.isArray(_ydLog.events)) _ydLog.events = []; // [{ id, name, ts, from, to }]
   if (!Array.isArray(_ydLog.runs)) _ydLog.runs = [];     // история проверок
+  if (!_ydLog.pendingGroups) _ydLog.pendingGroups = {};  // группа выключилась сегодня: { gid: { name, campaign, ts } } — в список не идёт до конца дня
+  // Разовая переделка истории (20.11.2026): старые записи групп, которые сейчас снова показываются,
+  // убираем — когда их включили, не записывалось, а короткие выключения Андрей просил не показывать.
+  // Группы, которые так и стоят выключенными, остаются. Кампании не трогаем.
+  if (!_ydLog.v2) {
+    const before = _ydLog.events.length;
+    _ydLog.events = _ydLog.events.filter((e) => e.kind !== "group" || !(_ydLog.snapshot["g" + e.id] && _ydLog.snapshot["g" + e.id].live === true));
+    _ydLog.v2 = { at: Date.now(), removed: before - _ydLog.events.length };
+    try { fs.writeFileSync(YD_STOP_FILE, JSON.stringify(_ydLog, null, 2), "utf8"); } catch (_) {}
+    console.log("YD STOPS: история переделана, убрано записей групп:", _ydLog.v2.removed);
+  }
   return _ydLog;
 }
 function saveYdLog() { try { fs.writeFileSync(YD_STOP_FILE, JSON.stringify(_ydLog || {}, null, 2), "utf8"); } catch (e) { console.error("saveYdLog:", e.message); } }
@@ -3622,8 +3637,19 @@ async function ydRunCheck(trigger) {
       // Переход из активного (не-остановленного) в остановленное (SUSPENDED/OFF) = событие.
       // На первом заходе prev нет → событий не создаём, только снимок (ретроспективы нет).
       if (prev && prev.state && prev.state !== st && YD_STOPPED_STATES[st] && !YD_STOPPED_STATES[prev.state]) {
-        log.events.unshift({ id: id, name: nm, ts: now, from: prev.state, to: st });
+        const why = String(c.StatusClarification || "").replace(/\s+/g, " ").trim().slice(0, 200);
+        log.events.unshift({ id: id, name: nm, ts: now, from: prev.state, to: st, why: why });
         rec.newStops++;
+      }
+      // Остановка с другой причиной (руками → Директом и т.п.) — обновляем состояние у открытой записи.
+      if (prev && prev.state !== st && YD_STOPPED_STATES[st] && YD_STOPPED_STATES[prev.state]) {
+        const ev = log.events.find((e) => e.kind !== "group" && e.id === id && !e.backTs);
+        if (ev) ev.to = st;
+      }
+      // Кампания снова работает — пометка у последней записи, сама запись остаётся.
+      if (prev && YD_STOPPED_STATES[prev.state] && st === "ON") {
+        const ev = log.events.find((e) => e.kind !== "group" && e.id === id && !e.backTs);
+        if (ev) ev.backTs = now;
       }
       log.snapshot[id] = { name: nm, state: st };
     });
@@ -3637,18 +3663,42 @@ async function ydRunCheck(trigger) {
           _ydGroupsCheckedAt = Date.now();
           const campName = {}; camps.forEach((c) => { campName[String(c.Id)] = c.Name; });
           rec.groupsChecked = Object.keys(g.seenGroups).length;
+          const campState = {}; camps.forEach((c) => { campState[String(c.Id)] = String(c.State || ""); });
+          const today = ydMskDay(now), pend = log.pendingGroups;
           Object.keys(g.seenGroups).forEach((gid) => {
             const key = "g" + gid;
             const live = (g.liveByGroup[gid] || 0) > 0;
             const meta = g.names[gid] || {};
+            const cid = String(meta.campaignId || g.seenGroups[gid]);
+            // Кампания сама не работает — группы не трогаем: остановка кампании пишется своей строкой,
+            // а слепок групп оставляем прежним, чтобы при включении кампании не было ложных записей.
+            if (campState[cid] !== "ON") return;
             const prev = log.snapshot[key];
-            if (prev && prev.live === true && !live) {
-              log.events.unshift({ id: String(gid), name: meta.name || ("Группа " + gid), kind: "group",
-                campaign: campName[String(meta.campaignId || g.seenGroups[gid])] || "", ts: now, to: "SUSPENDED" });
-              rec.newStops++;
+            // Выключилась — пока только «в ожидании»: в список попадёт, если не включится до конца дня по МСК.
+            if (prev && prev.live === true && !live && !pend[gid]) {
+              pend[gid] = { name: meta.name || ("Группа " + gid), campaign: campName[cid] || "", cid: cid, ts: now };
+            }
+            if (live) {
+              if (pend[gid]) delete pend[gid];                              // включилась в тот же день — забываем
+              else if (prev && prev.live === false) {                        // включилась позже — пометка у записи
+                const ev = log.events.find((e) => e.kind === "group" && e.id === String(gid) && !e.backTs);
+                if (ev) ev.backTs = now;
+              }
             }
             log.snapshot[key] = { name: meta.name || ("Группа " + gid), live: live };
           });
+          // День прошёл, а группа так и не включилась — это настоящая остановка: в список со временем выключения.
+          Object.keys(pend).forEach((gid) => {
+            const p = pend[gid];
+            if (ydMskDay(p.ts) === today) return;
+            const s = log.snapshot["g" + gid];
+            if ((!s || s.live === false) && (!p.cid || campState[p.cid] === "ON")) {   // кампанию остановили — это её строка, не группы
+              log.events.unshift({ id: String(gid), name: p.name, kind: "group", campaign: p.campaign, ts: p.ts, to: "SUSPENDED" });
+              rec.newStops++;
+            }
+            delete pend[gid];
+          });
+          log.events.sort((a, b) => b.ts - a.ts);
         }
       } catch (e) { console.error("YD STOPS группы:", e && e.message); }
     }
