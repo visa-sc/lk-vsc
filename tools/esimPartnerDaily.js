@@ -42,10 +42,66 @@ function overall() {
     human: rep.filter((x) => !x.bounce && !x.auto).length, bounce: rep.filter((x) => x.bounce).length };
 }
 
+// реакции из журналов nginx: кто открыл кабинет /p/<слаг>, по чьей ссылке ?promo=КОД заходили клиенты.
+// Копятся в state.react (журналы живут 14 дней). gz=true — читать и сжатые старые журналы.
+function collectReact(state, gz) {
+  const promos = rj(F.promos, {});
+  const ours = {}; Object.keys(promos).forEach((c) => { const pp = promos[c].partner; if (pp && pp.email) ours[c] = pp; });
+  const bySlug = {}; Object.keys(ours).forEach((c) => { bySlug[ours[c].slug] = c; });
+  state.react = state.react || { cab: {}, link: {} };
+  let files = ["/var/log/nginx/access.log", "/var/log/nginx/access.log.1"];
+  if (gz) { try { files = files.concat(fs.readdirSync("/var/log/nginx").filter((f) => /^access\.log\.\d+\.gz$/.test(f)).map((f) => "/var/log/nginx/" + f)); } catch (_) {} }
+  files.forEach((lf) => {
+    let txt = ""; try { const b = fs.readFileSync(lf); txt = lf.endsWith(".gz") ? require("zlib").gunzipSync(b).toString("utf8") : b.toString("utf8"); } catch (_) { return; }
+    txt.split("\n").forEach((ln) => {
+      if (/curl|bot|spider|crawl|preview|Yandex|Google/i.test(ln)) return;
+      let m = /"GET \/p\/([a-z0-9-]+)[ ?#]/.exec(ln); if (m && bySlug[m[1]]) state.react.cab[bySlug[m[1]]] = state.react.cab[bySlug[m[1]]] || Date.now();
+      m = /[?&]promo=([A-Za-z0-9]+)/.exec(ln); if (m && ours[m[1].toUpperCase()]) state.react.link[m[1].toUpperCase()] = state.react.link[m[1].toUpperCase()] || Date.now();
+    });
+  });
+  return ours;
+}
+
 (async () => {
   const [mode, nArg] = process.argv.slice(2);
   const state = rj(F.state, { batches: [] });
   const last = state.batches[state.batches.length - 1];
+
+  // тихо копим реакции (cron по вечерам до итогового отчёта 10.12), без писем
+  if (mode === "react") { collectReact(state, false); fs.writeFileSync(F.state, JSON.stringify(state, null, 1), "utf8"); return console.log("реакции:", Object.keys(state.react.cab).length, Object.keys(state.react.link).length); }
+
+  // итог рассылки — Андрей 20.11: «10 декабря в 8 утра прислать результаты рассылки»
+  if (mode === "final") {
+    spawnSync("node", [path.join(__dirname, "esimPartnerReplies.js"), "--days", "30"], { cwd: ROOT, stdio: "ignore" });
+    const ours = collectReact(state, true);
+    fs.writeFileSync(F.state, JSON.stringify(state, null, 1), "utf8");
+    const nm = (c) => (ours[c] && ours[c].name) || c;
+    const o = overall();
+    const left = rj(F.queue, []).filter((x) => !rj(F.log, {})[String(x.email).toLowerCase()]).length;
+    const reps = rj(F.replies, { items: [] }).items.filter((x) => !x.bounce && !x.auto);
+    const cab = Object.keys(state.react.cab), lnk = Object.keys(state.react.link);
+    // продажи и комиссия агентствам — из учёта партнёров (15% со всех покупок приведённых клиентов)
+    const parts = rj(path.join(D, "partners.json"), {});
+    let clients = 0, sales = 0, rub = 0, earned = 0; const top = [];
+    Object.keys(ours).forEach((c) => {
+      const p = parts[c]; if (!p) return;
+      const cl = Object.keys(p.clients || {}).length, lg = p.log || [];
+      const r = lg.reduce((a, x) => a + (x.amountRub || 0), 0), e = lg.reduce((a, x) => a + (x.earnedRub || 0), 0);
+      clients += cl; sales += lg.length; rub += r; earned += e;
+      if (lg.length) top.push({ c, n: lg.length, r, e });
+    });
+    top.sort((a, b) => b.r - a.r);
+    const fmt = (n) => Math.round(n).toLocaleString("ru-RU");
+    const text = "Итоги рассылки агентствам о партнёрке eSIM (письма 17–20.11), на " + mskDate().split("-").reverse().join(".") + "\n\n" +
+      "• Отправлено писем: " + o.sent + ", не доставлено " + o.bounce + " (" + (o.sent ? Math.round(o.bounce / o.sent * 100) : 0) + "%)" + (left ? ", не отправлено " + left : "") + ".\n" +
+      "• Ответили люди (без автоответов): " + reps.length + "\n" +
+      reps.slice(-15).map((x) => "   – " + (x.name || x.from) + ": " + String(x.text || "").replace(/\s+/g, " ").slice(0, 200)).join("\n") + (reps.length ? "\n" : "") +
+      "• Открыли свой кабинет: " + cab.length + (cab.length ? " (" + cab.slice(0, 15).map(nm).join(", ") + (cab.length > 15 ? "…" : "") + ")" : "") + "\n" +
+      "• Переходы клиентов по ссылкам агентств: " + lnk.length + (lnk.length ? " (" + lnk.slice(0, 15).map(nm).join(", ") + (lnk.length > 15 ? "…" : "") + ")" : "") + "\n" +
+      "• Клиентов привели агентства: " + clients + ", покупок " + sales + " на " + fmt(rub) + " ₽.\n" +
+      "• Комиссия агентствам (15%): " + fmt(earned) + " ₽" + (top.length ? "\n" + top.slice(0, 10).map((x) => "   – " + nm(x.c) + ": " + x.n + " покуп. на " + fmt(x.r) + " ₽, комиссия " + fmt(x.e) + " ₽").join("\n") : "") + "\n";
+    return mail("eSIM: итоги рассылки агентствам на " + mskDate().split("-").reverse().join("."), text);
+  }
 
   if (mode === "report") {
     spawnSync("node", [path.join(__dirname, "esimPartnerReplies.js"), "--days", "3"], { cwd: ROOT, stdio: "ignore" });
@@ -61,18 +117,7 @@ function overall() {
     const plan = (state.plan || {})[planDay];
     const pct = s.ok ? Math.round(s.bounce / s.ok * 100) : 0;
     // реакции копим в журнале: кабинеты /p/<слаг> и переходы ?promo=КОД из журналов nginx (сегодня и вчера)
-    const promos = rj(F.promos, {});
-    const ours = {}; Object.keys(promos).forEach((c) => { const pp = promos[c].partner; if (pp && pp.email) ours[c] = pp; });
-    const bySlug = {}; Object.keys(ours).forEach((c) => { bySlug[ours[c].slug] = c; });
-    state.react = state.react || { cab: {}, link: {} };
-    ["/var/log/nginx/access.log", "/var/log/nginx/access.log.1"].forEach((lf) => {
-      let txt = ""; try { txt = fs.readFileSync(lf, "utf8"); } catch (_) { return; }
-      txt.split("\n").forEach((ln) => {
-        if (/curl|bot|spider|crawl|preview|Yandex|Google/i.test(ln)) return;
-        let m = /"GET \/p\/([a-z0-9-]+)[ ?#]/.exec(ln); if (m && bySlug[m[1]]) state.react.cab[bySlug[m[1]]] = state.react.cab[bySlug[m[1]]] || Date.now();
-        m = /[?&]promo=([A-Za-z0-9]+)/.exec(ln); if (m && ours[m[1].toUpperCase()]) state.react.link[m[1].toUpperCase()] = state.react.link[m[1].toUpperCase()] || Date.now();
-      });
-    });
+    const ours = collectReact(state, false);
     fs.writeFileSync(F.state, JSON.stringify(state, null, 1), "utf8");
     const nm = (c) => (ours[c] && ours[c].name) || c;
     const cab = Object.keys(state.react.cab), lnk = Object.keys(state.react.link);
@@ -121,6 +166,31 @@ function overall() {
     const st = rj(F.state, state); const b = st.batches[st.batches.length - 1]; b.finishedAt = Date.now();
     const s = batchStats(b); b.ok = s.ok; b.err = s.err;
     fs.writeFileSync(F.state, JSON.stringify(st, null, 1), "utf8");
+    // последняя партия (очередь пуста) — одно итоговое письмо с проверкой, что всё работает (Андрей 20.11)
+    const leftAfter = rj(F.queue, []).filter((x) => !rj(F.log, {})[String(x.email).toLowerCase()]).length;
+    if (!leftAfter) {
+      spawnSync("node", [path.join(__dirname, "esimPartnerReplies.js"), "--days", "4"], { cwd: ROOT, stdio: "ignore" });
+      const o = overall();
+      const chk = async (u) => { const t0 = Date.now(); try { const r = await fetch(u, { signal: AbortSignal.timeout(15000) }); const tx = await r.text(); return { ok: r.ok, ms: Date.now() - t0, tx }; } catch (e) { return { ok: false, ms: Date.now() - t0, tx: "" }; } };
+      const site = await chk("https://voyomobile.ru/"), vt = await chk("https://voyotravel.ru/esim");
+      const bot = await chk("https://voyomobile.ru/esim/api/tg/health?adm=" + (process.env.ESIM_ADMIN_CODE || "280992"));
+      let botOk = false; try { botOk = JSON.parse(bot.tx).ok === true; } catch (_) {}
+      const ords = rj(F.orders, []);
+      const today = ords.filter((x) => (x.paidAt || 0) > Date.now() - 864e5);
+      const stuck = ords.filter((x) => x.status === "fulfilling" || (x.status === "paid" && Date.now() - (x.paidAt || 0) > 600e3)).length;
+      const okAll = site.ok && vt.ok && botOk && !stuck && !fs.existsSync(F.stop);
+      return mail("eSIM: рассылка агентствам завершена" + (okAll ? ", всё работает" : " — есть проблема"),
+        "Последняя партия " + b.date + ": ушло " + s.ok + " из " + list.length + ", ошибок отправки " + s.err + ".\n\n" +
+        "Итого: ушло " + o.sent + " писем, не доставлено " + o.bounce + " (" + (o.sent ? Math.round(o.bounce / o.sent * 100) : 0) + "%), очередь пуста.\n" +
+        "Ответов людей: " + o.human + ", оплат по кодам агентств: " + o.paid + (o.paid ? " на " + o.revenue + " ₽" : "") + ".\n\n" +
+        "Проверка после рассылки:\n" +
+        "• voyomobile.ru: " + (site.ok ? "открывается, " + (site.ms / 1000).toFixed(2) + " с" : "НЕ ОТКРЫВАЕТСЯ") + "\n" +
+        "• voyotravel.ru/esim: " + (vt.ok ? "открывается, " + (vt.ms / 1000).toFixed(2) + " с" : "НЕ ОТКРЫВАЕТСЯ") + "\n" +
+        "• Телеграм-бот: " + (botOk ? "работает" : "НЕ ОТВЕЧАЕТ") + "\n" +
+        "• Заказы клиентов за сутки: " + today.length + ", зависших: " + stuck + "\n" +
+        "• Почта: " + (fs.existsSync(F.stop) ? "был отказ (автостоп)" : "отказов не было, клиентские письма уходят") + "\n\n" +
+        "Итоговый отчёт по результатам пришлю 10.12 в 8:00.");
+    }
     return mail("eSIM: партия " + b.date + " агентствам ушла — " + s.ok + " из " + list.length,
       "Партия " + b.date + ": ушло " + s.ok + " из " + list.length + ", ошибок отправки " + s.err + "." +
       (fs.existsSync(F.stop) ? "\n⚠️ Сработал автостоп, остальное на паузе до вашего решения." : "") +

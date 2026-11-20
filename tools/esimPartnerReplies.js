@@ -56,7 +56,9 @@ const days = process.argv.includes("--days") ? Number(process.argv[process.argv.
       const s = sent[from] || {};
       out.items.push({ id, at: env.date ? new Date(env.date).getTime() : Date.now(), from, name: s.name || null,
         code: s.code || null, kind: s.kind || null, subject: subj.slice(0, 200), text,
+        // 20.11: служба заявок агентства (Старлайнер) — номер заявки в теме [#8421330] и пустое «Сообщение отсутствует»
         auto: /автоответ|auto.?reply|out of office|отпуск|undeliver|не доставлено|mailer-daemon/i.test(subj + " " + from) ||
+          /\[#\d{4,}\]|\[(ticket|заявка|обращение)\s*#?\d+\]/i.test(subj) || /^(сообщение отсутствует|no message|\s*)$/i.test(text) ||
           /обращение (получено|принято|зарегистрировано)|ваше письмо (получено|принято)|ответим (вам )?в течение|автоматическ(ий|ое) (ответ|сообщение)|не отвечайте на (это|данное) письмо|this is an automat|we have received your/i.test(text) });
       have.add(id); added++;
     }
