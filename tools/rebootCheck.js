@@ -17,12 +17,13 @@ const https = require("https");
 const { execSync } = require("child_process");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 
-// Кому (решение Андрея 21.11.2026): до 30.11.2026 — директору; с 30.11 обычный отчёт «всё работает» —
-// только Петрову, а при проблемах — и директору, и Петрову.
+// Кому (решение Андрея 21.11.2026): до 30.11.2026 — директору; с 30.11 по 09.12 — только Петрову;
+// с 10.12 — директору и Петрову (любое письмо).
 const DIRECTOR = process.env.REBOOT_CHECK_TO || "director@visa-sc.ru";
 const PETROV = process.env.REBOOT_CHECK_PETROV || "ap@spt1.ru";
 const PETROV_FROM = Date.parse("2026-11-30T00:00:00+03:00");
-const recipients = (bad) => (Date.now() < PETROV_FROM ? DIRECTOR : bad ? `${DIRECTOR}, ${PETROV}` : PETROV);
+const BOTH_FROM = Date.parse("2026-12-10T00:00:00+03:00");
+const recipients = () => (Date.now() < PETROV_FROM ? DIRECTOR : Date.now() < BOTH_FROM ? PETROV : `${DIRECTOR}, ${PETROV}`);
 const DIR = "/var/lib/reboot-check";
 const SNAP = path.join(DIR, "before.json");
 const USERS = ["root", "spbadmin", "mskadmin", "ekbadmin", "kateadmin", "olyabi"];
