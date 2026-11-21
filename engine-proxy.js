@@ -54,16 +54,19 @@ function upgradeFor(svc, model) {
 }
 // Новые модели строже к настройкам запроса: Haiku 5.5 по умолчанию «думает» (съест маленький max_tokens
 // сканера и прослушки), Sonnet 5.5 не принимает thinking disabled, у всех 5.5 нельзя менять temperature.
-// Приводим запрос к поведению старой модели: Haiku 5.5 без размышлений, как Haiku 4.5.
+// Приводим запрос к тому, что новая модель принимает, и даём ей место на размышления.
 function adaptForModel(body) {
   const m = String((body && body.model) || "");
   if (!/^claude-(haiku|sonnet|opus)-5-5$/.test(m)) return body;
   delete body.temperature; delete body.top_p; delete body.top_k;
   const th = body.thinking;
   if (m === "claude-haiku-5-5") {
-    const eff = body.output_config && body.output_config.effort;
-    if (!th && eff !== "xhigh" && eff !== "max") body.thinking = { type: "disabled" };
-    else if (th && th.type === "enabled") body.thinking = { type: "adaptive" };
+    // Haiku 5.5 думает по умолчанию. Без размышлений она ошибалась в сроке паспорта из MRZ (3 из 3),
+    // с размышлениями на low — верно 3 из 3 при +~200 токенов (доли цента). Поэтому: размышления на low,
+    // а к max_tokens — запас 1024, чтобы размышления не съели ответ (у сканера и прослушки бывает 250–400).
+    if (!th || th.type === "enabled") body.thinking = { type: "adaptive" };
+    body.output_config = Object.assign({ effort: "low" }, body.output_config || {});
+    if (body.thinking.type !== "disabled") body.max_tokens = Math.min(64000, (Number(body.max_tokens) || 1024) + 1024);
   } else if (th && th.type === "enabled") body.thinking = { type: "adaptive" };
   else if (m === "claude-sonnet-5-5" && th && th.type === "disabled") body.thinking = { type: "between_tools" };
   else if (m === "claude-opus-5-5" && th && th.type === "disabled") delete body.thinking;
