@@ -182,7 +182,12 @@ function mount(deps) {
         const r = await fetch(base + "/v1/messages", {
           method: "POST",
           headers: { "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model, max_tokens: 8000, system, tools: [TOOL], tool_choice: { type: "tool", name: "submit_ideas" }, messages: [{ role: "user", content: user }] }),
+          // Opus 5.5 не принимает принудительный выбор инструмента (400) — до 21.11.2026 радар из-за этого
+          // молча уходил на Opus 5. Для 5.5: выбор «auto» + прямое указание в system, размышления всегда включены,
+          // поэтому запас max_tokens больше. Opus 5 (запасная) — как раньше.
+          body: JSON.stringify(/-5-5$/.test(model)
+            ? { model, max_tokens: 20000, output_config: { effort: "high" }, system: system + "\n\nОтвет дай только вызовом инструмента submit_ideas, без текста вне него.", tools: [TOOL], tool_choice: { type: "auto" }, messages: [{ role: "user", content: user }] }
+            : { model, max_tokens: 8000, system, tools: [TOOL], tool_choice: { type: "tool", name: "submit_ideas" }, messages: [{ role: "user", content: user }] }),
           signal: AbortSignal.timeout(10 * 60 * 1000)
         });
         const j = await r.json().catch(() => null);

@@ -60,7 +60,7 @@ const AIU = require("./ai-usage");
 // (до 05.10.2026 стояли $3/$15, расход завышался).
 const PRICES = {
   "claude-opus-5-5": [4, 20], "claude-opus-5": [5, 25],
-  "claude-sonnet-5-5": [2, 10], "claude-sonnet-5": [2, 10], "claude-haiku-4-5": [1, 5],
+  "claude-sonnet-5-5": [2, 10], "claude-sonnet-5": [2, 10], "claude-haiku-5-5": [0.1, 0.5], "claude-haiku-4-5": [1, 5],
 };
 
 // Метки шлюза → наши id. Катин сканер (work.voyotravel.ru) подписывается в шлюзе
@@ -243,7 +243,7 @@ function status() {
 // служебные прогоны движка попадают в переводы — что по смыслу верно.
 const MONTH_NAMES = ["январь", "февраль", "март", "апрель", "май", "июнь",
   "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
-const MODEL_NAMES = { "claude-opus-5": "Opus 5", "claude-opus-5-5": "Opus 5.5", "claude-sonnet-5": "Sonnet 5", "claude-haiku-4-5": "Haiku 4.5" };
+const MODEL_NAMES = { "claude-opus-5": "Opus 5", "claude-opus-5-5": "Opus 5.5", "claude-sonnet-5": "Sonnet 5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-haiku-4-5": "Haiku 4.5", "claude-haiku-5-5": "Haiku 5.5" };
 // Эти строки в письме есть всегда, даже с нулём. Любой другой сервис, у которого
 // в месяце был расход, добавляется строкой сам — из шлюза (по метке
 // x-voyo-service) или из общего журнала ai-usage. Название для нового сервиса

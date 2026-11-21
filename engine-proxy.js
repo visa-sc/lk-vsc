@@ -37,7 +37,65 @@ const BUDGET_FILE = path.join(__dirname, ".engineBudget.json");
 // письмо о балансе показывало меньше денег, чем в консоли).
 const PRICES = {
   "claude-opus-5": [5, 25], "claude-sonnet-5": [2, 10], "claude-haiku-4-5": [1, 5],
+  // новые модели (21.11.2026): Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50 (запросы до 100K токенов)
+  "claude-opus-5-5": [4, 20], "claude-sonnet-5-5": [2, 10], "claude-haiku-5-5": [0.1, 0.5],
 };
+
+// ── Переход на новые модели (Андрей 21.11.2026) ─────────────────────────────
+// ENGINE_MODEL_UPGRADE="старая=новая,сервис:старая=новая" — шлюз сам меняет модель в запросе.
+// Клиентам (прослушка Кати, сканеры, переводы) ничего править не нужно, их код остаётся прежним.
+// Откат — убрать строку из .env и перезапустить voyo.
+function upgradeFor(svc, model) {
+  for (const part of String(process.env.ENGINE_MODEL_UPGRADE || "").split(",").map((s) => s.trim()).filter(Boolean)) {
+    const m = part.match(/^(?:([a-z0-9_-]+):)?([a-z0-9.-]+)=([a-z0-9.-]+)$/i);
+    if (m && (!m[1] || m[1] === svc) && m[2] === model) return m[3];
+  }
+  return null;
+}
+// Новые модели строже к настройкам запроса: Haiku 5.5 по умолчанию «думает» (съест маленький max_tokens
+// сканера и прослушки), Sonnet 5.5 не принимает thinking disabled, у всех 5.5 нельзя менять temperature.
+// Приводим запрос к поведению старой модели: Haiku 5.5 без размышлений, как Haiku 4.5.
+function adaptForModel(body) {
+  const m = String((body && body.model) || "");
+  if (!/^claude-(haiku|sonnet|opus)-5-5$/.test(m)) return body;
+  delete body.temperature; delete body.top_p; delete body.top_k;
+  const th = body.thinking;
+  if (m === "claude-haiku-5-5") {
+    const eff = body.output_config && body.output_config.effort;
+    if (!th && eff !== "xhigh" && eff !== "max") body.thinking = { type: "disabled" };
+    else if (th && th.type === "enabled") body.thinking = { type: "adaptive" };
+  } else if (th && th.type === "enabled") body.thinking = { type: "adaptive" };
+  else if (m === "claude-sonnet-5-5" && th && th.type === "disabled") body.thinking = { type: "between_tools" };
+  else if (m === "claude-opus-5-5" && th && th.type === "disabled") delete body.thinking;
+  return body;
+}
+// Текст ответа модели (JSON или SSE) — для сравнения старой и новой модели.
+function outText(text, ct) {
+  let out = "";
+  if (/text\/event-stream/i.test(ct || "")) {
+    for (const line of String(text).split("\n")) {
+      if (line.indexOf("data:") !== 0) continue;
+      let ev; try { ev = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+      if (ev.type === "content_block_delta" && ev.delta) out += ev.delta.text || ev.delta.partial_json || "";
+    }
+    return out;
+  }
+  let j; try { j = typeof text === "string" ? JSON.parse(text) : text; } catch (_) { return ""; }
+  for (const b of (j && j.content) || []) out += b.type === "text" ? b.text : b.type === "tool_use" ? JSON.stringify(b.input) : "";
+  return out;
+}
+// Сравнение на живых запросах (ENGINE_SHADOW="сервис:старая>новая:сколько;…"): ответ клиенту даёт
+// старая модель как раньше, а тот же запрос в фоне уходит в новую. Оба ответа — в /var/lib/engine-shadow/<сервис>.jsonl.
+const SHADOW_DIR = "/var/lib/engine-shadow";
+function shadowRule(svc, model) {
+  for (const part of String(process.env.ENGINE_SHADOW || "").split(";").map((s) => s.trim()).filter(Boolean)) {
+    const m = part.match(/^([a-z0-9_-]+):([a-z0-9.-]+)>([a-z0-9.-]+):(\d+)$/i);
+    if (!m || m[1] !== svc || m[2] !== model) continue;
+    let n = 0; try { n = fs.readFileSync(path.join(SHADOW_DIR, svc + ".jsonl"), "utf8").split("\n").filter(Boolean).length; } catch (_) {}
+    if (n < Number(m[4])) return { to: m[3] };
+  }
+  return null;
+}
 const RUB = Number(process.env.TRANSLATE_USD_RUB || 80);
 
 // «Локальный» = пришёл напрямую с loopback И не через прокси: nginx и сервис Кати
@@ -167,6 +225,17 @@ function mountEarly(app, deps) {
         body.model = FORCED; model = FORCED; forcedNow = 1;
       }
     }
+    // Сравнение старой и новой модели: копия запроса ДО перевода на новую модель (только /v1/messages)
+    let shadow = null;
+    if (model && /^\/v1\/messages(\?|$)/.test(sub)) {
+      try { const rule = shadowRule(svcOf(req), model); if (rule) shadow = { rule, from: model, body: JSON.parse(JSON.stringify(body)) }; } catch (_) {}
+    }
+    // Перевод на новую модель (ENGINE_MODEL_UPGRADE) и поправка настроек под неё
+    if (model) {
+      const upm = upgradeFor(svcOf(req), model);
+      if (upm) { body.model = upm; model = upm; }
+      adaptForModel(body);
+    }
     // Экономия на правках (engine-economy.js): только запросы движка переводов.
     // Любая ошибка здесь — просто обычный путь, запрос уходит к модели как раньше.
     let econ = null;
@@ -224,6 +293,20 @@ function mountEarly(app, deps) {
       }
       if (seen) recordSpend(day, svcOf(req), model || FORCED, u, forcedNow);
     } catch (e) { console.warn("engine-proxy usage:", e.message); }
+    // Фоновый прогон того же запроса на новой модели (клиент уже получил ответ, его это не задерживает)
+    if (shadow && up.ok) {
+      const svc = svcOf(req), aText = outText(text, ct), aModel = model;
+      (async () => {
+        const b2 = adaptForModel(Object.assign(shadow.body, { model: shadow.rule.to, stream: false }));
+        const t0 = Date.now();
+        const r2 = await fetch(BASE + "/v1/messages", { method: "POST", headers: Object.assign({}, headers, { accept: "application/json" }), body: JSON.stringify(b2), signal: AbortSignal.timeout(10 * 60 * 1000) });
+        const j2 = await r2.json().catch(() => ({}));
+        if (j2.usage) recordSpend(mskDay(), "model-eval", b2.model, j2.usage, 0);
+        fs.mkdirSync(SHADOW_DIR, { recursive: true });
+        fs.appendFileSync(path.join(SHADOW_DIR, svc + ".jsonl"), JSON.stringify({ at: new Date().toISOString(), svc, a: { model: aModel, text: aText.slice(0, 20000) },
+          b: { model: b2.model, status: r2.status, ms: Date.now() - t0, text: outText(j2, "application/json").slice(0, 20000), stop: j2.stop_reason || null, error: j2.error ? String(j2.error.message || "").slice(0, 200) : null } }) + "\n");
+      })().catch((e) => console.warn("engine-shadow:", e.message));
+    }
   });
 
   // Записать расход в суточный журнал шлюза (общий итог, сервис, модель, токены).
@@ -267,6 +350,9 @@ function mountEarly(app, deps) {
   // Классификатор «касается ли правка документа» — короткий запрос мимо движка.
   // Расход пишем в журнал как расход переводов: он делается ради них.
   async function classifyCall(params) {
+    params = Object.assign({}, params);
+    const upm = upgradeFor("translate", params.model); if (upm) params.model = upm;   // тот же переход на новые модели
+    adaptForModel(params);
     const r = await fetch(BASE + "/v1/messages", {
       method: "POST",
       headers: { "x-api-key": KEY, "content-type": "application/json", "anthropic-version": "2023-06-01" },

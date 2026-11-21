@@ -25,7 +25,7 @@ const KEEP = 20000;
 const PRICES = {
   "claude-opus-5-5": [4, 20], "claude-opus-5": [5, 25],
   "claude-sonnet-5-5": [2, 10], "claude-sonnet-5": [2, 10],
-  "claude-haiku-4-5": [1, 5],
+  "claude-haiku-5-5": [0.1, 0.5], "claude-haiku-4-5": [1, 5],
 };
 
 function usdOf(model, u) {
