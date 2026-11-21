@@ -9,6 +9,9 @@
  * Если качество держится — дописываем сервис в ENGINE_MODEL_UPGRADE (.env основного приложения, копия .env рядом),
  * снимаем его из ENGINE_SHADOW и перезапускаем voyo (после проверки, что нет выдачи eSIM). Не держится или мало данных —
  * ничего не меняем. Одно письмо Андрею за прогон, только если что-то решено.
+ * Каждый день в 09:05, пока по обоим сервисам нет решения: мало данных — ждём следующего дня; решение принято (переведено
+ * или оставлена старая) — сервис больше не трогаем (state.json рядом с журналами). Когда решены оба — строка cron снимает себя.
+ * Если за 21 день данных так и не набралось — одно письмо Андрею.
  * Запуск: node tools/modelSwitch.js [--dry]
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
@@ -82,18 +85,36 @@ function restartVoyo() {
   }
   execSync("pm2 restart voyo --update-env", { stdio: "ignore" });
 }
+const STATE = path.join(DIR, "switch-state.json");
+const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch (_) { return { since: new Date().toISOString(), done: {} }; } };
 (async () => {
   const decided = [];
+  const st = readState();
   const upgrade = String(process.env.ENGINE_MODEL_UPGRADE || "");
   for (const [svc, rule] of Object.entries(RULES)) {
-    if (upgrade.includes(rule.upgrade.split(",")[0])) continue;   // уже переведён
+    if (st.done[svc] || upgrade.includes(rule.upgrade.split(",")[0])) { st.done[svc] = st.done[svc] || "switched"; continue; }   // уже решено
     const list = rows(svc).filter((r) => r.a && r.a.model === rule.from && r.b && r.b.model === rule.to);
     const ev = svc === "cq" ? evalCq(list) : evalTr(list);
     console.log(new Date().toISOString(), svc, ev.pass ? "ПРОХОДИТ" : "не проходит", ev.text);
     if (ev.pass) decided.push({ svc, rule, ev, switched: true });
     else if (ev.n >= rule.min) decided.push({ svc, rule, ev, switched: false });   // данных хватает, но качество не держится — оставляем старую
   }
-  if (!decided.length) return console.log("решений нет (мало данных) — ждём");
+  const finish = () => {
+    if (DRY) return;
+    fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(STATE, JSON.stringify(st));
+    if (Object.keys(RULES).every((k) => st.done[k])) { try { execSync("crontab -l | grep -v modelswitch-daily | crontab -"); console.log("оба сервиса решены — расписание снято"); } catch (_) {} }
+  };
+  if (!decided.length) {
+    const days = (Date.now() - Date.parse(st.since)) / 864e5;
+    if (days > 21 && !st.lateMail && !DRY) {
+      st.lateMail = 1;
+      await require(path.join(__dirname, "..", "mail.js")).sendMail({ to: "director@visa-sc.ru", subject: "Модели Claude: за 3 недели мало данных для сравнения",
+        html: "<p>Сравнение старой и новой модели: за 3 недели набралось мало живых запросов (" + Object.keys(RULES).filter((k) => !st.done[k]).map((k) => RULES[k].title).join(", ") + "). Сервисы работают на прежней модели, проверка продолжается.</p>" }).catch(() => {});
+    }
+    finish();
+    return console.log("решений нет (мало данных) — ждём");
+  }
+  for (const d of decided) st.done[d.svc] = d.switched ? "switched" : "kept";
   if (!DRY) {
     const sw = decided.filter((d) => d.switched);
     if (sw.length) {
@@ -104,6 +125,7 @@ function restartVoyo() {
     }
     const li = decided.map((d) => `<li><b>${d.rule.title}</b>: ${d.switched ? `переведено на ${d.rule.to.replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2")}` : "оставлена прежняя модель — новая расходится со старой, разберу"}. ${d.ev.text}.</li>`).join("");
     await require(path.join(__dirname, "..", "mail.js")).sendMail({ to: "director@visa-sc.ru", subject: "Модели Claude: итог сравнения на живых запросах",
-      html: `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222"><p><b>Сравнение старой и новой модели на живых запросах за ночь:</b></p><ul>${li}</ul><p>Сотрудники ничего не заметят: окна и порядок работы прежние. Откат — одна строка в .env, копия рядом.</p></div>` }).catch((e) => console.log("письмо:", e.message));
+      html: `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222"><p><b>Сравнение старой и новой модели на живых запросах:</b></p><ul>${li}</ul><p>Сотрудники ничего не заметят: окна и порядок работы прежние. Откат — одна строка в .env, копия рядом.</p></div>` }).catch((e) => console.log("письмо:", e.message));
   }
+  finish();
 })().catch((e) => { console.error("modelSwitch:", e.message); process.exit(1); });
