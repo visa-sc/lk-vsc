@@ -45,8 +45,17 @@ const PRICES = {
 // ENGINE_MODEL_UPGRADE="старая=новая,сервис:старая=новая" — шлюз сам меняет модель в запросе.
 // Клиентам (прослушка Кати, сканеры, переводы) ничего править не нужно, их код остаётся прежним.
 // Откат — убрать строку из .env и перезапустить voyo.
+// Плюс файл .engineModels.json рядом ({"upgrade":"..."}) — его пишет tools/modelSwitch.js и шлюз перечитывает
+// его на лету: переключение без перезапуска voyo, чтобы не оборвать идущий перевод (поток до 15 минут).
+const MODELS_FILE = path.join(__dirname, ".engineModels.json");
+let _mf = { mtime: 0, upgrade: "" };
+function fileUpgrade() {
+  try { const mt = fs.statSync(MODELS_FILE).mtimeMs; if (mt !== _mf.mtime) _mf = { mtime: mt, upgrade: String(JSON.parse(fs.readFileSync(MODELS_FILE, "utf8")).upgrade || "") }; }
+  catch (_) { _mf = { mtime: 0, upgrade: "" }; }
+  return _mf.upgrade;
+}
 function upgradeFor(svc, model) {
-  for (const part of String(process.env.ENGINE_MODEL_UPGRADE || "").split(",").map((s) => s.trim()).filter(Boolean)) {
+  for (const part of [process.env.ENGINE_MODEL_UPGRADE || "", fileUpgrade()].join(",").split(",").map((s) => s.trim()).filter(Boolean)) {
     const m = part.match(/^(?:([a-z0-9_-]+):)?([a-z0-9.-]+)=([a-z0-9.-]+)$/i);
     if (m && (!m[1] || m[1] === svc) && m[2] === model) return m[3];
   }
@@ -91,6 +100,7 @@ function outText(text, ct) {
 // старая модель как раньше, а тот же запрос в фоне уходит в новую. Оба ответа — в /var/lib/engine-shadow/<сервис>.jsonl.
 const SHADOW_DIR = "/var/lib/engine-shadow";
 function shadowRule(svc, model) {
+  if (upgradeFor(svc, model)) return null;   // сервис уже переведён — сравнивать больше нечего
   for (const part of String(process.env.ENGINE_SHADOW || "").split(";").map((s) => s.trim()).filter(Boolean)) {
     const m = part.match(/^([a-z0-9_-]+):([a-z0-9.-]+)>([a-z0-9.-]+):(\d+)$/i);
     if (!m || m[1] !== svc || m[2] !== model) continue;
@@ -234,9 +244,10 @@ function mountEarly(app, deps) {
       try { const rule = shadowRule(svcOf(req), model); if (rule) shadow = { rule, from: model, body: JSON.parse(JSON.stringify(body)) }; } catch (_) {}
     }
     // Перевод на новую модель (ENGINE_MODEL_UPGRADE) и поправка настроек под неё
+    let origBody = null;
     if (model) {
       const upm = upgradeFor(svcOf(req), model);
-      if (upm) { body.model = upm; model = upm; }
+      if (upm) { origBody = JSON.parse(JSON.stringify(body)); body.model = upm; model = upm; }
       adaptForModel(body);
     }
     // Экономия на правках (engine-economy.js): только запросы движка переводов.
@@ -256,6 +267,15 @@ function mountEarly(app, deps) {
     } catch (e) {
       if (econ && econ.after) econ.after(0);
       return res.status(502).json({ type: "error", error: { type: "api_error", message: "канал до Anthropic: " + e.message } });
+    }
+    // Подстраховка: новая модель ответила ошибкой (не лимит и не перегрузка общей очереди) — тот же запрос
+    // уходит на прежнюю модель, клиент получает обычный ответ. Клиенту ещё ничего не отправлено.
+    if (origBody && up.status >= 400 && up.status !== 429) {
+      console.warn("engine-proxy: новая модель " + model + " ответила " + up.status + " — повторяю на " + origBody.model);
+      try {
+        const up2 = await fetch(BASE + sub, { method: "POST", headers, body: JSON.stringify(origBody), signal: AbortSignal.timeout(15 * 60 * 1000) });
+        if (up2.ok || up2.status < up.status) { up = up2; model = origBody.model; }
+      } catch (_) {}
     }
     if (econ && econ.after) econ.after(up.status);
     res.status(up.status);

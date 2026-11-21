@@ -6,8 +6,8 @@
  * пишет оба ответа в /var/lib/engine-shadow/<сервис>.jsonl. Здесь сравниваем:
  *   cq (прослушка Кати, Haiku 4.5 → 5.5): JSON оценок — совпадение отметок по каждому критерию и сотруднику;
  *   translate (переводы, Sonnet 5 → 5.5): ответ без ошибок, не обрезан, длина и текст близки к старому.
- * Если качество держится — дописываем сервис в ENGINE_MODEL_UPGRADE (.env основного приложения, копия .env рядом),
- * снимаем его из ENGINE_SHADOW и перезапускаем voyo (после проверки, что нет выдачи eSIM). Не держится или мало данных —
+ * Если качество держится — дописываем сервис в /var/www/voyo/.engineModels.json: шлюз перечитывает файл на лету,
+ * без перезапуска voyo (иначе оборвался бы идущий перевод). Не держится или мало данных —
  * ничего не меняем. Одно письмо Андрею за прогон, только если что-то решено.
  * Каждый день в 09:05, пока по обоим сервисам нет решения: мало данных — ждём следующего дня; решение принято (переведено
  * или оставлена старая) — сервис больше не трогаем (state.json рядом с журналами). Когда решены оба — строка cron снимает себя.
@@ -20,7 +20,6 @@ const path = require("path");
 const { execSync } = require("child_process");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 const DRY = process.argv.includes("--dry");
-const ENV = path.join(__dirname, "..", ".env");
 const DIR = process.env.MODEL_SHADOW_DIR || "/var/lib/engine-shadow";   // MODEL_SHADOW_DIR — только для проверки
 const RULES = {
   cq: { title: "Прослушка звонков (Катя)", from: "claude-haiku-4-5", to: "claude-haiku-5-5", min: 25, upgrade: "cq:claude-haiku-4-5=claude-haiku-5-5" },
@@ -69,22 +68,6 @@ function evalTr(list) {
   return { n, errs, pass: n >= RULES.translate.min && errs === 0 && close / Math.max(1, ok) >= 0.8,
     text: `${n} переводов; без ошибок и обрывов ${ok} из ${n}, близки к прежним по объёму и содержанию ${close} из ${ok}` };
 }
-function setEnv(key, fn) {
-  const lines = fs.readFileSync(ENV, "utf8").split("\n");
-  let found = false;
-  const out = lines.map((l) => { if (l.startsWith(key + "=")) { found = true; return key + "=" + fn(l.slice(key.length + 1)); } return l; });
-  if (!found) out.push(key + "=" + fn(""));
-  fs.writeFileSync(ENV, out.join("\n"));
-}
-function restartVoyo() {
-  for (let i = 0; i < 60; i++) {
-    let n = 0;
-    try { const o = JSON.parse(fs.readFileSync(path.join(__dirname, "..", ".esim", "orders.json"), "utf8")); n = (Array.isArray(o) ? o : o.orders || Object.values(o)).filter((x) => x && x.status === "fulfilling").length; } catch (_) {}
-    if (!n) break;
-    execSync("sleep 10");
-  }
-  execSync("pm2 restart voyo --update-env", { stdio: "ignore" });
-}
 const STATE = path.join(DIR, "switch-state.json");
 const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch (_) { return { since: new Date().toISOString(), done: {} }; } };
 (async () => {
@@ -92,7 +75,8 @@ const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")
   const st = readState();
   const upgrade = String(process.env.ENGINE_MODEL_UPGRADE || "");
   for (const [svc, rule] of Object.entries(RULES)) {
-    if (st.done[svc] || upgrade.includes(rule.upgrade.split(",")[0])) { st.done[svc] = st.done[svc] || "switched"; continue; }   // уже решено
+    let fileUp = ""; try { fileUp = String(JSON.parse(fs.readFileSync(path.join(__dirname, "..", ".engineModels.json"), "utf8")).upgrade || ""); } catch (_) {}
+    if (st.done[svc] || (upgrade + "," + fileUp).includes(rule.upgrade.split(",")[0])) { st.done[svc] = st.done[svc] || "switched"; continue; }   // уже решено
     const list = rows(svc).filter((r) => r.a && r.a.model === rule.from && r.b && r.b.model === rule.to);
     const ev = svc === "cq" ? evalCq(list) : evalTr(list);
     console.log(new Date().toISOString(), svc, ev.pass ? "ПРОХОДИТ" : "не проходит", ev.text);
@@ -118,14 +102,15 @@ const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")
   if (!DRY) {
     const sw = decided.filter((d) => d.switched);
     if (sw.length) {
-      fs.copyFileSync(ENV, ENV + ".bak-modelswitch-" + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, ""));
-      setEnv("ENGINE_MODEL_UPGRADE", (v) => [v].concat(sw.map((d) => d.rule.upgrade)).filter(Boolean).join(","));
-      setEnv("ENGINE_SHADOW", (v) => v.split(";").filter((p) => !sw.some((d) => p.startsWith(d.svc + ":"))).join(";"));
-      restartVoyo();
+      // Пишем .engineModels.json — шлюз перечитывает его на лету, voyo НЕ перезапускаем (не оборвать идущий перевод).
+      // Сравнение по переведённому сервису шлюз прекращает сам.
+      const MF = path.join(__dirname, "..", ".engineModels.json");
+      let cur = ""; try { cur = String(JSON.parse(fs.readFileSync(MF, "utf8")).upgrade || ""); } catch (_) {}
+      fs.writeFileSync(MF, JSON.stringify({ upgrade: [cur].concat(sw.map((d) => d.rule.upgrade)).filter(Boolean).join(","), at: new Date().toISOString() }));
     }
     const li = decided.map((d) => `<li><b>${d.rule.title}</b>: ${d.switched ? `переведено на ${d.rule.to.replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2")}` : "оставлена прежняя модель — новая расходится со старой, разберу"}. ${d.ev.text}.</li>`).join("");
     await require(path.join(__dirname, "..", "mail.js")).sendMail({ to: "director@visa-sc.ru", subject: "Модели Claude: итог сравнения на живых запросах",
-      html: `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222"><p><b>Сравнение старой и новой модели на живых запросах:</b></p><ul>${li}</ul><p>Сотрудники ничего не заметят: окна и порядок работы прежние. Откат — одна строка в .env, копия рядом.</p></div>` }).catch((e) => console.log("письмо:", e.message));
+      html: `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222"><p><b>Сравнение старой и новой модели на живых запросах:</b></p><ul>${li}</ul><p>Сотрудники ничего не заметят: окна и порядок работы прежние. Откат — одна строка в файле .engineModels.json.</p></div>` }).catch((e) => console.log("письмо:", e.message));
   }
   finish();
 })().catch((e) => { console.error("modelSwitch:", e.message); process.exit(1); });
