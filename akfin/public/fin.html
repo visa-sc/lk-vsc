@@ -124,6 +124,12 @@ input.pill::placeholder{color:var(--faint)}
 #daysBtn{background:none;border:0;color:var(--acc);font-size:14px;padding:8px 4px}
 #toast{position:fixed;left:50%;bottom:34px;transform:translateX(-50%) translateY(90px);background:rgba(23,28,41,.92);color:#fff;padding:11px 22px;border-radius:22px;font-size:14px;transition:transform .25s;z-index:9;box-shadow:var(--shadow-hi)}
 #toast.show{transform:translateX(-50%) translateY(0)}
+/* «Отменить» после удаления: висит минуту внизу экрана (Андрей, 21.11) */
+#undoBar{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 22px);transform:translateX(-50%) translateY(140px);display:flex;align-items:center;gap:14px;max-width:calc(100% - 32px);background:rgba(23,28,41,.94);color:#fff;padding:8px 8px 8px 18px;border-radius:24px;font-size:14px;box-shadow:var(--shadow-hi);z-index:10;transition:transform .25s}
+#undoBar.show{transform:translateX(-50%) translateY(0)}
+#undoBar .ut{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+#undoBar button{flex:0 0 auto;background:#fff;color:var(--acc);border:0;border-radius:18px;padding:9px 16px;font-size:14px;font-weight:600;white-space:nowrap}
+#undoBar button:disabled{opacity:.6}
 </style>
 </head>
 <body>
@@ -202,6 +208,7 @@ input.pill::placeholder{color:var(--faint)}
   </div>
 </div>
 <div id="toast"></div>
+<div id="undoBar"><span class="ut" id="undoText">Удалено</span><button id="undoBtn" onclick="undoDelete()">Отменить</button></div>
 
 <script>
 const LS_TOKEN = "finToken";
@@ -621,15 +628,18 @@ document.addEventListener("click", async (ev) => {
   if (!del) { if (!ev.target.closest(".swipe")) closeSwipes(); return; }
   const s = del.closest(".swipe");
   // запись из офлайн-очереди — удаляем локально, на сервере её ещё нет
+  const label = (s.querySelector(".nm b") || {}).textContent || "запись";
   if (s.dataset.id.indexOf("local-") === 0) {
+    const item = getQueue().find((x) => "local-" + x.cid === s.dataset.id);
     setQueue(getQueue().filter((x) => "local-" + x.cid !== s.dataset.id));
-    toast("Удалено"); renderToday(lastState);
+    renderToday(lastState);
+    if (item) showUndo({ local: item, label });
     return;
   }
   del.disabled = true;
   try {
     const r = await api("/fin/api/delete/" + s.dataset.id, { method: "POST" });
-    if (r.success) { toast("Удалено"); await refresh(); if (daysOpen) await loadDays(); }
+    if (r.success) { showUndo({ id: s.dataset.id, label }); await refresh(); if (daysOpen) await loadDays(); }
     else { del.disabled = false; toast(r.message || "Ошибка"); }
   } catch (e) { del.disabled = false; if (String(e.message) !== "auth") toast("Нет связи — удалить можно онлайн"); }
 });
@@ -710,6 +720,36 @@ async function toggleDays() {
   if (daysOpen) await loadDays();
 }
 
+// ── «Отменить» после удаления: минута, обратный отсчёт на кнопке ──
+// Держим только последнее удаление; запись на сервере удаляется «мягко»,
+// поэтому отмена — это снятие пометки (/fin/api/restore/:id).
+const UNDO_SECONDS = 60;
+let undoItem = null, undoTimer = null, undoLeft = 0;
+function showUndo(item) {
+  undoItem = item; undoLeft = UNDO_SECONDS;
+  $("undoText").textContent = "Удалено: " + item.label;
+  $("undoBtn").disabled = false;
+  paintUndo();
+  $("undoBar").classList.add("show");
+  clearInterval(undoTimer);
+  undoTimer = setInterval(() => { undoLeft--; if (undoLeft <= 0) hideUndo(); else paintUndo(); }, 1000);
+}
+function paintUndo() { $("undoBtn").textContent = "Отменить · " + undoLeft; }
+function hideUndo() { clearInterval(undoTimer); undoTimer = null; undoItem = null; $("undoBar").classList.remove("show"); }
+async function undoDelete() {
+  const it = undoItem; if (!it) return;
+  $("undoBtn").disabled = true;
+  if (it.local) { // запись из офлайн-очереди — просто возвращаем её в очередь
+    const q = getQueue(); q.push(it.local); setQueue(q);
+    hideUndo(); renderToday(lastState); toast("Расход восстановлен"); flushQueue().catch(() => {});
+    return;
+  }
+  try {
+    const r = await api("/fin/api/restore/" + it.id, { method: "POST" });
+    if (r.success) { hideUndo(); toast("Расход восстановлен"); await refresh(); if (daysOpen) await loadDays(); }
+    else { $("undoBtn").disabled = false; toast(r.message || "Не получилось вернуть"); }
+  } catch (e) { $("undoBtn").disabled = false; if (String(e.message) !== "auth") toast("Нет связи — попробуй ещё раз"); }
+}
 function toast(t) {
   const el = $("toast"); el.textContent = t; el.classList.add("show");
   setTimeout(() => el.classList.remove("show"), 1800);

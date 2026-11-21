@@ -478,6 +478,18 @@ function mount(app, deps) {
     const e = st.entries.find((x) => x.id === req.params.id);
     if (!e) return res.status(404).json({ success: false, message: "Не найдено" });
     e.deleted = true;
+    e.deletedAt = Date.now();
+    save();
+    res.json({ success: true });
+  });
+
+  // Отмена удаления (кнопка «Отменить» висит на странице минуту после удаления, 21.11).
+  // Удаление и так «мягкое» — здесь просто снимаем пометку.
+  app.post("/fin/api/restore/:id", requireFin, (req, res) => {
+    const st = store();
+    const e = st.entries.find((x) => x.id === req.params.id);
+    if (!e) return res.status(404).json({ success: false, message: "Не найдено" });
+    delete e.deleted; delete e.deletedAt;
     save();
     res.json({ success: true });
   });
