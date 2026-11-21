@@ -17,12 +17,18 @@ const https = require("https");
 const { execSync } = require("child_process");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 
-const TO = process.env.REBOOT_CHECK_TO || "director@visa-sc.ru";
+// Кому (решение Андрея 21.11.2026): до 30.11.2026 — директору; с 30.11 обычный отчёт «всё работает» —
+// только Петрову, а при проблемах — и директору, и Петрову.
+const DIRECTOR = process.env.REBOOT_CHECK_TO || "director@visa-sc.ru";
+const PETROV = process.env.REBOOT_CHECK_PETROV || "ap@spt1.ru";
+const PETROV_FROM = Date.parse("2026-11-30T00:00:00+03:00");
+const recipients = (bad) => (Date.now() < PETROV_FROM ? DIRECTOR : bad ? `${DIRECTOR}, ${PETROV}` : PETROV);
 const DIR = "/var/lib/reboot-check";
 const SNAP = path.join(DIR, "before.json");
 const USERS = ["root", "spbadmin", "mskadmin", "ekbadmin", "kateadmin", "olyabi"];
 const SITES = ["voyotravel.ru", "voyovoyo.ru", "spb.visa-sc.ru", "msk.voyotravel.ru", "ekb.voyotravel.ru", "work.voyotravel.ru", "crm.voyotravel.ru", "esim.voyotravel.ru",
-  "voyomobile.ru", "dev.voyomobile.ru", "ak-co.ru", "visa-sc.com", "vsc.voyotravel.ru", "admin.voyotravel.ru", "vo-yo.ru"];
+  "voyomobile.ru", "dev.voyomobile.ru", "ak-co.ru", "visa-sc.com", "vsc.voyotravel.ru", "admin.voyotravel.ru", "vo-yo.ru",
+  "visa-sc.ru", "ekb.visa-sc.ru", "visa-gum.ru"];
 const sh = (c) => { try { return execSync(c, { encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"] }).trim(); } catch (e) { return String(e.stdout || "").trim(); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -93,6 +99,6 @@ function problems(before, now) {
   ].filter(Boolean);
   console.log(lines.join("\n").replace(/<[^>]+>/g, ""));
   const { sendMail } = require("../mail.js");
-  const r = await sendMail({ to: TO, subject: p.length ? "Сервер после перезагрузки: есть проблемы" : `Сервер после перезагрузки: всё работает, ядер ${now.cpus}`, html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${lines.map((l) => `<p>${l}</p>`).join("")}</div>` });
+  const r = await sendMail({ to: recipients(p.length > 0), subject: p.length ? "Сервер после перезагрузки: есть проблемы" : `Сервер после перезагрузки: всё работает, ядер ${now.cpus}`, html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${lines.map((l) => `<p>${l}</p>`).join("")}</div>` });
   console.log("письмо:", JSON.stringify(r));
 })();
