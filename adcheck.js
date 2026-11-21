@@ -35,6 +35,16 @@ const YD_API = "https://api.direct.yandex.com/json/v5/";
 // свободными оставалось меньше 250 МБ. Двух хватает, ночью спешить некуда.
 const CONCURRENCY = Number(process.env.ADCHECK_CONCURRENCY || 2);
 const PAGE_TIMEOUT = 45000;
+// Доп. проверки из чек-листа аудита v4 (21.11.2026). Считаются на уже открытой странице — без лишних
+// загрузок, нагрузка та же. Ложные тревоги — выключить здесь (false), остальное работает как раньше.
+const EXTRA = {
+  plainPhone: true,   // номер телефона текстом, не ссылкой tel: — с телефона не позвонить в одно касание
+  telegram: true,     // Telegram на странице рекламы ведёт не в vsc_operator
+  metrika: true,      // на странице нет счётчика Яндекс Метрики — реклама без статистики
+  contact: true,      // нет ни формы, ни кликабельного номера — человеку некуда обратиться
+  jsErrors: true,     // новые ошибки JavaScript (давняя ошибка движка Flexbe «Unexpected token ')'» не в счёт)
+};
+const KNOWN_JS = /Unexpected token '\)'|VK is not defined|ResizeObserver loop/;
 
 function ydHeaders() {
   const h = {
@@ -197,7 +207,23 @@ const MEASURE = `(() => {
   window.scrollTo(99999, window.scrollY);
   const moved = Math.round(window.scrollX - sx);
   window.scrollTo(sx, window.scrollY);
+  // Доп. проверки (EXTRA): номер текстом, Telegram, Метрика, есть ли куда обратиться.
+  const PH = /(?:\\+7|8)[\\s\\u00a0]*\\(?\\d{3}\\)?[\\s\\u00a0-]*\\d{3}[\\s\\u00a0-]*\\d{2}[\\s\\u00a0-]*\\d{2}/;
+  const plain = [];
+  const tw = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+  for (let n; (n = tw.nextNode()) && plain.length < 3; ) {
+    if (!PH.test(n.nodeValue)) continue;
+    const el = n.parentElement;
+    if (!el || el.closest("a[href], script, style, noscript, [data-action], button, input, textarea") || !vis(el)) continue;
+    plain.push(n.nodeValue.match(PH)[0].replace(/\\s+/g, " "));
+  }
+  const tgBad = [...document.querySelectorAll('a[href*="t.me/"], a[href*="telegram.me/"]')].map((a) => (a.getAttribute("href").split(/t(?:elegram)?\\.me\\//)[1] || "").split(/[/?#]/)[0].toLowerCase())
+    .filter((x) => x && x !== "vsc_operator" && !/^visa_sc/.test(x));
+  const metrika = [...document.scripts].some((sc) => /mc\\.yandex\\.ru\\/metrika|mc\\.yandex\\.ru\\/watch/.test(sc.src || "") || /\\bym\\(\\s*\\d{6,}/.test(sc.textContent || ""));
+  const telLinks = [...document.querySelectorAll('a[href^="tel:"]')].filter(vis).length;
+  const forms = [...document.querySelectorAll("form, [data-action=modal], .component-form")].length;
   return {
+    plainPhones: [...new Set(plain)], tgBad: [...new Set(tgBad)].slice(0, 3), metrika, telLinks, forms,
     header, footer, broken, imgs: imgs.length, fields: fields.length, widest,
     overflow: moved > 4 ? moved : 0,
     title: (document.title || "").slice(0, 120),
@@ -209,6 +235,8 @@ const MEASURE = `(() => {
 async function inspect(browser, url, deep) {
   const page = await browser.newPage();
   const out = { url };
+  const jsErr = [];
+  page.on("pageerror", (e) => { const m = String((e && e.message) || e).slice(0, 120); if (!KNOWN_JS.test(m) && jsErr.length < 3) jsErr.push(m); });
   try {
     await page.setViewport({ width: 1280, height: 900 });
     await page.setDefaultNavigationTimeout(PAGE_TIMEOUT);
@@ -240,6 +268,7 @@ async function inspect(browser, url, deep) {
       m = await page.evaluate(MEASURE);
     }
     Object.assign(out, m);
+    out.jsErrors = jsErr.slice();
   } catch (e) {
     out.error = String((e && e.message) || e).slice(0, 160);
   } finally {
@@ -264,6 +293,13 @@ function faults(r) {
     if ((r.broken || []).length) f.push("не грузятся картинки: " + r.broken.length);
     if (r.overflow > 8) f.push("страница прокручивается вбок на " + r.overflow + " px");
     if (r.widest > 600) f.push("поля формы растянуты до " + r.widest + " px");
+    if (wantsChrome(r.url)) {   // доп. проверки — только наши визовые сайты
+      if (EXTRA.plainPhone && (r.plainPhones || []).length) f.push("номер текстом, не ссылкой: " + r.plainPhones.join(", "));
+      if (EXTRA.telegram && (r.tgBad || []).length) f.push("Telegram ведёт не в vsc_operator: " + r.tgBad.join(", "));
+      if (EXTRA.metrika && r.metrika === false) f.push("нет счётчика Яндекс Метрики");
+      if (EXTRA.contact && r.telLinks === 0 && r.forms === 0) f.push("нет ни формы, ни кликабельного номера");
+      if (EXTRA.jsErrors && (r.jsErrors || []).length) f.push("ошибка на странице: " + r.jsErrors[0]);
+    }
   }
   return f;
 }
