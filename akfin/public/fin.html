@@ -229,9 +229,14 @@ let daysOpen = false, recordsOpen = false;
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(n);
 
+// Каждый запрос — не дольше 8 секунд: при «сеть есть, но не ловит» fetch иначе висит
+// минуту, и экран пустой. Отвалился — работаем из кэша и офлайн-очереди (21.11).
 async function api(path, opts = {}) {
   opts.headers = Object.assign({ "Content-Type": "application/json", Authorization: "Bearer " + token }, opts.headers || {});
-  const r = await fetch(path, opts);
+  let timer = null;
+  if (!opts.signal) { const ctrl = new AbortController(); timer = setTimeout(() => ctrl.abort(), 8000); opts.signal = ctrl.signal; }
+  let r;
+  try { r = await fetch(path, opts); } finally { if (timer) clearTimeout(timer); }
   if (r.status === 401 && !path.endsWith("/login")) { showLogin(); throw new Error("auth"); }
   return r.json();
 }
@@ -481,6 +486,8 @@ async function saveEntry() {
       if (daysOpen) await loadDays();
       return;
     }
+    // явно офлайн (авиарежим, нет сети) — сразу в очередь, без ожидания
+    if (navigator.onLine === false) throw new Error("offline");
     // не даём интерфейсу «тупить»: 6 секунд на попытку, дальше — офлайн-очередь
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 6000);
@@ -646,7 +653,8 @@ document.addEventListener("click", async (ev) => {
 
 let lastState = null;
 function renderToday(r) {
-  const es = (r && r.entries || []).slice();
+  // из кэша могли прийти записи «вчерашнего сегодня» — показываем только текущий день
+  const es = (r && r.entries || []).filter((e) => !e.date || e.date === TODAY);
   // офлайн-очередь показываем сразу, пунктиром (ещё не на сервере)
   const q = getQueue().map((i) => ({ ...i, id: "local-" + i.cid, pending: true }));
   const all = es.concat(q);
@@ -658,6 +666,8 @@ function renderToday(r) {
 }
 async function refresh() {
   let r;
+  // сразу рисуем последнее сохранённое состояние — экран не пустой, пока идёт сеть
+  if (!lastState) { try { const c = JSON.parse(localStorage.getItem("finCache") || "null"); if (c) applyState(c); } catch (_) {} }
   try {
     r = await api("/fin/api/state?today=" + localToday());
     if (!r.success) return;
@@ -668,6 +678,9 @@ async function refresh() {
     try { r = JSON.parse(localStorage.getItem("finCache") || "null"); } catch (_) { r = null; }
     if (!r) { renderToday(null); return; }
   }
+  applyState(r);
+}
+function applyState(r) {
   lastState = r;
   FREQ = r.frequent || []; TODAY = localToday();
   if (!$("date").value || $("date").value === $("date").dataset.auto) {
