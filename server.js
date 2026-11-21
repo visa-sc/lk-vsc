@@ -3719,7 +3719,7 @@ function ydStopsPayload() {
   const events = (log.events || []).filter((e) => e.ts >= cutoff);
   return { running: _ydRunning, events: events, count: events.length, lastRun: log.runs[0] || null, configured: !!YD_TOKEN, units: _ydUnits };
 }
-// Опрос: Пн-Пт 10:00–19:00 и Сб-Вс 12:00–18:00 МСК — каждые 10 мин; иначе — каждые 30 мин.
+// Опрос кампаний — каждые 3 минуты круглосуточно (с 21.11.2026; до этого 10/30 мин). ydActiveNow оставлен для справки.
 function ydActiveNow() {
   const msk = new Date(Date.now() + 3 * 3600 * 1000);
   const day = msk.getUTCDay(), h = msk.getUTCHours();
@@ -3729,7 +3729,10 @@ function ydActiveNow() {
 (function scheduleYdStops() {
   const tick = () => {
     Promise.resolve(ydRunCheck("cron")).catch(() => {});
-    setTimeout(tick, (ydActiveNow() ? 10 : 30) * 60 * 1000);
+    // 21.11.2026, Андрей: любые остановки кампаний — даже выключили и включили в тот же день — должны попасть
+    // в список. Между проверками остановка не видна, поэтому кампании — каждые 3 минуты круглосуточно
+    // (~270 баллов API за проверку, ~130 тыс. в сутки при остатке ~3 млн). Группы — по-прежнему раз в час.
+    setTimeout(tick, 3 * 60 * 1000);
   };
   setTimeout(tick, 60 * 1000); // первый запуск через минуту после старта
 })();
