@@ -2051,9 +2051,9 @@ function mount(app, opts) {
     const many = items.length > 1;
     const tipsCN = isChinaLabel(order.label);
     // 22.10.2026: кнопку в письме клиентка не заметила — теперь крупная, во всю ширину, со стрелкой
-    const btn = (href, text) => '<a href="' + href + '" style="display:block;text-align:center;background:#2c7fb0;color:#ffffff;' +
+    const btn = (href, text) => '<a href="' + href + '" style="display:block;text-align:center;background:#17628c;background-image:linear-gradient(135deg,#134d75 0%,#1d7aa0 60%,#38a9c4 125%);color:#ffffff;' +
       'text-decoration:none;font-weight:800;font-size:18px;line-height:1.3;padding:18px 22px;border-radius:14px;' +
-      'box-shadow:0 8px 20px -10px rgba(44,127,176,.8)">' + text + ' &rarr;</a>';
+      'box-shadow:0 10px 24px -12px rgba(19,77,117,.75)">' + text + ' &rarr;</a>';
     // несколько eSIM: сразу видно, какую ставить себе, а какие переслать спутникам
     const seatName = (i) => (i ? "для спутника" : "для вас");
     const list = many
@@ -2066,34 +2066,35 @@ function mount(app, opts) {
     // 22.11.2026 (Андрей): меньше текста, главное одной плашкой, «на экран телефона» — заметным блоком
     // пункты плашки — с точками, чтобы не сливались (22.11.2026, Андрей)
     const P = (s, css) => '<table role="presentation" style="border-collapse:collapse;' + (css || "") + '"><tr>' +
-      '<td style="vertical-align:top;padding:0 8px 0 0;font-size:13.5px;line-height:1.55;color:#c08a1e">•</td>' +
-      '<td style="font-size:13.5px;line-height:1.55;padding:0;color:#5e4512">' + s + "</td></tr></table>";
-    const noteHtml = '<div style="margin:0 0 14px;padding:12px 16px;background:#fff6e5;border:1px solid #f3dcae;border-radius:14px;color:#5e4512">' +
-      (many ? P("<b style=\"color:#3f2e08\">Каждая eSIM ставится на свой телефон:</b> eSIM 1 себе, остальные ссылки перешлите спутникам.", "margin:0 0 6px") : "") +
-      P("<b style=\"color:#3f2e08\">QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, лучше дома по Wi-Fi.", "margin:0 0 6px") +
+      '<td style="vertical-align:top;padding:0 8px 0 0;font-size:13.5px;line-height:1.55;color:#b98a2c">•</td>' +
+      '<td style="font-size:13.5px;line-height:1.55;padding:0;color:#644d1d">' + s + "</td></tr></table>";
+    const noteHtml = '<div style="margin:0 0 14px;padding:12px 16px;background:#fbf6ec;border:1px solid #ecdfc3;border-radius:16px;color:#644d1d">' +
+      (many ? P("<b style=\"color:#3d2e0c\">Каждая eSIM ставится на свой телефон:</b> eSIM 1 себе, остальные ссылки перешлите спутникам.", "margin:0 0 6px") : "") +
+      P("<b style=\"color:#3d2e0c\">QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, лучше дома по Wi-Fi.", "margin:0 0 6px") +
       P("В поездке включите «Роуминг данных» для линии eSIM.") + "</div>";
     // VOYO mobile на экране телефона: одна строка под устройство, с которого купили (обе, если не знаем)
     const homeIos = "iPhone, Safari: ≡ слева от адреса внизу → «Поделиться» → «На экран „Домой“» → «Добавить»";
     const homeAnd = "Android, Chrome: ⋮ справа вверху → «Добавить на главный экран» → «Установить»";
     const homeLines = order.os === "ios" ? [homeIos] : order.os === "android" ? [homeAnd] : [homeIos, homeAnd];
-    const homeHtml = '<div style="margin:0 0 14px;padding:14px 16px;background:#eaf6ef;border:1px solid #c9e8d5;border-radius:14px">' +
+    const homeHtml = '<div style="margin:0 0 14px;padding:14px 16px;background:#eef7f2;border:1px solid #cfe6d8;border-radius:16px">' +
       '<p style="font-size:15px;font-weight:800;margin:0 0 4px;color:#14532d">Добавьте VOYO mobile на экран телефона</p>' +
       '<p style="font-size:13.5px;line-height:1.55;color:#24412f;margin:0 0 10px">Все eSIM, остаток трафика и продление в одно касание, как приложение.</p>' +
-      '<p style="margin:0 0 10px"><a href="' + acc + '" style="display:inline-block;background:#1f9d55;color:#ffffff;text-decoration:none;' +
+      '<p style="margin:0 0 10px"><a href="' + acc + '" style="display:inline-block;background:#1e8a57;color:#ffffff;text-decoration:none;' +
       'font-weight:700;font-size:14.5px;padding:11px 18px;border-radius:12px">Открыть кабинет на телефоне &rarr;</a></p>' +
       homeLines.map((l) => '<p style="font-size:12.5px;line-height:1.5;color:#3d6b4f;margin:0 0 3px">' + esc(l) + "</p>").join("") + "</div>";
     const refLink = refCode ? REF_SITE + "/?ref=" + refCode : "";
     const refHtml = refCode
-      ? '<div style="margin:0 0 18px;padding:14px 16px;background:#f2f7fb;border:1px solid #e0e9f2;border-radius:14px">' +
+      ? '<div style="margin:0 0 18px;padding:14px 16px;background:#f3f8fb;border:1px solid #dfeaf2;border-radius:16px">' +
         '<p style="font-size:15px;font-weight:700;margin:0 0 4px">Путешествуете не один?</p>' +
         '<p style="font-size:13.5px;line-height:1.55;color:#3a4356;margin:0 0 10px">Другу −' + REF_BONUS_RUB + ' ₽ на первую eSIM, вам +' + REF_BONUS_RUB + ' ₽ на баланс после его оплаты.</p>' +
         '<p style="margin:0 0 6px"><span style="display:inline-block;font-family:SFMono-Regular,Consolas,monospace;font-size:18px;' +
         'font-weight:700;letter-spacing:.12em;background:#fff;border:1px solid #e0e9f2;border-radius:10px;padding:7px 14px">' + refCode + '</span></p>' +
-        '<p style="font-size:12.5px;margin:0;color:#6b7385;word-break:break-all">или ссылка: <a href="' + refLink + '" style="color:#3589bd">' + refLink.replace(/^https?:\/\//, "") + '</a></p></div>'
+        '<p style="font-size:12.5px;margin:0;color:#6b7385;word-break:break-all">или ссылка: <a href="' + refLink + '" style="color:#1a7398">' + refLink + '</a></p></div>'
       : "";
     return {
       subject: many ? "VOYO mobile: ваши eSIM готовы (" + items.length + " шт.)" : "VOYO mobile: ваша eSIM готова",
-      html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
+      html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0f1b2c">' +
+        '<p style="font-size:13px;font-weight:700;letter-spacing:.02em;color:#1a7398;margin:0 0 14px">VOYO mobile</p>' +
         '<p style="font-size:20px;font-weight:800;letter-spacing:-.02em;margin:0 0 4px">' + (many ? "Ваши eSIM готовы" : "Ваша eSIM готова") + '</p>' +
         '<p style="color:#8b93a5;font-size:14px;line-height:1.5;margin:0 0 16px">' + esc(order.label || "") + (many ? " · " + items.length + " шт." : "") + '</p>' +
         list +
@@ -2101,7 +2102,7 @@ function mount(app, opts) {
         (tipsCN ? chinaTipsHtml() : "") +
         homeHtml +
         refHtml +
-        '<p style="font-size:12.5px;line-height:1.6;color:#8b93a5;margin:0">Все ваши eSIM: <a href="' + acc + '" style="color:#3589bd">личный кабинет</a>. Ссылка постоянная, сохраните письмо.</p>' +
+        '<p style="font-size:12.5px;line-height:1.6;color:#8b93a5;margin:0">Все ваши eSIM: <a href="' + acc + '" style="color:#1a7398">личный кабинет</a>. Ссылка постоянная, сохраните письмо.</p>' +
         '<p style="font-size:12px;color:#a6adbd;margin:14px 0 0">VOYO mobile · выгодный интернет в 209 странах мира</p></div>',
       text: (many ? "Ваши eSIM готовы (" + items.length + " шт.): " : "Ваша eSIM готова: ") + (order.label || "") + "\n\n" +
         items.map((it, i) => (many ? "eSIM " + (i + 1) + " (" + (i ? "для спутника, перешлите ему" : "для вас") + "): " : "Установить eSIM: ") + it.myUrl).join("\n") +

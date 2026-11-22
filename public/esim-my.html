@@ -322,6 +322,56 @@
   .nav a.tgl{margin-right:-6px;}
   @media(max-width:430px){ .nav{gap:12px;} .nav a.tgl{margin-right:-6px;} .brand .lg{height:16px;} .brand .wm{font-size:17px;} .brandrow{gap:7px;} }
   @media(max-width:360px){ .hdr{gap:12px;} .nav{gap:9px;} .nav a.tgl{margin-right:-4px;} .brand .lg{height:14px;} .brand .wm{font-size:15px;} .brandrow{gap:6px;} }
+
+  /* ═══ Дизайн 22.11.2026: «глубокая лагуна» ═══ */
+  :root{
+    --bg:#f6f7fa; --card:#ffffff; --line:#e7ebf1; --ink:#0f1b2c; --mut:#7c8699;
+    --accent:#1a7398; --accent-d:#135a7a;
+    --grad:linear-gradient(135deg,#134d75 0%,#1d7aa0 58%,#38a9c4 125%);
+    --sh:0 1px 1px rgba(15,27,44,.03),0 20px 44px -26px rgba(18,52,86,.26);
+  }
+  body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;background:
+    radial-gradient(820px 520px at 8% -6%, #dcecf6 0%, rgba(220,236,246,0) 60%),
+    radial-gradient(700px 480px at 108% 6%, #e9e7fb 0%, rgba(233,231,251,0) 58%),
+    radial-gradient(760px 560px at 50% 112%, #e3f3ef 0%, rgba(227,243,239,0) 62%),
+    var(--bg);}
+  .blob{display:none;}
+  /* главная карта (eSIM / бонусы): глубокая лагуна — полночный синий в бирюзу, мягкое сияние */
+  .sim,.bonus{background:
+      radial-gradient(70% 80% at 92% -6%, rgba(120,226,236,.42) 0%, rgba(120,226,236,0) 60%),
+      radial-gradient(60% 70% at -6% 112%, rgba(150,138,255,.22) 0%, rgba(150,138,255,0) 60%),
+      linear-gradient(152deg,#0c2944 0%,#134d75 44%,#1a7898 78%,#2a9db4 100%) !important;
+    box-shadow:0 2px 4px rgba(12,41,68,.08),0 30px 60px -26px rgba(12,52,84,.6) !important;}
+  .sim::after,.bonus::after{background:radial-gradient(circle,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 68%) !important;}
+  .st{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);}
+  .st.warn{background:rgba(255,214,120,.22);border-color:rgba(255,214,120,.38);}
+  .st.ok{background:rgba(110,224,170,.24);border-color:rgba(110,224,170,.4);}
+  .st.bad{background:rgba(255,120,120,.26);border-color:rgba(255,120,120,.4);}
+  /* карточки и панели: белые, воздушные, тонкая линия */
+  .panel,.card{border-color:rgba(15,27,44,.06);border-radius:24px;box-shadow:var(--sh);}
+  .panel{padding:20px 20px;}
+  .panel h2{letter-spacing:-.02em;}
+  .card:hover{border-color:#d6e5f1;}
+  /* важное — шампань */
+  .qrnote{background:#fbf6ec;border-color:#ecdfc3;color:#644d1d;}
+  .qrnote b{color:#3d2e0c;}
+  .qrnote li::marker{color:#b98a2c;}
+  /* шаги вручную — туманно-голубой */
+  .steps{background:#f3f7fb;border-color:#e1eaf3;}
+  .steps .sth{color:var(--accent-d);}
+  /* «на экран» — шалфей */
+  .va-btn{background:linear-gradient(135deg,#eef7f2,#e5f2ea) !important;border-color:#cfe6d8 !important;color:#164f31 !important;}
+  /* кнопка установки — светлая лагуна с бликом, отличается от тёмной карты */
+  .instbtn{background:linear-gradient(135deg,#1c84ae 0%,#36acd0 55%,#7fd8ea 125%)!important;}
+  /* промокод */
+  .refcode{background:#f7fafd;border-color:#c9dcea;}
+  .refcode b{color:#0f2a44;}
+  #refLink.reflink{background:#eef4fa;color:var(--accent-d);}
+  .lparow button{background:#eef4fa;color:var(--accent-d);}
+  .lparow input{background:#f8fafc;border-color:var(--line);}
+  /* статус «Ждёт установки» и т.п. — читаемее на тёмной карте */
+  .st.warn{background:rgba(255,214,120,.28);}
+  .st.ok{background:rgba(110,214,150,.32);}
 </style>
 <script src="/esim_meta.js"></script>
 </head>
