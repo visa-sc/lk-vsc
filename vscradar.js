@@ -174,6 +174,8 @@ function mount(deps) {
     }
   };
 
+  // Ответ потоком (22.11.2026): Opus 5.5 с размышлениями думает минутами, и ретранслятор до Anthropic рвал молчащее
+  // соединение (HTTP 503 через ~10 мин). Поток держит канал живым. Любой сбой новой модели — пробуем запасную.
   async function callClaude(system, user) {
     const base = (process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");
     let lastErr = null;
@@ -181,22 +183,34 @@ function mount(deps) {
       try {
         const r = await fetch(base + "/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          headers: { "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01", "content-type": "application/json", accept: "text/event-stream" },
           // Opus 5.5 не принимает принудительный выбор инструмента (400) — до 21.11.2026 радар из-за этого
           // молча уходил на Opus 5. Для 5.5: выбор «auto» + прямое указание в system, размышления всегда включены,
           // поэтому запас max_tokens больше. Opus 5 (запасная) — как раньше.
-          body: JSON.stringify(/-5-5$/.test(model)
+          body: JSON.stringify(Object.assign(/-5-5$/.test(model)
             ? { model, max_tokens: 20000, output_config: { effort: "high" }, system: system + "\n\nОтвет дай только вызовом инструмента submit_ideas, без текста вне него.", tools: [TOOL], tool_choice: { type: "auto" }, messages: [{ role: "user", content: user }] }
-            : { model, max_tokens: 8000, system, tools: [TOOL], tool_choice: { type: "tool", name: "submit_ideas" }, messages: [{ role: "user", content: user }] }),
-          signal: AbortSignal.timeout(10 * 60 * 1000)
+            : { model, max_tokens: 8000, system, tools: [TOOL], tool_choice: { type: "tool", name: "submit_ideas" }, messages: [{ role: "user", content: user }] }, { stream: true })),
+          signal: AbortSignal.timeout(20 * 60 * 1000)
         });
-        const j = await r.json().catch(() => null);
-        if (!r.ok) { lastErr = new Error("HTTP " + r.status + " " + JSON.stringify(j && j.error || j).slice(0, 200)); if (r.status === 404 || r.status === 400) continue; throw lastErr; }
-        if (j && j.usage) aiUsage.record("vsc_radar", j.model || model, j.usage);
-        const tu = (j.content || []).find((b) => b.type === "tool_use");
-        if (!tu || !tu.input || !Array.isArray(tu.input.ideas)) throw new Error("модель не вернула список идей");
-        return { model: j.model || model, ideas: tu.input.ideas, usage: j.usage };
-      } catch (e) { lastErr = e; if (!/HTTP 40[04]/.test(e.message)) break; }
+        if (!r.ok) { const j = await r.json().catch(() => null); throw new Error("HTTP " + r.status + " " + JSON.stringify(j && j.error || j).slice(0, 200)); }
+        const txt = await r.text();
+        let usage = null, mdl = model, err = null; const parts = {}, kinds = {};
+        for (const line of txt.split("\n")) {
+          if (line.indexOf("data:") !== 0) continue;
+          let ev; try { ev = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+          if (ev.type === "message_start" && ev.message) { usage = Object.assign({}, ev.message.usage); mdl = ev.message.model || mdl; }
+          else if (ev.type === "content_block_start" && ev.content_block) { kinds[ev.index] = ev.content_block.type; parts[ev.index] = ""; }
+          else if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "input_json_delta") parts[ev.index] = (parts[ev.index] || "") + (ev.delta.partial_json || "");
+          else if (ev.type === "message_delta" && ev.usage && usage) Object.assign(usage, ev.usage);
+          else if (ev.type === "error") err = ev.error;
+        }
+        if (usage) aiUsage.record("vsc_radar", mdl, usage);
+        if (err) throw new Error("поток: " + JSON.stringify(err).slice(0, 200));
+        const idx = Object.keys(kinds).find((k) => kinds[k] === "tool_use");
+        let input = null; try { input = idx != null ? JSON.parse(parts[idx] || "{}") : null; } catch (_) {}
+        if (!input || !Array.isArray(input.ideas)) throw new Error("модель не вернула список идей");
+        return { model: mdl, ideas: input.ideas, usage };
+      } catch (e) { lastErr = e; console.warn("VSC RADAR: " + model + " — " + e.message + (model !== MODELS[MODELS.length - 1] ? ", пробую запасную" : "")); }
     }
     throw lastErr || new Error("нет ответа модели");
   }
