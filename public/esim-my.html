@@ -156,8 +156,22 @@
   .qrnote{background:#fff6e5;border:1px solid #f3dcae;border-radius:14px;padding:11px 14px;margin-top:12px;
     font-size:13px;line-height:1.5;color:#5e4512;text-align:left;}
   .qrnote b{color:#3f2e08;}
-  .qrnote .qn1{display:block;margin-bottom:7px;}
-  .qrnote .qn1[hidden]{display:none;}
+  .qrnote ul{margin:0;padding:0 0 0 18px;}
+  .qrnote li{margin:0 0 5px;}
+  .qrnote li:last-child{margin-bottom:0;}
+  .qrnote li::marker{color:#c08a1e;}
+  .qrnote li[hidden]{display:none;}
+  /* «Путешествуете не один?»: промокод копируется касанием, ссылка — отправить другу */
+  #refPanel[hidden]{display:none;}
+  .refcode{display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;margin-top:12px;font:inherit;cursor:pointer;
+    background:#f4f9fd;border:1.5px dashed #b9d7ec;border-radius:16px;padding:12px 10px;color:var(--ink);-webkit-tap-highlight-color:transparent;}
+  .refcode:active{transform:scale(.99);}
+  .refcode b{font-family:SFMono-Regular,Menlo,Consolas,monospace;font-size:24px;letter-spacing:.16em;font-weight:800;}
+  .refcode small{font-size:11.5px;color:var(--mut);}
+  .refcode.ok{border-color:#7cc59a;background:#eef9f2;}
+  .refcode.ok small{color:#1f8a4c;font-weight:600;}
+  .reflink{display:block;width:100%;margin-top:10px;font:inherit;font-size:14px;font-weight:700;border:0;cursor:pointer;
+    background:#eef4f9;color:var(--accent-d);border-radius:14px;padding:12px 14px;}
   .qrnote[hidden]{display:none;}
   #qrHint[hidden]{display:none;}
   .qrbox img{width:200px;height:200px;border:1px solid var(--line);border-radius:16px;padding:8px;background:#fff;}
@@ -313,7 +327,7 @@
           <img id="qrImg" alt="QR-код eSIM"/>
           <div class="lparow"><input id="lpaInp" readonly/><button id="lpaCopy" type="button">Скопировать</button></div>
         </div>
-        <div class="qrnote" id="qrNote"><span class="qn1" id="instNote" hidden>Для кнопки нужны iOS 17.4+ и интернет. Если пишет «Не удаётся найти сервер», откройте страницу в Safari.</span><b>QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, перенести её потом нельзя.</div>
+        <div class="qrnote" id="qrNote"><ul><li id="instNote" hidden>Для кнопки нужны iOS 17.4+ и интернет.</li><li id="instNote2" hidden>Если пишет «Не удаётся найти сервер», откройте страницу в Safari.</li><li><b>QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, перенести её потом нельзя.</li></ul></div>
         <div class="steps">
           <div class="sth" id="stH">Как установить</div>
           <div class="st2"><div class="n">1</div><div id="st1">iPhone: Настройки → Сотовая связь → Добавить eSIM. Android: Настройки → Подключения → Диспетчер SIM-карт → Добавить eSIM.</div></div>
@@ -364,6 +378,13 @@
       </div>
       <div class="ok" id="tpOk">Заявка принята! Менеджер VOYO свяжется в ближайшее время — после оплаты гигабайты добавятся на вашу eSIM автоматически.</div>
       <div class="mnote" id="tpNote">Онлайн-оплата картой подключается — пока продлеваем через менеджера за пару минут.</div>
+    </div>
+
+    <div class="panel" id="refPanel" hidden>
+      <h2>Путешествуете не один?</h2>
+      <div class="ps" id="refTx" style="margin-bottom:0"></div>
+      <button class="refcode" id="refCode" type="button"><b id="refCodeV"></b><small id="refCodeH">нажмите, чтобы скопировать</small></button>
+      <button class="reflink" id="refLink" type="button">Отправить ссылку другу</button>
     </div>
 
     <div class="panel" id="another">
@@ -492,8 +513,8 @@
       var lpaStr = o.lpa || (o.smdp && o.activationCode ? "LPA:1$" + o.smdp + "$" + o.activationCode : "");
       if (isIOS && /^LPA:1\$/.test(lpaStr) && !installed) {
         el("instIos").href = "https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=" + lpaStr;
-        el("instIos").hidden = false; el("instNote").hidden = false;
-        el("stH").textContent = "Или вручную";
+        el("instIos").hidden = false; el("instNote").hidden = false; el("instNote2").hidden = false;
+        el("stH").textContent = "Не получилось? Установите вручную";
       }
       if (isIOS || /Android/i.test(navigator.userAgent)) el("st2").textContent = "Выберите ввод вручную и вставьте скопированную строку или отсканируйте QR с другого экрана.";
       if (isIOS) el("st1").textContent = "Настройки → Сотовая связь → Добавить eSIM.";
@@ -508,6 +529,14 @@
         wrap.parentNode.insertBefore(d, wrap);
         d.appendChild(wrap);
       }
+    }
+    // «Путешествуете не один?»: свой промокод покупателя; на странице eSIM спутника (seat 2+) не показываем
+    var rf = j.ref;
+    if (rf && rf.code && !(j.seat && j.seat.n > 1)) {
+      el("refPanel").hidden = false;
+      el("refTx").textContent = "Другу −" + rf.bonus + " ₽ на первую eSIM, вам +" + rf.bonus + " ₽ на баланс после его оплаты.";
+      el("refCodeV").textContent = rf.code;
+      REFLINK = rf.link;
     }
     // топапы
     if(j.topups && j.topups.length){
@@ -554,6 +583,23 @@
     }
   }
 
+  var REFLINK = "";
+  function copyText(t){
+    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t); return true; } }catch(e){}
+    try{ var ta=document.createElement("textarea"); ta.value=t; ta.setAttribute("readonly",""); ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); return true; }catch(e){ return false; }
+  }
+  el("refCode").addEventListener("click",function(){
+    var b=this; if(!copyText(el("refCodeV").textContent)) return;
+    b.classList.add("ok"); el("refCodeH").textContent="✓ Промокод скопирован";
+    setTimeout(function(){ b.classList.remove("ok"); el("refCodeH").textContent="нажмите, чтобы скопировать"; },1800);
+  });
+  el("refLink").addEventListener("click",function(){
+    var b=this, t="eSIM для поездки со скидкой " + el("refTx").textContent.replace(/^Другу −(\d+).*/, "$1") + " ₽ по моей ссылке";
+    // на телефоне — системное «Поделиться» (мессенджеры), иначе копируем ссылку
+    if(navigator.share){ navigator.share({ text: t, url: REFLINK }).catch(function(){}); return; }
+    if(copyText(REFLINK)){ b.textContent="✓ Ссылка скопирована"; setTimeout(function(){ b.textContent="Отправить ссылку другу"; },1800); }
+  });
   el("lpaCopy") && el("lpaCopy").addEventListener("click",function(){
     var i=el("lpaInp"); i.select();
     try{ navigator.clipboard.writeText(i.value); this.textContent="✓ Скопировано"; var b=this; setTimeout(function(){ b.textContent="Скопировать"; },1600); }

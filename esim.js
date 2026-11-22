@@ -1761,6 +1761,13 @@ function mount(app, opts) {
   });
 
   // Данные eSIM клиента: заказ (QR/LPA) + живой остаток + совместимые топапы в ₽
+  // «Путешествуете не один?» на странице eSIM: свой промокод покупателя и ссылка (22.11.2026)
+  const refOf = (owner, req) => {
+    const c = owner ? getCustomer(owner, false) : null;
+    if (!c || !c.refCode) return null;
+    const link = REF_SITE + "/?ref=" + c.refCode;
+    return { code: c.refCode, bonus: REF_BONUS_RUB, link: req.query.b === "vsc" ? vscUrl(link) : link };
+  };
   app.get("/esim/api/my", async (req, res) => {
     const o = String(req.query.o || "").slice(0, 40);
     if (!o || !checkSig(o, req.query.t)) return res.status(403).json({ success: false, message: "Ссылка недействительна." });
@@ -1777,7 +1784,7 @@ function mount(app, opts) {
         if (owner) setSession(res, owner);
         return res.json({
           success: true, pay: tbank.ready(), you: owner || readSession(req),
-          conv: convPayload(orderByProviderId(o)), seat: seatOf(o), acc: owner ? { e: owner, t: signEmail(owner) } : null,
+          conv: convPayload(orderByProviderId(o)), seat: seatOf(o), acc: owner ? { e: owner, t: signEmail(owner) } : null, ref: refOf(owner, req),
           order: { id: o, state: "Completed", title: view.title, operator: publicOperator(view.operator), qrDataUrl: view.qrDataUrl,
             lpa: view.lpa, activationCode: view.activationCode, smdp: view.smdp, apn: view.apn, iccid: view.iccid },
           usage: markExpiry(usage), topups: (usage && usage.expired) ? [] : topups,
@@ -1830,7 +1837,7 @@ function mount(app, opts) {
       if (owner) setSession(res, owner);
       res.json({
         success: true, pay: tbank.ready(), you: owner || readSession(req), seat: seatOf(o),
-        acc: owner ? { e: owner, t: signEmail(owner) } : null,
+        acc: owner ? { e: owner, t: signEmail(owner) } : null, ref: refOf(owner, req),
         order: {
           id: o, state: (order && order.orderState) || null, title: li.title || "", operator: publicOperator(li.providerName),
           qrDataUrl: det.QR_CODE || null, lpa: det.LOCAL_PROFILE_ASSISTANT || null,
