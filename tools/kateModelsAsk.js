@@ -77,6 +77,12 @@ const TEXT = "Катя, от Андрея.\n\n" +
       const by = {}; for (const x of u) by[x.model] = (by[x.model] || 0) + 1;
       radar = u.length ? "прогонов " + u.length + ": " + Object.entries(by).map(([m, n]) => nice(m) + " — " + n).join(", ") + (by["claude-opus-5"] ? " (часть ушла на запасную старую модель)" : ", все на новой") : "полных прогонов не было";
     } catch (_) {}
+    // Ночные проверки modelAudit (с 22.11)
+    let aud = "нет данных"; try {
+      const L = fs.readFileSync("/var/lib/engine-shadow/audit.jsonl", "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      const bad = L.filter((x) => x.problems && x.problems.length), fx = L.filter((x) => x.fixed && x.fixed.length);
+      aud = "ночей " + L.length + ", с неполадками " + bad.length + (bad.length ? " (" + bad.map((x) => x.at.slice(5, 10) + ": " + x.problems.join("; ").slice(0, 160).replace(/</g, "&lt;")).join(" | ") + ")" : "") + (fx.length ? ", исправлено автоматически " + fx.length + " раз" : "") + (bad.length && !fx.length ? ", исправлять автоматически не потребовалось или нечем — Катя получала письма" : "");
+    } catch (_) {}
     let ans = { how: "" }; try { const C = chat(); ans = answer(history(C._int)); } catch (_) {}
     const switched = /haiku-5-5/.test(def);
     // Переводы: решение modelSwitch (switch-state.json)
@@ -88,7 +94,7 @@ const TEXT = "Катя, от Андрея.\n\n" +
         : "оставлена Sonnet 5 — до 10.12 не набралось заказов для сравнения. " + esc(t.last);
     } catch (_) {}
     const html = `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">` +
-      `<p><b>Модели на 10.12</b></p><p><b>Переводы документов:</b> ${tr}.</p><p><b>Радар /vsc (Opus 5.5):</b> ${radar}.</p><p><b>Оценки прослушки:</b> ${switched ? "Катя перевела на новую модель" : "оставлена старая модель"} (${nice(def)}).</p><ul>` +
+      `<p><b>Модели на 10.12</b></p><p><b>Переводы документов:</b> ${tr}.</p><p><b>Ночные проверки:</b> ${aud}.</p><p><b>Радар /vsc (Opus 5.5):</b> ${radar}.</p><p><b>Оценки прослушки:</b> ${switched ? "Катя перевела на новую модель" : "оставлена старая модель"} (${nice(def)}).</p><ul>` +
       `<li>Запросы прослушки за 7 дней по моделям: ${Object.entries(cnt).map(([m, n]) => nice(m) + " — " + n).join(", ") || "нет данных"}. Чистка расшифровок идёт на Haiku 5.5 с 22.11.</li>` +
       `<li>Ответ Кати на предложение 23.11: ${ans.how ? ans.how + (ans.text ? " — «" + String(ans.text).slice(0, 200).replace(/</g, "&lt;") + "»" : "") : "не ответила"}.</li></ul></div>`;
     if (dry) return console.log(html);
