@@ -189,19 +189,20 @@ const answer = (id, text) => tg("answerCallbackQuery", { callback_query_id: id, 
 // чтобы человек мог сразу навести на неё камеру со второго телефона или
 // открыть на весь экран и отсканировать.
 let _qrErr = 0;
-async function sendQr(chatId, dataUrl, caption, raw) {
+async function sendQr(chatId, dataUrl, caption, raw, kb) {
   const m = /^data:image\/(png|jpeg);base64,(.+)$/i.exec(String(dataUrl || ""));
   if (!m) return null;
   const cap = raw ? (caption || "") : btApply(caption || "");
   // правленая подпись не принята (длиннее 1024, битая разметка) — шлём QR с исходной
   if (!raw && cap !== (caption || "")) {
-    const r = await sendQr(chatId, dataUrl, cap, true);
-    return r || (_qrErr === 400 ? sendQr(chatId, dataUrl, caption, true) : null);
+    const r = await sendQr(chatId, dataUrl, cap, true, kb);
+    return r || (_qrErr === 400 ? sendQr(chatId, dataUrl, caption, true, kb) : null);
   }
   const form = new FormData();
   form.append("chat_id", String(chatId));
   form.append("caption", cap);
   form.append("parse_mode", "HTML");
+  if (kb) form.append("reply_markup", JSON.stringify(btKeyboard(kb)));
   form.append("photo", new Blob([Buffer.from(m[2], "base64")], { type: "image/" + m[1] }), "esim-qr.png");
   try {
     const r = await axios.post(callUrl("sendPhoto"), form, { timeout: 60000, headers: callHeaders() });
@@ -248,7 +249,7 @@ function daysWord(b) { return b[0] + "–" + b[1] + " " + plural(b[1], ["ден�
 async function showDays(chatId, iso, messageId) {
   ev(chatId, "country");
   const list = await packsFor(iso);
-  if (!list.length) return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам через кнопку «🛟 Поддержка» — подберём вручную.");
+  if (!list.length) return send(chatId, "По этой стране пакетов сейчас нет. Напишите в «🛟 Поддержка», подберём вручную.");
   const btns = [];
   DAY_BUCKETS.forEach((b, i) => {
     const l = byBucket(list, b);
@@ -259,7 +260,7 @@ async function showDays(chatId, iso, messageId) {
   rows.push([{ text: "Все пакеты (" + list.length + ")", callback_data: "d:" + iso + ":all:0" }]);
   rows.push([{ text: "‹ Другая страна", callback_data: "home" }]);
   setState(chatId, { iso, bucket: null });
-  const head = flag(iso) + " <b>" + cname(iso) + "</b>\nНа сколько дней поездка? Покажу подходящие пакеты — от самых дешёвых.";
+  const head = flag(iso) + " <b>" + cname(iso) + "</b>\nНа сколько дней поездка?";
   const kb = { inline_keyboard: rows };
   return messageId ? edit(chatId, messageId, head, { reply_markup: kb }) : send(chatId, head, { reply_markup: kb });
 }
@@ -417,13 +418,13 @@ function mainKeyboard() {
 }
 
 const HELLO =
-  "<b>VOYO mobile — интернет в поездке</b>\n\n" +
-  "Выбираете пакет, оплачиваете картой в рублях, сразу получаете QR-код прямо сюда. " +
-  "Основная симка остаётся на месте, eSIM ставится второй линией только для интернета.\n\n" +
-  "Куда летите? Нажмите страну ниже или напишите её название.";
+  "<b>VOYO mobile: интернет в поездке</b>\n\n" +
+  "💳 Оплата картой в рублях, QR-код сразу сюда\n" +
+  "📱 Ваша симка остаётся, eSIM добавляется для интернета\n\n" +
+  "Куда летите? Нажмите страну или напишите название.";
 
 async function showHome(chatId, welcome) {
-  await send(chatId, welcome || "Меню всегда внизу: можно уйти к своим eSIM и вернуться сюда.",
+  await send(chatId, welcome || "Меню всегда внизу 👇",
     { reply_markup: mainKeyboard() });
   return send(chatId, HELLO, { reply_markup: homeKeyboard() });
 }
@@ -435,8 +436,7 @@ async function welcomeGift(chatId) {
   if (!j || !j.success || !j.granted) return null;
   setState(chatId, { useBalance: true });
   return "<b>Добро пожаловать в VOYO mobile</b>\n\n" +
-    "У вас <b>" + RU(j.bonusRub) + " ₽</b> на балансе — спишем их с первой eSIM, " +
-    "ничего вводить не нужно.";
+    "🎁 На балансе <b>" + RU(j.bonusRub) + " ₽</b>, спишем с первой eSIM сами.";
 }
 
 async function showCountry(chatId, iso, page, messageId, bucket) {
@@ -447,7 +447,7 @@ async function showCountry(chatId, iso, page, messageId, bucket) {
   const byDays = abOf(chatId) === "days";
   const navCb = (pg) => byDays ? "d:" + iso + ":" + (bIdx == null ? "all" : bIdx) + ":" + pg : "c:" + iso + ":" + pg;
   if (!list.length) {
-    return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам через кнопку «🛟 Поддержка» — подберём вручную.");
+    return send(chatId, "По этой стране пакетов сейчас нет. Напишите в «🛟 Поддержка», подберём вручную.");
   }
   const PER = 8;
   const pages = Math.max(1, Math.ceil(list.length / PER));
@@ -469,10 +469,8 @@ async function showCountry(chatId, iso, page, messageId, bucket) {
   slice.forEach((p) => { if (p.note && notes.indexOf(p.note) < 0) notes.push(p.note); });
   const head = flag(iso) + " <b>" + cname(iso) + "</b>" + (bIdx != null ? " · " + daysWord(DAY_BUCKETS[bIdx]) : "") +
     " · " + list.length + " " + plural(list.length, ["пакет", "пакета", "пакетов"]) + "\n" +
-    (bIdx != null ? "Пакеты на этот срок и подольше, если они выгоднее.\n" : "") +
-    "Сначала самые дешёвые. Цена окончательная, в рублях, QR-код выдаётся сразу." +
-    (notes.length ? "\n\n" + notes.map((n) => "✅ " + esc(n)).join("\n") : "") +
-    (pages > 1 ? "\nСтраница " + (pg + 1) + " из " + pages + "." : "");
+    (bIdx != null ? "И подольше, если выгоднее. " : "") + "Сначала дешёвые, цены в рублях окончательные." +
+    (notes.length ? "\n\n" + notes.map((n) => "✅ " + esc(n)).join("\n") : "");
   const kb = { inline_keyboard: rows };
   setState(chatId, { iso, bucket: byDays ? (bIdx == null ? "all" : bIdx) : null });
   return messageId ? edit(chatId, messageId, head, { reply_markup: kb }) : send(chatId, head, { reply_markup: kb });
@@ -495,14 +493,12 @@ async function showPack(chatId, productId, messageId) {
   const price = await priceFor(chatId, p);
   const multi = p.countries.length > 1;
   const where = multi ? p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : cname(p.countries[0]);
-  let text = "<b>" + esc(where) + " · " + gbOf(p) + "</b>\n" +
+  let text = "<b>" + (multi ? "🌍 " : flag(p.countries[0]) + " ") + esc(where) + " · " + gbOf(p) + "</b>\n" +
     "<i>" + esc(p.title || "") + (p.operator ? " · сеть " + esc(p.operator) : "") + "</i>\n" +
     (p.without && p.without.length ? "⚠️ Без " + esc(p.without.join(", ")) + ": там этот пакет не работает\n" : "") + "\n" +
-    "Интернет: <b>" + gbOf(p) + "</b>\n" +
-    "Срок: <b>" + RU(p.days) + " дн.</b> с первого выхода в интернет\n" +
-    "Сеть: <b>" + (p.fiveG ? "5G / 4G LTE" : "4G LTE") + "</b>\n" +
-    "Раздача Wi-Fi: <b>" + (p.hotspot !== false ? "да" : "нет") + "</b>\n" +
-    "Продление: <b>" + (p.topup ? "можно докупить трафик на эту же eSIM" : "нет, потом нужна новая eSIM") + "</b>\n" +
+    "📶 <b>" + gbOf(p) + "</b> · 🗓 <b>" + RU(p.days) + " дн.</b> с первого подключения\n" +
+    "⚡ " + (p.fiveG ? "5G / 4G" : "4G") + " · раздача Wi-Fi: " + (p.hotspot !== false ? "да" : "нет") + "\n" +
+    "🔁 Продление: " + (p.topup ? "можно, на эту же eSIM" : "нет, потом новая eSIM") + "\n" +
     // та же сноска, что на витрине: NextLink через Сингапур советуем для российских сервисов
     (p.note ? "✅ " + esc(p.note) + "\n" : "") + "\n";
   if (price.discountRub > 0 || price.balanceUsed > 0) {
@@ -511,21 +507,20 @@ async function showPack(chatId, productId, messageId) {
       : price.discountKind === "test" ? "тестовый промокод " + (st.promo || "")
       : (price.discountKind === "promo" || price.discountKind === "partner") ? "промокод " + (st.promo || "")
       : "скидка";
-    text += "Цена: <s>" + RU(price.listPrice) + " ₽</s>  <b>" + RU(price.total) + " ₽</b>\n" +
+    text += "💳 Цена: <s>" + RU(price.listPrice) + " ₽</s>  <b>" + RU(price.total) + " ₽</b>\n" +
             (price.discountRub > 0 ? esc(why) + " −" + RU(price.discountRub) + " ₽\n" : "") +
             (price.balanceUsed > 0 ? "бонусами −" + RU(price.balanceUsed) + " ₽\n" : "");
   } else {
-    text += "Цена: <b>" + RU(price.total) + " ₽</b>\n";
+    text += "💳 Цена: <b>" + RU(price.total) + " ₽</b>\n";
   }
   // Где ещё работает пакет: пара строк в карточке, полный список по кнопке
   if (multi) {
     const others = p.countries.filter((x) => x !== st.iso).slice(0, 6).map(cname);
     const rest = p.countries.length - 1 - others.length;
-    text += "Работает ещё в " + esc(others.join(", ")) +
-      (rest > 0 ? " и ещё " + rest + " " + plural(rest, ["стране", "странах", "странах"]) : "") + ".\n";
+    text += "Ещё работает: " + esc(others.join(", ")) + (rest > 0 ? " и ещё " + rest : "") + ".\n";
   }
   text += qtyText(price);
-  text += "\nПосле оплаты " + ((price.qty || 1) > 1 ? "QR-коды придут" : "QR-код придёт") + " сюда же, в этот чат.";
+  text += "\nПосле оплаты " + ((price.qty || 1) > 1 ? "QR-коды придут" : "QR-код придёт") + " сюда.";
   const rows = [[{ text: "Оплатить " + RU(price.grandTotal || price.total) + " ₽", callback_data: "buy:" + p.id }]]
     .concat(qtyRow(price, p.id))
     .concat(multi ? [[{ text: "🌍 Где ещё работает", callback_data: "cov:" + p.id }]] : [])
@@ -553,8 +548,8 @@ function qtyText(price) {
   const q = price.qty || 1;
   const note = price.extraMode === "promo"
     ? "Промокод действует на все eSIM в заказе: " + RU(price.extraUnit) + " ₽ за каждую."
-    : "Вторая и следующие eSIM — на " + (price.extraPct || 10) + " % дешевле: " + RU(price.extraUnit) + " ₽ вместо " + RU(price.listPrice) + " ₽.";
-  if (q <= 1) return "\n👥 <b>Путешествуете не один?</b> " + note + "\n";
+    : "Каждая следующая eSIM −" + (price.extraPct || 10) + " %: " + RU(price.extraUnit) + " ₽.";
+  if (q <= 1) return "\n👥 Не один? " + note + "\n";
   return "\n👥 <b>eSIM в заказе: " + q + "</b>\nПервая — " + RU(price.total) + " ₽, ещё " + (q - 1) + " × " + RU(price.extraUnit) + " ₽" +
     (price.extraMode === "promo" ? " (по промокоду)" : " (−" + (price.extraPct || 10) + " %)") + "\nК оплате: <b>" + RU(price.grandTotal) + " ₽</b>\n";
 }
@@ -591,8 +586,7 @@ async function supportStart(chatId) {
   setState(chatId, { step: "support" });
   return send(chatId,
     "<b>Поддержка VOYO mobile</b>\n\n" +
-    "Опишите вопрос одним сообщением: что не получается, какой телефон, какая ошибка. " +
-    "Ответим здесь же, в этом чате.",
+    "Опишите вопрос одним сообщением: что не так, какой телефон. Ответим здесь.",
     { reply_markup: { inline_keyboard: [[{ text: "‹ В начало", callback_data: "home" }]] } });
 }
 async function supportText(chatId, text) {
@@ -606,8 +600,7 @@ async function supportText(chatId, text) {
       { reply_markup: homeKeyboard() });
   }
   return send(chatId,
-    "Вопрос передали оператору. Ответ придёт сюда же, в этот чат.\n\n" +
-    "Можно написать ещё — просто отправьте сообщение по кнопке «🛟 Поддержка».",
+    "Передали оператору, ответ придёт сюда.",
     { reply_markup: homeKeyboard() });
 }
 
@@ -773,9 +766,8 @@ async function startBuy(chatId, productId) {
   // Телефон отдаётся одним касанием — печатать ничего не надо.
   setState(chatId, { step: "contact" });
   return send(chatId,
-    "Остался один шаг: банку нужен контакт для чека.\n\n" +
-    "Нажмите кнопку ниже — телеграм сам передаст ваш номер, вводить ничего не нужно. " +
-    "Чек придёт смской, а QR-код сюда, в чат.",
+    "<b>Последний шаг:</b> контакт для чека.\n\n" +
+    "Нажмите кнопку ниже, Телеграм передаст номер сам. Чек придёт по СМС, QR-код сюда.",
     { reply_markup: {
       keyboard: [[{ text: "📱 Отправить мой номер", request_contact: true }]],
       resize_keyboard: true, one_time_keyboard: true,
@@ -796,15 +788,15 @@ async function payLink(chatId) {
     promo: st.promo || "", ref: st.ref || "", useBalance: !!st.useBalance, tgChatId: String(chatId), qty: qtyOf(st),
   });
   if (!j || !j.success || !j.url) {
-    return send(chatId, "Не получилось открыть оплату. Попробуйте ещё раз или напишите нам через кнопку «🛟 Поддержка».");
+    return send(chatId, "Не получилось открыть оплату. Попробуйте ещё раз или напишите в «🛟 Поддержка».");
   }
   ev(chatId, "pay");
   const price = await priceFor(chatId, p);
   return send(chatId,
     "<b>" + esc(p.title || "") + "</b>\n" + gbOf(p) + " · " + RU(p.days) + " дн.\n\n" +
     ((price.qty || 1) > 1 ? "eSIM: " + price.qty + " шт. (первая " + RU(price.total) + " ₽, остальные по " + RU(price.extraUnit) + " ₽)\n" : "") +
-    "К оплате: <b>" + RU(price.grandTotal || price.total) + " ₽</b>\nЧек уйдёт " + (st.email ? "на " + esc(st.email) : "смской на " + esc(st.phone)) + "\n\n" +
-    "Нажмите кнопку — откроется защищённая страница Т-Банка. Карта или СБП.",
+    "💳 К оплате: <b>" + RU(price.grandTotal || price.total) + " ₽</b>\nЧек " + (st.email ? "на " + esc(st.email) : "по СМС на " + esc(st.phone)) + "\n\n" +
+    "Кнопка откроет страницу Т-Банка: карта или СБП.",
     { reply_markup: { inline_keyboard: [[{ text: "Оплатить " + RU(price.grandTotal || price.total) + " ₽", url: j.url }]]
       .concat([[{ text: "👥 Изменить количество eSIM", callback_data: "p:" + p.id }]])
       .concat(discountRows(chatId, price))
@@ -830,15 +822,15 @@ async function showMy(chatId) {
     // находим по ней eSIM и после кода с почты показываем их здесь.
     setState(chatId, { step: "myemail" });
     return send(chatId,
-      "Здесь появятся eSIM, купленные в боте.\n\n" +
-      "<b>Покупали на сайте?</b> Напишите почту, на которую пришёл QR-код, и я покажу ваши eSIM здесь.",
+      "Здесь будут eSIM, купленные в боте.\n\n" +
+      "<b>Покупали на сайте?</b> Пришлите почту, на которую пришёл QR-код, покажу их здесь.",
       { reply_markup: { inline_keyboard: [[{ text: "🌍 Купить eSIM", callback_data: "home" }]] } });
   }
   const num = (o) => (o.groupOf ? " · eSIM " + (String(o.id).split("-").pop()) : (Number(o.qty) > 1 ? " · eSIM 1" : ""));
   const rows = mine.slice(0, 8).map((o) => [{ text: ((o.label || "eSIM").slice(0, 50) + num(o)), callback_data: "m:" + o.id }]);
   rows.push([{ text: "＋ Купить ещё eSIM", callback_data: "home" }]);
   if (getState(chatId).productId) rows.push([{ text: "‹ Вернуться к оплате", callback_data: "back:pay" }]);
-  return send(chatId, "<b>Ваши eSIM</b>\nВыберите, чтобы увидеть остаток трафика и QR-код.",
+  return send(chatId, "<b>Ваши eSIM</b>\nНажмите, чтобы увидеть остаток и QR-код.",
     { reply_markup: { inline_keyboard: rows } });
 }
 async function showMyOne(chatId, localId) {
@@ -853,7 +845,7 @@ async function showMyOne(chatId, localId) {
       "&t=" + encodeURIComponent(u.searchParams.get("t")), null, null, 15000);
   } catch (_) { j = null; }
   if (!j || !j.success) {
-    return send(chatId, "Оператор сейчас отвечает медленно, остаток в чате показать не успел. QR-код и остаток — на странице eSIM:",
+    return send(chatId, "Оператор отвечает медленно. Остаток и QR-код на странице eSIM:",
       { reply_markup: { inline_keyboard: [[{ text: "Открыть eSIM", url: o.myUrl }], [{ text: "‹ Мои eSIM", callback_data: "my" }]] } });
   }
   const packs = (j.usage && j.usage.packages) || [];
@@ -868,13 +860,13 @@ async function showMyOne(chatId, localId) {
   const over = Boolean(j.usage && j.usage.expired);
   const daily = Boolean(j.usage && j.usage.daily);
   const body = over
-    ? "Пакет закончился" + (exp ? " " + day(exp) : "") + ".\nСама eSIM остаётся в телефоне — чтобы снова выйти в интернет, возьмите новый пакет.\n"
+    ? "Пакет закончился" + (exp ? " " + day(exp) : "") + ".\neSIM остаётся в телефоне, для интернета нужен новый пакет.\n"
     : (total
         ? "Осталось" + (daily ? " на сегодня" : "") + ": <b>" + gb(left) + "</b> из " + gb(total) + (daily ? " в день" : "") + "\n"
         : "Пакет ещё не активирован.\n") +
       (exp ? "Действует до: <b>" + day(exp) + "</b>\n" : "");
   const text = "<b>" + esc(o.label || "eSIM") + "</b>\n\n" + body +
-    (!over && packs.length && !packs.some((x) => x.activatedAt) ? "\n<i>Отсчёт срока начнётся, когда eSIM впервые выйдет в интернет.</i>" : "");
+    (!over && packs.length && !packs.some((x) => x.activatedAt) ? "\n<i>Срок пойдёт с первого подключения.</i>" : "");
   const rows = [];
   // Продление тут же, без ухода на сайт: топапы ложатся на ту же eSIM,
   // переустанавливать её не нужно.
@@ -884,9 +876,9 @@ async function showMyOne(chatId, localId) {
       callback_data: "tp:" + localId + ":" + t.id }]);
   });
   if (over) rows.push([{ text: "🌍 Купить новый пакет", callback_data: "home" }]);
-  rows.push([{ text: "Открыть QR-код", url: o.myUrl }]);
+  rows.push([{ text: "📲 Установка и QR-код", url: o.myUrl }]);
   rows.push([{ text: "‹ Мои eSIM", callback_data: "my" }, { text: "🌍 Другая страна", callback_data: "home" }]);
-  return send(chatId, text + ((j.topups || []).length ? "\n\n<b>Продлить</b> — трафик добавится на эту же eSIM:" : ""),
+  return send(chatId, text + ((j.topups || []).length ? "\n\n<b>Продлить</b> на эту же eSIM:" : ""),
     { reply_markup: { inline_keyboard: rows } });
 }
 
@@ -905,9 +897,8 @@ async function showBonus(chatId) {
     "<b>Бонусы VOYO</b>\n\n" +
     "На счету: <b>" + RU(j.balanceRub) + " ₽</b>\n" +
     (j.invitedCount ? "По вашей ссылке купили: <b>" + j.invitedCount + "</b>\n" : "") +
-    "\nПриглашайте друзей — по <b>" + RU(j.refBonus) + " ₽</b> вам и другу.\n" +
-    "Другу скидка сразу на первую eSIM, вам бонус приходит после его оплаты.\n" +
-    "Бонусами можно закрыть до половины стоимости пакета — предложу при оплате.\n\n" +
+    "\n👥 Позовите друга: ему −" + RU(j.refBonus) + " ₽ на первую eSIM, вам +" + RU(j.refBonus) + " ₽ после его оплаты.\n" +
+    "Бонусами можно оплатить до половины пакета.\n\n" +
     "Ваша ссылка:\n<code>" + link + "</code>";
   return send(chatId, text, { reply_markup: { inline_keyboard: [
     [{ text: "Позвать друга", url: "https://t.me/share/url?url=" + encodeURIComponent(link) +
@@ -924,9 +915,8 @@ async function askMail(chatId) {
   setState(chatId, { step: "linkmail" });
   return send(chatId,
     "<b>Почта для сайта</b>\n\n" +
-    "В боте всё и так работает: eSIM, остаток, QR. Почта нужна только если хотите видеть " +
-    "свои eSIM ещё и на сайте voyotravel.ru — там же живут бонусы и приглашение друзей.\n\n" +
-    (st.email ? "Сейчас привязана: <b>" + esc(st.email) + "</b>. Пришлите другую, если нужно поменять." :
+    "Необязательно: в боте всё работает. С почтой ваши eSIM и бонусы будут видны и на сайте.\n\n" +
+    (st.email ? "Сейчас: <b>" + esc(st.email) + "</b>. Пришлите другую, чтобы поменять." :
       "Напишите вашу почту одним сообщением."));
 }
 async function linkMail(chatId, email) {
@@ -968,8 +958,8 @@ async function myFindEmail(chatId, email) {
   setState(chatId, { step: "mycode" });
   return send(chatId,
     "Нашёл " + j.found + " " + plural(j.found, ["eSIM", "eSIM", "eSIM"]) + " на почте <b>" + esc(email) + "</b>.\n\n" +
-    "Чтобы чужие не увидели ваши QR-коды, отправил на эту почту код из 6 цифр. Пришлите его сюда.\n" +
-    "<i>Письмо не пришло? Загляните в «Спам».</i>");
+    "Отправил на неё код из 6 цифр, пришлите его сюда.\n" +
+    "<i>Не пришло? Загляните в «Спам».</i>");
 }
 async function myConfirmCode(chatId, code) {
   let j = null;
@@ -1003,8 +993,7 @@ async function showCoverage(chatId, productId) {
   }
   const n = p.countries.length;
   return send(chatId,
-    "<b>Где работает</b>\nПакет работает в " + n + " " +
-    (n % 10 === 1 && n % 100 !== 11 ? "стране" : "странах") + " — интернет включится в любой из них.\n" + out,
+    "<b>Где работает: " + n + " " + plural(n, ["страна", "страны", "стран"]) + "</b>\nИнтернет включится в любой из них.\n" + out,
     { reply_markup: { inline_keyboard: [[{ text: "‹ К пакету", callback_data: "p:" + productId }]] } });
 }
 
@@ -1066,15 +1055,15 @@ async function onText(chatId, text) {
     ev(chatId, "start", igm ? { ig: igm[2] || "" } : (tcm ? { tgch: tcm[1] || "" } : (payload ? { from: payload.slice(0, 40) } : null)));
     if (payload.indexOf("ref_") === 0) {
       setState(chatId, { ref: payload.slice(4).toUpperCase(), step: null });
-      await send(chatId, "Вы пришли по приглашению друга — скидка на первую eSIM применится сама.");
+      await send(chatId, "🎁 Скидка от друга учтена, увидите её в цене пакета.");
     } else if (/^p_[a-z0-9]{3,20}$/.test(payload) && partnerCode(payload.slice(2))) {
       // ссылка агентства-партнёра: t.me/<бот>?start=p_<код> (17.11.2026) — код подставится сам,
       // покупка засчитается агентству так же, как на сайте
       setState(chatId, { promo: partnerCode(payload.slice(2)), step: null });
-      await send(chatId, "Скидка 100 ₽ от вашего агентства уже учтена, увидите её в цене пакета.");
+      await send(chatId, "🎁 Скидка 100 ₽ от вашего агентства учтена, увидите её в цене пакета.");
     } else if (UTM_PROMOS[payload]) {
       setState(chatId, { promo: UTM_PROMOS[payload], step: null });
-      await send(chatId, "Ваша скидка по ссылке уже учтена — увидите её в цене пакета.");
+      await send(chatId, "🎁 Скидка по ссылке учтена, увидите её в цене пакета.");
     } else if (payload === "blogger" || payload === "blog") {
       return blogStart(chatId);                    // ветка блогеров: только по ссылке
     } else setState(chatId, { step: null });
@@ -1087,7 +1076,7 @@ async function onText(chatId, text) {
   if (t === BTN_BONUS || /^\/bonus|^бонус/i.test(t)) return showBonus(chatId);
   if (t === BTN_MAIL || /^\/email/i.test(t)) return askMail(chatId);
   if (t === BTN_SITE) {
-    return send(chatId, "Наш сайт — там же бонусы, приглашение друзей и оплата с почтой. В боте всё то же самое.",
+    return send(chatId, "На сайте всё то же, что в боте.",
       { reply_markup: { inline_keyboard: [
         [{ text: "Открыть voyotravel.ru", url: BASE_URL + "/esim" }],
         [{ text: "📱 Мои eSIM на сайте", url: BASE_URL + "/esim/account" }],
@@ -1161,7 +1150,7 @@ async function onText(chatId, text) {
   const scored = searchCountries(c.index, t);
   const hits = scored.map((h) => h.item);
   if (!hits.length) {
-    return send(chatId, "Не нашёл такую страну. Попробуйте другое написание, откройте полный список или напишите нам через кнопку «🛟 Поддержка».",
+    return send(chatId, "Не нашёл такую страну. Напишите иначе или выберите в списке.",
       { reply_markup: homeKeyboard() });
   }
   // Одна страна или лучшая явно впереди («China» → Китай, а не Гонконг и Макао) — открываем сразу
@@ -1289,39 +1278,31 @@ async function onIssued(order, n, total) {
       "&t=" + encodeURIComponent(u.searchParams.get("t")));
   } catch (e) { console.error("tgbot onIssued my:", e.message); }
   const o = (j && j.order) || {};
+  // 22.11.2026: человек читает это с того же телефона — сканировать QR нечем. Главное — кнопка
+  // «Установить» (страница eSIM: на iPhone установка в один тап), QR — для второго экрана.
+  const lpa = o.lpa ? "\n\nВручную: <code>" + esc(o.lpa) + "</code>" : "";
+  const instKb = { inline_keyboard: [[{ text: "📲 Установить eSIM" + (total > 1 ? " " + n : ""), url: order.myUrl }]] };
   const caption = total > 1
     ? (n === 1
-      ? "<b>eSIM 1 из " + total + ": для вашего телефона</b>\n" + esc(order.label || "") +
-        "\n\nОтсканируйте этот QR-код на своём телефоне. Остальные QR-коды ниже перешлите спутникам: каждый ставится на свой телефон и срабатывает один раз."
+      ? "<b>eSIM 1 из " + total + ": для вас</b>\n" + esc(order.label || "") +
+        "\n\nНажмите «Установить» на своём телефоне. Остальные eSIM ниже перешлите спутникам: каждая ставится на свой телефон."
       : "<b>eSIM " + n + " из " + total + ": для спутника</b>\n" + esc(order.label || "") +
-        "\n\nНе сканируйте его у себя. Перешлите это сообщение человеку, которому нужна eSIM: он отсканирует QR-код на своём телефоне.")
-    : "<b>Ваша eSIM готова</b>\n" + esc(order.label || "") + "\n\nОтсканируйте QR-код на телефоне, куда ставите eSIM.";
-  const sent = await sendQr(chatId, o.qrDataUrl, caption);
+        "\n\nНе ставьте у себя: перешлите это сообщение спутнику, он нажмёт «Установить» на своём телефоне.") + lpa
+    : "<b>✅ Ваша eSIM готова</b>\n" + esc(order.label || "") +
+      "\n\nНа этом телефоне: кнопка «Установить» ниже.\nНа другом: отсканируйте этот QR." + lpa;
+  const sent = await sendQr(chatId, o.qrDataUrl, caption, false, instKb);
+  // QR картинкой не ушёл — то же сообщение текстом, с той же кнопкой
+  if (!sent) await send(chatId, caption, { reply_markup: instKb });
   // у нескольких eSIM инструкцию шлём один раз — после последней
-  if (n < total) {
-    return send(chatId, (sent ? "" : "QR-код eSIM " + n + " картинкой не пришёл, он на странице по кнопке.\n") +
-      "eSIM " + n + ": остаток трафика и продление по кнопке." +
-      (o.lpa ? "\nВручную: <code>" + esc(o.lpa) + "</code>" : ""),
-      { reply_markup: { inline_keyboard: [[{ text: "Остаток и продление · eSIM " + n, url: order.myUrl }]] } });
-  }
-  const how = (total > 1 ? "Каждую eSIM ставьте на свой телефон своим QR-кодом.\n\n" : "") +
-    "<b>Как установить</b>\n" +
-    "1. Настройки → Сотовая связь → Добавить eSIM → сканировать QR.\n" +
-    "2. Сделайте это дома по Wi-Fi, до вылета.\n" +
-    "3. В поездке включите «Роуминг данных» для линии eSIM — интернет заработает сам.\n\n" +
-    "<b>Обратите внимание.</b> Перенести eSIM на другой телефон потом нельзя: ставьте её сразу на тот, с которым поедете.\n\n" +
-    (o.lpa ? "Если камеры под рукой нет, введите вручную:\n<code>" + esc(o.lpa) + "</code>\n\n" : "") +
-    "Остаток трафика и продление — по кнопке ниже.";
+  if (n < total) return;
+  const how = "<b>Как установить</b>\n" +
+    "1. Дома по Wi-Fi нажмите «📲 Установить eSIM»" + (total > 1 ? " (у каждого своя)" : "") + ". Или: Настройки → Сотовая связь → Добавить eSIM.\n" +
+    "2. В поездке включите «Роуминг данных» для линии eSIM.\n\n" +
+    "⚠️ <b>QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете.";
   const st = setState(chatId, { qty: 1 });
-  const rows = [
-    [{ text: total > 1 ? "Остаток и продление · eSIM " + n : "Остаток и продление", url: order.myUrl }],
-    [{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "🛟 Поддержка", callback_data: "support" }],
-  ];
-  if (!st.email) rows.push([{ text: "✉️ Привязать почту для сайта", callback_data: "mail" }]);
+  const rows = [[{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "🛟 Поддержка", callback_data: "support" }]];
+  if (!st.email) rows.push([{ text: "✉️ Почта для сайта", callback_data: "mail" }]);
   await send(chatId, how, { reply_markup: { inline_keyboard: rows } });
-  if (!sent) {
-    await send(chatId, "QR-код картинкой отправить не удалось — откройте его здесь: " + order.myUrl);
-  }
 }
 
 async function handleUpdate(upd) {
@@ -1575,7 +1556,7 @@ async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, m
   // ответ оператора на обращение из бота (esimchat.js → esim.js → сюда)
   if (kind === "support") {
     return send(chatId, "<b>Ответ поддержки VOYO mobile</b>\n\n" + esc(arguments[0].text || "") +
-      "\n\nЕсли остались вопросы — напишите ещё раз по кнопке «🛟 Поддержка».",
+      "\n\nЕщё вопрос? Кнопка «🛟 Поддержка».",
       { reply_markup: homeKeyboard() });
   }
   // Через сутки после первой оплаты: человек уже проверил, что eSIM работает,
@@ -1583,13 +1564,10 @@ async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, m
   if (kind === "refInvite") {
     const link = "https://t.me/" + BOT_NAME + "?start=ref_" + refCode;
     return send(chatId,
-      "<b>Приглашайте друзей в VOYO mobile</b>\n\n" +
-      "Спасибо за покупку!\n\n" +
-      "Если кому-либо из ваших друзей и близких понадобится eSIM в любой стране мира, поделитесь своим промокодом " +
-      "или ссылкой: друг сразу получит скидку <b>" + RU(bonusRub) + " ₽</b>, а вы получите <b>" + RU(bonusRub) + " ₽</b> " +
-      "на свой баланс сразу после оплаты друга.\n\n" +
-      "Ваш промокод: <code>" + esc(refCode) + "</code>\nВаша ссылка:\n<code>" + link + "</code>\n\n" +
-      "Бонусами можно оплатить до половины стоимости eSIM, они не сгорают. Приглашать можно сколько угодно друзей.",
+      "<b>Спасибо за покупку!</b>\n\n" +
+      "👥 Позовите друзей: им −<b>" + RU(bonusRub) + " ₽</b> на первую eSIM, вам +<b>" + RU(bonusRub) + " ₽</b> за каждого.\n\n" +
+      "Промокод: <code>" + esc(refCode) + "</code>\nСсылка: <code>" + link + "</code>\n\n" +
+      "Бонусы не сгорают, ими можно оплатить до половины eSIM.",
       { reply_markup: { inline_keyboard: [
         [{ text: "Позвать друга", url: "https://t.me/share/url?url=" + encodeURIComponent(link) +
           "&text=" + encodeURIComponent("Интернет в поездке без роуминга: eSIM за минуту, по этой ссылке скидка " + bonusRub + " ₽") }],
@@ -1607,11 +1585,11 @@ async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, m
   if (kind === "noNet") {
     return send(chatId,
       "<b>eSIM в сети, а интернета нет?</b>\n" + esc(label || "") + "\n\n" +
-      "Ваша eSIM подключилась к сети, но интернет через неё пока не шёл. Обычно дело в одной настройке:\n" +
-      "1. Настройки → Сотовая связь → линия eSIM: включите «Роуминг данных».\n" +
-      "2. Там же, в пункте «Сотовые данные», выберите линию eSIM.\n" +
-      "3. Включите режим полёта на 15 секунд и выключите.\n\n" +
-      "Интернет уже работает: просто не обращайте внимания. Не помогло: нажмите «Поддержка», поможем.",
+      "Обычно помогает:\n" +
+      "1. Настройки → Сотовая связь → линия eSIM → «Роуминг данных» вкл.\n" +
+      "2. «Сотовые данные»: выберите линию eSIM.\n" +
+      "3. Режим полёта на 15 секунд.\n\n" +
+      "Интернет уже есть? Просто не обращайте внимания. Не помогло: «🛟 Поддержка».",
       { reply_markup: { inline_keyboard: [[{ text: "🛟 Поддержка", callback_data: "support" }, { text: "📱 Мои eSIM", callback_data: "my" }]] } });
   }
   if (kind === "refBonus") {
@@ -1797,7 +1775,7 @@ async function nudgeTick() {
       const where = p.countries.length > 1 ? p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : cname(p.countries[0]);
       const r = await send(chatId,
         "Вы выбирали eSIM: <b>" + esc(where) + " · " + gbOf(p) + "</b>, " + RU(p.days) + " дн., " + RU(sum) + " ₽.\n\n" +
-        "Оформление займёт минуту, QR-код придёт сюда же, в чат. Если остались вопросы, напишите в поддержку.",
+        "Оформление за минуту, QR-код придёт сюда.",
         { reply_markup: { inline_keyboard: [
           [{ text: "Оформить за " + RU(sum) + " ₽", callback_data: "p:" + p.id }],
           [{ text: "Подобрать другой пакет", callback_data: "home" }],
