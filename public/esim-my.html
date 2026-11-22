@@ -163,13 +163,23 @@
   .qrnote li[hidden]{display:none;}
   /* «Путешествуете не один?»: промокод копируется касанием, ссылка — отправить другу */
   #refPanel[hidden]{display:none;}
-  .refcode{display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;margin-top:12px;font:inherit;cursor:pointer;
+  .refcode{-webkit-appearance:none;appearance:none;-webkit-user-select:none;user-select:none;touch-action:manipulation;
+    display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;margin-top:12px;font:inherit;cursor:pointer;
     background:#f4f9fd;border:1.5px dashed #b9d7ec;border-radius:16px;padding:12px 10px;color:var(--ink);-webkit-tap-highlight-color:transparent;}
   .refcode:active{transform:scale(.99);}
   .refcode b{font-family:SFMono-Regular,Menlo,Consolas,monospace;font-size:24px;letter-spacing:.16em;font-weight:800;}
   .refcode small{font-size:11.5px;color:var(--mut);}
-  .refcode.ok{border-color:#7cc59a;background:#eef9f2;}
-  .refcode.ok small{color:#1f8a4c;font-weight:600;}
+  .refcode.copied{border-color:#7cc59a;background:#eef9f2;}
+  .refcode.copied small{color:#1f8a4c;font-weight:600;}
+  .refcode b{color:var(--ink);}
+  .refcode.copied b{animation:refBlink .9s ease;}
+  @keyframes refBlink{0%,100%{opacity:1}20%,60%{opacity:.2}40%,80%{opacity:1}}
+  /* всплывашка «скопировано» на пару секунд */
+  .toast{position:fixed;left:50%;bottom:calc(26px + env(safe-area-inset-bottom));z-index:1200;pointer-events:none;
+    transform:translate(-50%,16px);opacity:0;transition:opacity .22s ease,transform .22s ease;
+    background:#16202e;color:#fff;font-size:14.5px;font-weight:600;padding:12px 18px;border-radius:14px;white-space:nowrap;
+    box-shadow:0 14px 30px -12px rgba(16,24,40,.55);}
+  .toast.on{opacity:1;transform:translate(-50%,0);}
   .reflink{display:block;width:100%;margin-top:10px;font:inherit;font-size:14px;font-weight:700;border:0;cursor:pointer;
     background:#eef4f9;color:var(--accent-d);border-radius:14px;padding:12px 14px;}
   .qrnote[hidden]{display:none;}
@@ -327,7 +337,7 @@
           <img id="qrImg" alt="QR-код eSIM"/>
           <div class="lparow"><input id="lpaInp" readonly/><button id="lpaCopy" type="button">Скопировать</button></div>
         </div>
-        <div class="qrnote" id="qrNote"><ul><li id="instNote" hidden>Для кнопки нужны iOS 17.4+ и интернет.</li><li id="instNote2" hidden>Если пишет «Не удаётся найти сервер», откройте страницу в Safari.</li><li><b>QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, перенести её потом нельзя.</li></ul></div>
+        <div class="qrnote" id="qrNote"><ul><li id="instNote" hidden>Для установки по кнопке нужны iOS 17.4+ и интернет.</li><li id="instNote2" hidden>Если пишет «Не удаётся найти сервер», откройте страницу в Safari.</li><li><b>QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, перенести её потом нельзя.</li></ul></div>
         <div class="steps">
           <div class="sth" id="stH">Как установить</div>
           <div class="st2"><div class="n">1</div><div id="st1">iPhone: Настройки → Сотовая связь → Добавить eSIM. Android: Настройки → Подключения → Диспетчер SIM-карт → Добавить eSIM.</div></div>
@@ -396,7 +406,7 @@
 
     <div class="panel" id="noTp" style="display:none;">
       <h2>Продление недоступно</h2>
-      <div class="ps">У этого тарифа поставщик не даёт добавить гигабайты. Если интернет закончится — возьмите ещё один пакет кнопкой «Купить другую eSIM» выше.</div>
+      <div class="ps">На этом тарифе гигабайты не докупаются. Закончится интернет: возьмите новую eSIM кнопкой выше.</div>
     </div>
   </div>
 
@@ -579,28 +589,36 @@
     } else if(over){
       el("noTp").style.display="block";
       el("noTp").querySelector("h2").textContent = "Продление недоступно";
-      el("noTp").querySelector(".ps").textContent = "Срок пакета истёк, добавить к нему гигабайты уже нельзя. Возьмите новый пакет кнопкой «Купить другую eSIM» выше — eSIM в телефоне переустанавливать не нужно, придёт новый QR-код.";
+      el("noTp").querySelector(".ps").textContent = "Срок пакета истёк, продлить его нельзя. Для интернета возьмите новую eSIM кнопкой выше.";
     } else {
       el("noTp").style.display="block";
     }
   }
 
   var REFLINK = "";
+  var toastT = 0;
+  function toast(msg){
+    var t = el("toast"); if(!t){ t = document.createElement("div"); t.id = "toast"; t.className = "toast"; t.setAttribute("role","status"); document.body.appendChild(t); }
+    t.textContent = msg; clearTimeout(toastT);
+    requestAnimationFrame(function(){ t.classList.add("on"); });
+    toastT = setTimeout(function(){ t.classList.remove("on"); }, 2600);
+  }
   function copyText(t){
-    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t); return true; } }catch(e){}
+    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).catch(function(){}); return true; } }catch(e){}
     try{ var ta=document.createElement("textarea"); ta.value=t; ta.setAttribute("readonly",""); ta.style.position="fixed"; ta.style.opacity="0";
       document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); return true; }catch(e){ return false; }
   }
   el("refCode").addEventListener("click",function(){
-    var b=this; if(!copyText(el("refCodeV").textContent)) return;
-    b.classList.add("ok"); el("refCodeH").textContent="✓ Промокод скопирован";
-    setTimeout(function(){ b.classList.remove("ok"); el("refCodeH").textContent="нажмите, чтобы скопировать"; },1800);
+    var b=this, code=el("refCodeV").textContent; if(!copyText(code)) return;
+    b.classList.remove("copied"); void b.offsetWidth; b.classList.add("copied"); el("refCodeH").textContent="✓ Промокод скопирован";
+    toast("✓ Промокод " + code + " скопирован");
+    setTimeout(function(){ b.classList.remove("copied"); el("refCodeH").textContent="нажмите, чтобы скопировать"; },1800);
   });
   el("refLink").addEventListener("click",function(){
     var b=this, t="eSIM для поездки со скидкой " + el("refTx").textContent.replace(/^Другу −(\d+).*/, "$1") + " ₽ по моей ссылке";
     // на телефоне — системное «Поделиться» (мессенджеры), иначе копируем ссылку
     if(navigator.share){ navigator.share({ text: t, url: REFLINK }).catch(function(){}); return; }
-    if(copyText(REFLINK)){ b.textContent="✓ Ссылка скопирована"; setTimeout(function(){ b.textContent="Отправить ссылку другу"; },1800); }
+    if(copyText(REFLINK)){ toast("✓ Ссылка скопирована"); b.textContent="✓ Ссылка скопирована"; setTimeout(function(){ b.textContent="Отправить ссылку другу"; },1800); }
   });
   el("lpaCopy") && el("lpaCopy").addEventListener("click",function(){
     var i=el("lpaInp"); i.select();
