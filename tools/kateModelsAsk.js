@@ -70,8 +70,14 @@ const TEXT = "Катя, от Андрея.\n\n" +
     const def = (src.match(/const CQ_AI_DEFAULT_MODEL = "([^"]+)"/) || [])[1] || "?";
     const b = JSON.parse(fs.readFileSync("/var/www/voyo/.engineBudget.json", "utf8")); const cnt = {};
     for (const [, v] of Object.entries(b.days).slice(-7)) for (const [mo, n] of Object.entries(((v.svc || {}).cq || {}).models || {})) cnt[mo] = (cnt[mo] || 0) + n;
-    let ans = { how: "" }; try { const C = chat(); ans = answer(history(C._int)); } catch (_) {}
     const nice = (m) => m.replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/-(\d)$/, " $1");
+    // Радар /vsc на Opus 5.5 с 21.11: полные прогоны с 22.11 по моделям (Opus 5 = запасная, значит новая давала сбой)
+    let radar = "нет данных"; try {
+      const u = JSON.parse(fs.readFileSync("/var/www/voyo/.aiUsage.json", "utf8")).filter((x) => x.svc === "vsc_radar" && x.ts > Date.parse("2026-11-22T00:00:00Z") && x.in > 10000);
+      const by = {}; for (const x of u) by[x.model] = (by[x.model] || 0) + 1;
+      radar = u.length ? "прогонов " + u.length + ": " + Object.entries(by).map(([m, n]) => nice(m) + " — " + n).join(", ") + (by["claude-opus-5"] ? " (часть ушла на запасную старую модель)" : ", все на новой") : "полных прогонов не было";
+    } catch (_) {}
+    let ans = { how: "" }; try { const C = chat(); ans = answer(history(C._int)); } catch (_) {}
     const switched = /haiku-5-5/.test(def);
     // Переводы: решение modelSwitch (switch-state.json)
     let tr = "нет данных"; try {
@@ -82,7 +88,7 @@ const TEXT = "Катя, от Андрея.\n\n" +
         : "оставлена Sonnet 5 — до 10.12 не набралось заказов для сравнения. " + esc(t.last);
     } catch (_) {}
     const html = `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">` +
-      `<p><b>Модели на 10.12</b></p><p><b>Переводы документов:</b> ${tr}.</p><p><b>Оценки прослушки:</b> ${switched ? "Катя перевела на новую модель" : "оставлена старая модель"} (${nice(def)}).</p><ul>` +
+      `<p><b>Модели на 10.12</b></p><p><b>Переводы документов:</b> ${tr}.</p><p><b>Радар /vsc (Opus 5.5):</b> ${radar}.</p><p><b>Оценки прослушки:</b> ${switched ? "Катя перевела на новую модель" : "оставлена старая модель"} (${nice(def)}).</p><ul>` +
       `<li>Запросы прослушки за 7 дней по моделям: ${Object.entries(cnt).map(([m, n]) => nice(m) + " — " + n).join(", ") || "нет данных"}. Чистка расшифровок идёт на Haiku 5.5 с 22.11.</li>` +
       `<li>Ответ Кати на предложение 23.11: ${ans.how ? ans.how + (ans.text ? " — «" + String(ans.text).slice(0, 200).replace(/</g, "&lt;") + "»" : "") : "не ответила"}.</li></ul></div>`;
     if (dry) return console.log(html);
