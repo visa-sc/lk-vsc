@@ -1605,7 +1605,7 @@ function vscUrl(u) {
   return u;
 }
 // знак VSC для писем: «V | S | C» вместо картинки VOYO (22.11.2026)
-const VSC_MARK = '<span style="display:inline-block;vertical-align:middle;font-family:ui-rounded,-apple-system,Arial,sans-serif;font-size:21px;font-weight:800;letter-spacing:.04em;color:#0f1b2c">V<span style="color:#9aa3b2;font-weight:300"> | </span>S<span style="color:#9aa3b2;font-weight:300"> | </span>C</span>';
+const VSC_MARK = '<span style="display:inline-block;vertical-align:middle;font-family:ui-rounded,-apple-system,Arial,sans-serif;font-size:17px;font-weight:800;letter-spacing:.04em;color:#0f1b2c">V<span style="color:#9aa3b2;font-weight:300"> | </span>S<span style="color:#9aa3b2;font-weight:300"> | </span>C</span>';
 function vscText(s) {
   return String(s == null ? "" : s).replace(/<img[^>]*voyo-logo\.png[^>]*>/g, VSC_MARK).replace(/VOYO mobile/g, "VSC mobile").replace(/VOYO/g, "VSC").replace(OUR_URL_RE, vscUrl);
 }
@@ -2096,10 +2096,11 @@ function mount(app, opts) {
     return {
       subject: many ? "VOYO mobile: ваши eSIM готовы (" + items.length + " шт.)" : "VOYO mobile: ваша eSIM готова",
       html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0f1b2c">' +
-        // 22.11.2026: логотип как на сайте — картинка VOYO и тонкое «mobile» (у VSC mobile заменяется в vscText)
-        '<p style="margin:0 0 18px;line-height:1"><img src="' + REF_SITE + '/voyo-logo.png" alt="VOYO" width="92" height="20" style="display:inline-block;vertical-align:middle;border:0;height:20px;width:92px"/>' +
-        '<span style="display:inline-block;vertical-align:middle;margin-left:8px;font-size:21px;font-weight:300;letter-spacing:.01em;color:#1d7aa0">mobile</span></p>' +
-        '<p style="font-size:20px;font-weight:800;letter-spacing:-.02em;margin:0 0 4px">' + (many ? "Ваши eSIM готовы" : "Ваша eSIM готова") + '</p>' +
+        // 22.11.2026: заголовок слева, логотип как на сайте справа в той же строке (у VSC mobile знак заменяется в vscText)
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 4px"><tr>' +
+        '<td style="vertical-align:middle;padding:0"><p style="font-size:20px;font-weight:800;letter-spacing:-.02em;margin:0;color:#0f1b2c">' + (many ? "Ваши eSIM готовы" : "Ваша eSIM готова") + '</p></td>' +
+        '<td align="right" style="vertical-align:middle;padding:0 0 0 10px;white-space:nowrap;line-height:1"><img src="' + REF_SITE + '/voyo-logo.png" alt="VOYO" width="74" height="16" style="display:inline-block;vertical-align:middle;border:0;height:16px;width:74px"/>' +
+        '<span style="display:inline-block;vertical-align:middle;margin-left:6px;font-size:17px;font-weight:300;letter-spacing:.01em;color:#1d7aa0">mobile</span></td></tr></table>' +
         '<p style="color:#8b93a5;font-size:14px;line-height:1.5;margin:0 0 16px">' + esc(order.label || "") + (many ? " · " + items.length + " шт." : "") + '</p>' +
         list +
         noteHtml +
