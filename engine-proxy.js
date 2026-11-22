@@ -48,16 +48,26 @@ const PRICES = {
 // Плюс файл .engineModels.json рядом ({"upgrade":"..."}) — его пишет tools/modelSwitch.js и шлюз перечитывает
 // его на лету: переключение без перезапуска voyo, чтобы не оборвать идущий перевод (поток до 15 минут).
 const MODELS_FILE = path.join(__dirname, ".engineModels.json");
-let _mf = { mtime: 0, upgrade: "" };
-function fileUpgrade() {
-  try { const mt = fs.statSync(MODELS_FILE).mtimeMs; if (mt !== _mf.mtime) _mf = { mtime: mt, upgrade: String(JSON.parse(fs.readFileSync(MODELS_FILE, "utf8")).upgrade || "") }; }
-  catch (_) { _mf = { mtime: 0, upgrade: "" }; }
-  return _mf.upgrade;
+let _mf = { mtime: 0, upgrade: "", upgradeIf: [] };
+function readModelsFile() {
+  try {
+    const mt = fs.statSync(MODELS_FILE).mtimeMs;
+    if (mt !== _mf.mtime) { const j = JSON.parse(fs.readFileSync(MODELS_FILE, "utf8")); _mf = { mtime: mt, upgrade: String(j.upgrade || ""), upgradeIf: Array.isArray(j.upgradeIf) ? j.upgradeIf : [] }; }
+  } catch (_) { _mf = { mtime: 0, upgrade: "", upgradeIf: [] }; }
+  return _mf;
 }
-function upgradeFor(svc, model) {
+function fileUpgrade() { return readModelsFile().upgrade; }
+const sysText = (b) => typeof (b && b.system) === "string" ? b.system : Array.isArray(b && b.system) ? b.system.map((x) => (x && x.text) || "").join("") : "";
+// upgradeFor(сервис, модель[, тело запроса]). Без тела — только правила на весь сервис.
+// upgradeIf в .engineModels.json — перевод только части запросов сервиса, по началу system
+// (22.11: у прослушки на Haiku 5.5 только чистка расшифровок, оценки остаются на Haiku 4.5).
+function upgradeFor(svc, model, body) {
   for (const part of [process.env.ENGINE_MODEL_UPGRADE || "", fileUpgrade()].join(",").split(",").map((s) => s.trim()).filter(Boolean)) {
     const m = part.match(/^(?:([a-z0-9_-]+):)?([a-z0-9.-]+)=([a-z0-9.-]+)$/i);
     if (m && (!m[1] || m[1] === svc) && m[2] === model) return m[3];
+  }
+  if (body) for (const r of readModelsFile().upgradeIf) {
+    if (r && r.svc === svc && r.from === model && r.to && r.systemStarts && sysText(body).indexOf(String(r.systemStarts)) === 0) return String(r.to);
   }
   return null;
 }
@@ -248,7 +258,7 @@ function mountEarly(app, deps) {
     // Перевод на новую модель (ENGINE_MODEL_UPGRADE) и поправка настроек под неё
     let origBody = null;
     if (model) {
-      const upm = upgradeFor(svcOf(req), model);
+      const upm = upgradeFor(svcOf(req), model, body);
       if (upm) { origBody = JSON.parse(JSON.stringify(body)); body.model = upm; model = upm; }
       adaptForModel(body);
     }
@@ -278,6 +288,19 @@ function mountEarly(app, deps) {
         const up2 = await fetch(BASE + sub, { method: "POST", headers, body: JSON.stringify(origBody), signal: AbortSignal.timeout(15 * 60 * 1000) });
         if (up2.ok || up2.status < up.status) { up = up2; model = origBody.model; }
       } catch (_) {}
+    }
+    // Подстраховка 2: новая модель упёрлась в max_tokens (ответ обрезан) — повторяем на прежней.
+    // Только обычные (не потоковые) ответы: их можно проверить до отправки клиенту.
+    if (origBody && up.ok && !body.stream && /json/i.test(up.headers.get("content-type") || "")) {
+      try {
+        const j = await up.clone().json();
+        if (j && j.stop_reason === "max_tokens") {
+          console.warn("engine-proxy: новая модель " + model + " обрезала ответ (max_tokens) — повторяю на " + origBody.model);
+          if (j.usage) recordSpend(mskDay(), svcOf(req), model, j.usage, 0);
+          const up2 = await fetch(BASE + sub, { method: "POST", headers, body: JSON.stringify(origBody), signal: AbortSignal.timeout(15 * 60 * 1000) });
+          if (up2.ok) { up = up2; model = origBody.model; }
+        }
+      } catch (e) { console.warn("engine-proxy max_tokens:", e.message); }
     }
     if (econ && econ.after) econ.after(up.status);
     res.status(up.status);

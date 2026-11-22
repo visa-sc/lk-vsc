@@ -23,7 +23,9 @@ const DRY = process.argv.includes("--dry");
 const DIR = process.env.MODEL_SHADOW_DIR || "/var/lib/engine-shadow";   // MODEL_SHADOW_DIR — только для проверки
 const RULES = {
   cq: { title: "Прослушка звонков (Катя)", from: "claude-haiku-4-5", to: "claude-haiku-5-5", min: 25, upgrade: "cq:claude-haiku-4-5=claude-haiku-5-5" },
-  translate: { title: "Переводы документов", from: "claude-sonnet-5", to: "claude-sonnet-5-5", min: 5, upgrade: "translate:claude-sonnet-5=claude-sonnet-5-5,translate:claude-haiku-4-5=claude-haiku-5-5" }
+  // 22.11: только основная модель перевода. Мелкие задачи движка на Haiku (тип документа, выжимка правок) не сравнивались —
+  // их не трогаем. Минимум 12 пар минимум за 2 разных дня (одна заявка даёт несколько запросов подряд).
+  translate: { title: "Переводы документов", from: "claude-sonnet-5", to: "claude-sonnet-5-5", min: 12, days: 2, upgrade: "translate:claude-sonnet-5=claude-sonnet-5-5" }
 };
 const rows = (svc) => { try { return fs.readFileSync(path.join(DIR, svc + ".jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
 function json(t) {
@@ -53,20 +55,28 @@ function evalCq(list) {
   return { n, agree, okRate, errs, pass: n >= RULES.cq.min && errs === 0 && okRate >= 0.95 && validB >= validA && agree >= 0.8,
     text: `${n} проверок; новая модель дала правильный ответ в ${Math.round(okRate * 100)}% (старая — ${n ? Math.round(validA / n * 100) : 0}%), совпадение отметок со старой ${Math.round(agree * 100)}%${errs ? `, ошибок ${errs}` : ""}` };
 }
+// Числа в переводе (номера документов, даты, суммы) — главное, что нельзя потерять. Сравниваем как мультимножества:
+// каждое число старого перевода должно быть в новом. Хоть одно расхождение — сам не переключаю, разбираю руками. Ответы в журнале обрезаны на 20 000 знаков — у старого берём начало.
+const nums = (t) => { const m = new Map(); for (const x of String(t || "").match(/\d{2,}/g) || []) m.set(x, (m.get(x) || 0) + 1); return m; };
 function evalTr(list) {
-  let ok = 0, close = 0, errs = 0;
+  let ok = 0, close = 0, errs = 0, numOk = 0, numAll = 0, numHit = 0;
+  const days = new Set(list.map((r) => String(r.at || "").slice(0, 10)));
   for (const r of list) {
     if (r.b.error || r.b.status !== 200 || r.b.stop === "max_tokens") { errs++; continue; }
     ok++;
+    const na = nums(String(r.a.text).length >= 19990 ? String(r.a.text).slice(0, 18000) : r.a.text), nb = nums(r.b.text);
+    let miss = 0; for (const [x, c] of na) { numAll += c; const h = Math.min(c, nb.get(x) || 0); numHit += h; miss += c - h; }
+    if (!miss) numOk++;
     const la = String(r.a.text).length, lb = String(r.b.text).length;
     const A = words(r.a.text), B = words(r.b.text);
     let inter = 0; for (const w of A) if (B.has(w)) inter++;
     const jac = A.size + B.size ? inter / (A.size + B.size - inter) : 1;
     if (la === 0 || (lb / la >= 0.75 && lb / la <= 1.33 && jac >= 0.45)) close++;
   }
-  const n = list.length;
-  return { n, errs, pass: n >= RULES.translate.min && errs === 0 && close / Math.max(1, ok) >= 0.8,
-    text: `${n} переводов; без ошибок и обрывов ${ok} из ${n}, близки к прежним по объёму и содержанию ${close} из ${ok}` };
+  const n = list.length, enough = n >= RULES.translate.min && days.size >= RULES.translate.days;
+  const numRate = numAll ? numHit / numAll : 1;
+  return { n: enough ? n : 0, errs, pass: enough && errs === 0 && close / Math.max(1, ok) >= 0.8 && numOk === ok,
+    text: `${n} запросов перевода за ${days.size} дн.; без ошибок и обрывов ${ok} из ${n}, близки к прежним по объёму и содержанию ${close} из ${ok}, все числа (даты, номера, суммы) совпали в ${numOk} из ${ok}, всего чисел совпало ${Math.round(numRate * 1000) / 10}%` };
 }
 const STATE = path.join(DIR, "switch-state.json");
 const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch (_) { return { since: new Date().toISOString(), done: {} }; } };
@@ -105,8 +115,10 @@ const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")
       // Пишем .engineModels.json — шлюз перечитывает его на лету, voyo НЕ перезапускаем (не оборвать идущий перевод).
       // Сравнение по переведённому сервису шлюз прекращает сам.
       const MF = path.join(__dirname, "..", ".engineModels.json");
-      let cur = ""; try { cur = String(JSON.parse(fs.readFileSync(MF, "utf8")).upgrade || ""); } catch (_) {}
-      fs.writeFileSync(MF, JSON.stringify({ upgrade: [cur].concat(sw.map((d) => d.rule.upgrade)).filter(Boolean).join(","), at: new Date().toISOString() }));
+      let obj = {}; try { obj = JSON.parse(fs.readFileSync(MF, "utf8")) || {}; } catch (_) {}   // остальные ключи (upgradeIf) сохраняем
+      obj.upgrade = [String(obj.upgrade || "")].concat(sw.map((d) => d.rule.upgrade)).filter(Boolean).join(",");
+      obj.at = new Date().toISOString();
+      fs.writeFileSync(MF, JSON.stringify(obj, null, 1));
     }
     const li = decided.map((d) => `<li><b>${d.rule.title}</b>: ${d.switched ? `переведено на ${d.rule.to.replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2")}` : "оставлена прежняя модель — новая расходится со старой, разберу"}. ${d.ev.text}.</li>`).join("");
     await require(path.join(__dirname, "..", "mail.js")).sendMail({ to: "director@visa-sc.ru", subject: "Модели Claude: итог сравнения на живых запросах",
