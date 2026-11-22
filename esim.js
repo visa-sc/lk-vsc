@@ -2572,7 +2572,7 @@ function mount(app, opts) {
       if (!ord) return res.status(404).json({ success: false, message: "нет такого выданного заказа" });
       const cu = getCustomer(ord.custKey || ord.email, false);
       const L1 = readyLetter(ord, [{ myUrl: ord.myUrl }], cu && cu.refCode);
-      const r1 = await opts.sendMail({ to: "director@visa-sc.ru", subject: "[ОБРАЗЕЦ] " + L1.subject, html: L1.html, text: L1.text });
+      const r1 = await opts.sendMail({ to: "director@visa-sc.ru", subject: (req.query.clean ? "" : "[ОБРАЗЕЦ] ") + L1.subject, html: L1.html, text: L1.text });
       return res.json({ success: !!(r1 && r1.ok !== false), subject: L1.subject });
     }
     const mine = readJson(ORDERS_FILE, []).filter((x) => x.status === "done" && x.myUrl && normEmail(x.email) === OWNER_EMAIL);

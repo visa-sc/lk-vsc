@@ -55,6 +55,8 @@
   .brand .wm2{font-size:19px;font-weight:300;letter-spacing:.01em;line-height:1;
     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .hdr a.tgl{display:inline-flex;align-items:center;gap:6px;color:#1b7fb3;}
+  /* Tg-бот — белая «пилюля», как на главной (22.11.2026) */
+  .hdr a.tgl{background:rgba(255,255,255,.85);border:1px solid var(--line);border-radius:999px;padding:7px 13px;box-shadow:0 1px 2px rgba(16,24,40,.03);text-decoration:none;}
   .tgl-s{display:none;}
   @media (max-width:600px){ .tgl-l{display:none;} .tgl-s{display:inline;} .hbtns{flex-wrap:nowrap;} }
   .hdr a.shop{font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;}
@@ -135,6 +137,9 @@
   .modal .step .tx{font-size:14px;line-height:1.55;color:#3a4356;}
   @keyframes fadeup{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
   .foot{margin-top:34px;text-align:center;font-size:11.5px;color:var(--mut);line-height:1.7;}
+  /* 22.11.2026: шапка с логотипом и кнопками чуть ниже — у самого верхнего края её не замечали */
+  .hdr{padding-top:36px;}
+  @media(max-width:600px){ .hdr{padding-top:34px;} }
 </style>
 </head>
 <body>
