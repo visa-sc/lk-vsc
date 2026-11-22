@@ -380,6 +380,8 @@
       <div class="mnote" id="tpNote">Онлайн-оплата картой подключается — пока продлеваем через менеджера за пару минут.</div>
     </div>
 
+    <div id="a2hsHost"></div>
+
     <div class="panel" id="refPanel" hidden>
       <h2>Путешествуете не один?</h2>
       <div class="ps" id="refTx" style="margin-bottom:0"></div>
@@ -711,6 +713,8 @@
       var A2 = window.voyoA2hs;
       if(A2 && !EMBED && !quiet){
         A2.setManifest(j.acc && !(j.seat && j.seat.n > 1) ? "/esim/account?e=" + encodeURIComponent(j.acc.e) + "&t=" + encodeURIComponent(j.acc.t) : location.pathname + location.search);
+        // кнопка «Добавить на экран»: только телефон и пока не добавлено (22.11.2026)
+        if (A2.block && !(j.seat && j.seat.n > 1)) A2.block(el("a2hsHost"));
         // пока eSIM не установлена, окно не всплывает: оно закрывало QR и кнопку установки (22.10.2026)
         if (j.usage && j.usage.installed) setTimeout(function(){ A2.popup(); }, 1200);
       }

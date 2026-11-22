@@ -52,12 +52,19 @@
     [ICON.plus, "Нажмите «Добавить»"],
   ] };
   function guides() {
+    if (INAPP && (IOS || ANDROID)) return [INAPP_GUIDE];
     if (IOS) return [IOS_OTHER ? IOS_BROWSER : IOS_SAFARI];
     if (ANDROID) return [SAMSUNG ? ANDROID_SAMSUNG : ANDROID_CHROME];
     return [IOS_SAFARI, ANDROID_CHROME];   // компьютер: обе инструкции
   }
-  var TITLE = "VOYO mobile на экране телефона";
-  var WHY = "Кабинет в одно касание: QR-коды, остаток трафика и продление всегда под рукой.";
+  function BRAND() { return window.VOYO_BRAND === "vsc" ? "VSC mobile" : "VOYO mobile"; }
+  var WHY = "Кабинет в одно касание, как приложение: QR-коды, остаток трафика и продление всегда под рукой.";
+  // встроенный браузер (Telegram, Instagram, VK): оттуда на экран не добавить — сначала открыть в обычном браузере
+  var INAPP_GUIDE = { name: IOS ? "iPhone" : "Android", app: "Сейчас страница открыта внутри приложения", steps: [
+    [ICON.dotsH, "Нажмите ⋯ или ⋮ в углу экрана"],
+    [ICON.share, "Выберите «Открыть в " + (IOS ? "Safari" : "браузере") + "»"],
+    [ICON.plus, "Там нажмите эту кнопку ещё раз — покажем, как добавить"],
+  ] };
 
   // ── стили (свои, с префиксом va-, чтобы не задеть страницу) ──
   var css = "" +
@@ -95,7 +102,16 @@
     ".va-blk summary b{flex:none;color:#8b93a5;font-weight:400;font-size:18px;transition:transform .18s ease;}" +
     ".va-blk[open] summary b{transform:rotate(90deg);}" +
     ".va-body{padding:2px 16px 16px;}" +
-    ".va-body .va-why{margin:0 0 14px;font-size:13.5px;}";
+    ".va-body .va-why{margin:0 0 14px;font-size:13.5px;}" +
+    ".va-btn{display:flex;align-items:center;gap:12px;width:100%;margin:16px 0 0;font:inherit;text-align:left;cursor:pointer;" +
+      "background:linear-gradient(135deg,#eaf6ef,#e2f3ea);border:1px solid #c9e8d5;border-radius:18px;padding:13px 16px;color:#14532d;-webkit-tap-highlight-color:transparent;}" +
+    ".va-btn:active{transform:scale(.99);}" +
+    ".va-btn img{width:36px;height:36px;border-radius:10px;flex:none;box-shadow:0 6px 14px -8px rgba(22,32,46,.6);}" +
+    ".va-btn span{flex:1;min-width:0;font-size:15px;font-weight:700;line-height:1.3;}" +
+    ".va-btn span small{display:block;font-size:12.5px;font-weight:500;color:#3d6b4f;margin-top:2px;}" +
+    ".va-btn b{flex:none;font-size:20px;font-weight:400;color:#3d6b4f;}" +
+    ".va-done{display:block;width:100%;margin:16px 0 0;font:inherit;font-size:14px;font-weight:600;border:0;cursor:pointer;background:none;color:#8b93a5;padding:8px;}" +
+    ".va-end{font-size:13px;line-height:1.5;color:#6b7385;margin:14px 0 0;}";
   function addCss() {
     if (document.getElementById("va-css")) return;
     var s = document.createElement("style"); s.id = "va-css"; s.textContent = css; document.head.appendChild(s);
@@ -146,13 +162,20 @@
   function store(get, val) {
     try { if (get) return JSON.parse(localStorage.getItem(KEY) || "{}"); localStorage.setItem(KEY, JSON.stringify(val)); } catch (e) { return {}; }
   }
+  function markAdded() {
+    var st = store(true) || {}; st.added = Date.now(); store(false, st);
+    var h = document.querySelectorAll(".va-btn"); for (var i = 0; i < h.length; i++) h[i].parentNode && h[i].parentNode.removeChild(h[i]);
+  }
+  function added() { return standalone() || !!(store(true) || {}).added; }
+  if (standalone()) { try { var st0 = store(true) || {}; if (!st0.added) { st0.added = Date.now(); store(false, st0); } } catch (e) {} }
+  window.addEventListener("appinstalled", markAdded);
   function popup(force) {
     if (!force) {
-      if (!(IOS || ANDROID) || INAPP || standalone()) return false;
+      if (!(IOS || ANDROID) || INAPP || added()) return false;
       var st = store(true) || {};
       if ((st.n || 0) >= 2) return false;
       try { if (sessionStorage.getItem(KEY)) return false; sessionStorage.setItem(KEY, "1"); } catch (e) {}
-      store(false, { n: (st.n || 0) + 1, last: Date.now() });
+      st.n = (st.n || 0) + 1; st.last = Date.now(); store(false, st);
     }
     addCss();
     var ovl = document.createElement("div");
@@ -160,8 +183,10 @@
     ovl.innerHTML = '<div class="va-sheet" role="dialog" aria-modal="true" aria-labelledby="vaT">' +
       '<button class="va-x" type="button" aria-label="Закрыть">✕</button>' +
       '<img class="va-ico" src="/favicon-192.png" alt=""/>' +
-      '<h3 id="vaT">' + TITLE + '</h3><p class="va-why">' + WHY + "</p>" +
-      '<div class="va-g">' + guidesHtml() + "</div></div>";
+      '<h3 id="vaT">' + BRAND() + ' на экране телефона</h3><p class="va-why">' + WHY + "</p>" +
+      '<div class="va-g">' + guidesHtml() + "</div>" +
+      (INAPP ? "" : '<p class="va-end">На экране появится значок ' + BRAND() + ": открывайте кабинет с него, вход уже выполнен.</p>") +
+      '<button class="va-done" type="button">✓ Уже добавлено на экран</button></div>';
     var prevOverflow = document.body.style.overflow;
     function close() {
       ovl.classList.remove("on");
@@ -172,6 +197,7 @@
     function onKey(e) { if (e.key === "Escape") close(); }
     ovl.addEventListener("click", function (e) { if (e.target === ovl) close(); });
     ovl.querySelector(".va-x").addEventListener("click", close);
+    ovl.querySelector(".va-done").addEventListener("click", function () { markAdded(); close(); });
     document.addEventListener("keydown", onKey);
     var b = installBtn(close);
     if (b) { var sh = ovl.querySelector(".va-sheet"); sh.insertBefore(b, ovl.querySelector(".va-g")); }
@@ -181,22 +207,18 @@
     return true;
   }
 
-  // ── свёрнутый блок для кабинета ──
+  // ── кнопка для кабинета: только телефон и пока не добавлено; по нажатию — окно с инструкцией ──
   function block(host) {
-    if (!host || standalone()) return;
-    addCss();
-    var d = document.createElement("details");
-    d.className = "va-blk";
-    d.innerHTML = '<summary><img src="/favicon-192.png" alt=""/><span>Добавить на экран телефона</span><b>›</b></summary>' +
-      '<div class="va-body"><p class="va-why">' + WHY + "</p>" + guidesHtml() + "</div>";
-    d.addEventListener("toggle", function () {
-      if (!d.open || d.querySelector(".va-inst")) return;
-      var b = installBtn(function () {});
-      if (b) d.querySelector(".va-body").insertBefore(b, d.querySelector(".va-body").firstChild.nextSibling);
-    });
+    if (!host) return;
     host.innerHTML = "";
-    host.appendChild(d);
+    if (!(IOS || ANDROID) || added()) return;
+    addCss();
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "va-btn";
+    b.innerHTML = '<img src="/favicon-192.png" alt=""/><span>Добавить ' + BRAND() + ' на экран<small>Кабинет в одно касание, как приложение</small></span><b>›</b>';
+    b.addEventListener("click", function () { popup(true); });
+    host.appendChild(b);
   }
 
-  window.voyoA2hs = { popup: popup, block: block, setManifest: setManifest, standalone: standalone };
+  window.voyoA2hs = { popup: popup, block: block, setManifest: setManifest, standalone: standalone, added: added };
 })();
