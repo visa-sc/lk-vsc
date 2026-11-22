@@ -808,6 +808,12 @@
     this.disabled=false; this.textContent="Оставить заявку";
   });
 
+  // временный сбой у оператора: не пугаем «ссылка недействительна», даём обновить
+  function tempFail(){
+    var d = el("dead"); el("loading").style.display="none";
+    d.innerHTML = "Оператор сейчас отвечает медленно, данные eSIM не загрузились.<br/>Ссылка в порядке, попробуйте через минуту.<a class=\"deadbtn\" href=\"\" onclick=\"location.reload();return false;\">Обновить страницу</a>";
+    d.classList.add("on");
+  }
   async function load(quiet){
     if(!quiet){ el("loading").style.display="block"; }
     el("dead").classList.remove("on");
@@ -815,7 +821,8 @@
       var r = await fetch("/esim/api/my?o="+encodeURIComponent(O)+"&t="+encodeURIComponent(T));
       var j = await r.json();
       el("loading").style.display="none";
-      if(!r.ok || !j || !j.success){ el("dead").classList.add("on"); return; }
+      // 403/404 — ссылка правда недействительна; 5xx — оператор отвечает медленно, это временно (22.11.2026)
+      if(!r.ok || !j || !j.success){ if(r.status >= 500) return (quiet && DATA) ? null : tempFail(); el("dead").classList.add("on"); return; }
       PAY=!!j.pay; DATA=j; YOU=j.you||null; render(j);
       try{ window.voyoSendPurchase(j.conv); }catch(e){}
       // VOYO mobile на экране телефона: окно в первые два захода после покупки (esim-a2hs.js)
@@ -831,7 +838,7 @@
         el("nav").innerHTML = '<a class=\'shop tgl\' href=\'https://t.me/esimvoyo_bot?start=site\' target=\'_blank\' rel=\'noopener\'><svg width=\'15\' height=\'15\' viewBox=\'0 0 24 24\' aria-hidden=\'true\' style=\'flex:none\'><circle cx=\'12\' cy=\'12\' r=\'12\' fill=\'#27A6E5\'/><path d=\'M5.4 11.7l11.3-4.4c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z\' fill=\'#fff\'/></svg><span class="tgl-l">Оформить в Tg-боте</span><span class="tgl-s">Tg-бот</span></a>'+'<a class="shop my" href="/esim/account">Мои eSIM</a>'+
           '<a class="out" href="/esim/logout">Выйти</a>';
       }
-    }catch(e){ el("loading").style.display="none"; el("dead").classList.add("on"); }
+    }catch(e){ el("loading").style.display="none"; if(!(quiet && DATA)) tempFail(); }
   }
   el("refreshBtn").addEventListener("click", async function(){
     this.classList.add("spin"); this.disabled=true;
