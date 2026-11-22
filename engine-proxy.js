@@ -75,7 +75,9 @@ function adaptForModel(body) {
     // а к max_tokens — запас 1024, чтобы размышления не съели ответ (у сканера и прослушки бывает 250–400).
     if (!th || th.type === "enabled") body.thinking = { type: "adaptive" };
     body.output_config = Object.assign({ effort: "low" }, body.output_config || {});
-    if (body.thinking.type !== "disabled") body.max_tokens = Math.min(64000, (Number(body.max_tokens) || 1024) + 1024);
+    // Запас: размышления + у Haiku 5.5 другой счёт токенов (русский текст выходит длиннее). 22.11: при +1024 три длинные
+    // чистки расшифровок прослушки обрезались на max_tokens — теперь вдвое, но не меньше +2048. Платим только за потраченное.
+    if (body.thinking.type !== "disabled") { const mt = Number(body.max_tokens) || 1024; body.max_tokens = Math.min(64000, Math.max(mt * 2, mt + 2048)); }
   } else if (th && th.type === "enabled") body.thinking = { type: "adaptive" };
   else if (m === "claude-sonnet-5-5" && th && th.type === "disabled") body.thinking = { type: "between_tools" };
   else if (m === "claude-opus-5-5" && th && th.type === "disabled") delete body.thinking;
