@@ -2073,8 +2073,8 @@ function mount(app, opts) {
       P("<b style=\"color:#3f2e08\">QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, лучше дома по Wi-Fi.", "margin:0 0 6px") +
       P("В поездке включите «Роуминг данных» для линии eSIM.") + "</div>";
     // VOYO mobile на экране телефона: одна строка под устройство, с которого купили (обе, если не знаем)
-    const homeIos = "iPhone, Safari: три точки внизу справа → «Поделиться» → «На экран „Домой“» → «Добавить»";
-    const homeAnd = "Android, Chrome: три точки справа вверху → «Установить приложение» или «Добавить на гл. экран»";
+    const homeIos = "iPhone, Safari: ≡ слева от адреса внизу → «Поделиться» → «На экран „Домой“» → «Добавить»";
+    const homeAnd = "Android, Chrome: ⋮ справа вверху → «Добавить на главный экран» → «Установить»";
     const homeLines = order.os === "ios" ? [homeIos] : order.os === "android" ? [homeAnd] : [homeIos, homeAnd];
     const homeHtml = '<div style="margin:0 0 14px;padding:14px 16px;background:#eaf6ef;border:1px solid #c9e8d5;border-radius:14px">' +
       '<p style="font-size:15px;font-weight:800;margin:0 0 4px;color:#14532d">Добавьте VOYO mobile на экран телефона</p>' +

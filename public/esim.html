@@ -306,6 +306,12 @@
     display:flex;align-items:center;justify-content:center;margin-bottom:12px;box-shadow:0 8px 16px -8px rgba(53,137,189,.7);}
   .how .t{font-weight:700;font-size:15.5px;margin-bottom:6px;letter-spacing:-.01em;}
   .how .d{font-size:13.5px;color:var(--mut);line-height:1.6;}
+  /* 22.11.2026: цифра и текст в один ряд, карточки компактнее */
+  .how .cards{gap:10px;}
+  .how .c{display:grid;grid-template-columns:34px 1fr;column-gap:14px;align-items:center;padding:14px 16px;border-radius:18px;}
+  .how .c .n{grid-row:1 / span 2;margin:0;}
+  .how .c .t{margin:0 0 1px;}
+  .how .c .d{line-height:1.45;}
 
   /* ── FAQ ── */
   .faq{margin-top:56px;max-width:720px;margin-left:auto;margin-right:auto;}
@@ -488,7 +494,6 @@
   <div class="hdr">
     <a class="brand" href="/esim">
       <span class="brandrow"><img class="lg" src="/voyo-logo.png" alt="VOYO" /><span class="wm">mobile</span></span>
-      <span class="byvsc">by <b>VSC</b></span>
     </a>
     <div class="hbtns">
     <!-- «Оформить в TG-боте» (19.09.2026): кому удобнее в телеграме -->
