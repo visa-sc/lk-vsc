@@ -2057,7 +2057,10 @@ function mount(app, opts) {
       : '<div style="margin:0 0 8px">' + btn(items[0].myUrl, "Установить eSIM") + '</div>' +
         '<p style="font-size:13px;line-height:1.5;color:#8b93a5;text-align:center;margin:0 0 18px">На странице: установка в один тап на iPhone и QR-код</p>';
     // 22.11.2026 (Андрей): меньше текста, главное одной плашкой, «на экран телефона» — заметным блоком
-    const P = (s, css) => '<p style="font-size:13.5px;line-height:1.55;margin:0;' + (css || "") + '">' + s + "</p>";
+    // пункты плашки — с точками, чтобы не сливались (22.11.2026, Андрей)
+    const P = (s, css) => '<table role="presentation" style="border-collapse:collapse;' + (css || "") + '"><tr>' +
+      '<td style="vertical-align:top;padding:0 8px 0 0;font-size:13.5px;line-height:1.55;color:#c08a1e">•</td>' +
+      '<td style="font-size:13.5px;line-height:1.55;padding:0;color:#5e4512">' + s + "</td></tr></table>";
     const noteHtml = '<div style="margin:0 0 14px;padding:12px 16px;background:#fff6e5;border:1px solid #f3dcae;border-radius:14px;color:#5e4512">' +
       (many ? P("<b style=\"color:#3f2e08\">Каждая eSIM ставится на свой телефон:</b> eSIM 1 себе, остальные ссылки перешлите спутникам.", "margin:0 0 6px") : "") +
       P("<b style=\"color:#3f2e08\">QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, лучше дома по Wi-Fi.", "margin:0 0 6px") +
@@ -2096,7 +2099,7 @@ function mount(app, opts) {
       text: (many ? "Ваши eSIM готовы (" + items.length + " шт.): " : "Ваша eSIM готова: ") + (order.label || "") + "\n\n" +
         items.map((it, i) => (many ? "eSIM " + (i + 1) + " (" + (i ? "для спутника, перешлите ему" : "для вас") + "): " : "Установить eSIM: ") + it.myUrl).join("\n") +
         (many ? "\n\nКаждая eSIM ставится на свой телефон: eSIM 1 себе, остальные ссылки перешлите спутникам." : "") +
-        "\n\nQR срабатывает один раз: ставьте eSIM сразу на телефон, с которым поедете, лучше дома по Wi-Fi. В поездке включите «Роуминг данных» для линии eSIM." +
+        "\n\n• QR срабатывает один раз: ставьте eSIM сразу на телефон, с которым поедете, лучше дома по Wi-Fi.\n• В поездке включите «Роуминг данных» для линии eSIM." +
         (tipsCN ? "\n\n" + CHINA_TIPS_TEXT : "") +
         "\n\nДобавьте VOYO mobile на экран телефона: откройте кабинет на телефоне, " + acc + "\n" + homeLines.join("\n") +
         (refCode ? "\n\nПутешествуете не один? Ваш промокод для друзей: " + refCode + " (другу −" + REF_BONUS_RUB + " ₽ на первую eSIM, вам +" +
