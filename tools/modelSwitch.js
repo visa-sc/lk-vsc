@@ -1,18 +1,16 @@
 #!/usr/bin/env node
 /* ─────────────────────────────────────────────────────────────────────────────
- * modelSwitch — перевод прослушки и переводов на новые модели после сравнения на живых запросах (Андрей 21.11.2026).
+ * modelSwitch — перевод переводов документов на Sonnet 5.5 после сравнения на живых заказах (Андрей 21–22.11.2026).
  *
- * Шлюз (engine-proxy.js, ENGINE_SHADOW) отдаёт клиенту ответ старой модели, а тот же запрос в фоне шлёт новой и
- * пишет оба ответа в /var/lib/engine-shadow/<сервис>.jsonl. Здесь сравниваем:
- *   cq (прослушка Кати, Haiku 4.5 → 5.5): JSON оценок — совпадение отметок по каждому критерию и сотруднику;
- *   translate (переводы, Sonnet 5 → 5.5): ответ без ошибок, не обрезан, длина и текст близки к старому.
- * Если качество держится — дописываем сервис в /var/www/voyo/.engineModels.json: шлюз перечитывает файл на лету,
- * без перезапуска voyo (иначе оборвался бы идущий перевод). Не держится или мало данных —
- * ничего не меняем. Одно письмо Андрею за прогон, только если что-то решено.
- * Каждый день в 09:05, пока по обоим сервисам нет решения: мало данных — ждём следующего дня; решение принято (переведено
- * или оставлена старая) — сервис больше не трогаем (state.json рядом с журналами). Когда решены оба — строка cron снимает себя.
- * Если за 21 день данных так и не набралось — одно письмо Андрею.
- * Запуск: node tools/modelSwitch.js [--dry]
+ * Шлюз (engine-proxy.js, ENGINE_SHADOW) отдаёт заказчику перевод старой модели, а тот же запрос в фоне шлёт новой и
+ * пишет оба ответа в /var/lib/engine-shadow/translate.jsonl. Прослушка (cq) решена 22.11 отдельно: чистка — Haiku 5.5
+ * через upgradeIf, оценки — решает Катя (tools/kateModelsAsk.js).
+ * Каждый день в 09:05 до 10.12:
+ *   нет решения — сравниваем (evalTr). Проходит → сам переключаю (.engineModels.json, шлюз читает на лету, без перезапуска),
+ *     сразу живая проверка через шлюз; не прошла → тут же откат. Данных хватает, но не проходит → остаётся прежняя.
+ *   переключено — проверка заказов движка после переключения: любая ошибка заказа или откат новой модели в шлюзе → автооткат.
+ *   Любое изменение — сообщением Катиному Claude в «Помощники». Андрею писем нет: итог 10.12 в 08:00 (tools/kateModelsAsk.js report).
+ * Журнал решений — switch-state.json (log, tr). Запуск: node tools/modelSwitch.js [--dry]
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
 const fs = require("fs");
@@ -24,8 +22,8 @@ const DIR = process.env.MODEL_SHADOW_DIR || "/var/lib/engine-shadow";   // MODEL
 const RULES = {
   cq: { title: "Прослушка звонков (Катя)", from: "claude-haiku-4-5", to: "claude-haiku-5-5", min: 25, upgrade: "cq:claude-haiku-4-5=claude-haiku-5-5" },
   // 22.11: только основная модель перевода. Мелкие задачи движка на Haiku (тип документа, выжимка правок) не сравнивались —
-  // их не трогаем. Минимум 8 переводов и 3 проверки минимум за 2 разных дня (одна заявка даёт несколько запросов подряд).
-  translate: { title: "Переводы документов", from: "claude-sonnet-5", to: "claude-sonnet-5-5", min: 8, minCheck: 3, days: 2, upgrade: "translate:claude-sonnet-5=claude-sonnet-5-5" }
+  // их не трогаем. Минимум 15 переводов и 5 проверок минимум за 3 разных дня (растянуто по просьбе Андрея 22.11) (одна заявка даёт несколько запросов подряд).
+  translate: { title: "Переводы документов", from: "claude-sonnet-5", to: "claude-sonnet-5-5", min: 15, minCheck: 5, days: 3, upgrade: "translate:claude-sonnet-5=claude-sonnet-5-5" }
 };
 const rows = (svc) => { try { return fs.readFileSync(path.join(DIR, svc + ".jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
 function json(t) {
@@ -95,49 +93,68 @@ function evalTr(list) {
 }
 const STATE = path.join(DIR, "switch-state.json");
 const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch (_) { return { since: new Date().toISOString(), done: {} }; } };
+const MF = path.join(__dirname, "..", ".engineModels.json");
+const readMF = () => { try { return JSON.parse(fs.readFileSync(MF, "utf8")) || {}; } catch (_) { return {}; } };
+const writeUpgrade = (fn) => { const o = readMF(); o.upgrade = fn(String(o.upgrade || "").split(",").map((s) => s.trim()).filter(Boolean)).join(","); o.at = new Date().toISOString(); fs.writeFileSync(MF, JSON.stringify(o, null, 1)); };
+const nice = (m) => m.replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2");
+// Сообщение Катиному Claude в «Помощники» о любом изменении (Андрей 22.11: изменения — сразу туда, ему — итог 10.12).
+function toKate(key, text) {
+  if (DRY) return console.log("В ПОМОЩНИКИ БЫ:", text);
+  const f = "/tmp/modelswitch-" + key + ".txt";
+  try { fs.writeFileSync(f, "Катя, от Андрея. Для твоего Claude.\n\n" + text, { mode: 0o644 }); execSync("runuser -u kateadmin -- env MENTION=ekaterina.z@visa-sc.ru node " + path.join(__dirname, "helpersRoomSay.js") + " gmvcc6iz9pmsc claude " + key + " < " + f, { stdio: "inherit" }); }
+  catch (e) { console.log("Помощники:", e.message); } finally { try { fs.unlinkSync(f); } catch (_) {} }
+}
+// Живая проверка сразу после переключения: запрос как у движка (поток, Sonnet 5) через шлюз — должен ответить Sonnet 5.5 и не потерять цифры.
+async function smoke() {
+  const key = (fs.readFileSync("/var/www/translate-engine/.env", "utf8").match(/^ANTHROPIC_API_KEY=(.+)$/m) || [])[1];
+  const r = await fetch("http://127.0.0.1:" + (process.env.PORT || 3000) + "/internal/anthropic/v1/messages", { method: "POST",
+    headers: { "x-api-key": String(key || "").trim(), "anthropic-version": "2023-06-01", "content-type": "application/json", "x-voyo-service": "translate" },
+    body: JSON.stringify({ model: RULES.translate.from, max_tokens: 60000, stream: true, output_config: { effort: "medium" }, system: "Ты переводчик документов. Верни HTML.",
+      messages: [{ role: "user", content: "Проверка после переключения. Переведи на английский в <section class=\"page\">: Паспорт серия 75 номер 1234567 выдан 05.03.2026, сумма 15000 рублей." }] }),
+    signal: AbortSignal.timeout(5 * 60 * 1000) });
+  const t = await r.text(); const model = (t.match(/"model":"([^"]+)"/) || [])[1] || "";
+  const text = t.split("\n").filter((l) => l.startsWith("data:")).map((l) => { try { const e = JSON.parse(l.slice(5)); return (e.delta && e.delta.text) || ""; } catch (_) { return ""; } }).join("");
+  const ok = r.status === 200 && model.indexOf(RULES.translate.to) === 0 && /1234567/.test(text) && /<section/.test(text);
+  return { ok, why: ok ? "" : `ответ ${r.status}, модель ${model || "?"}, ${/1234567/.test(text) ? "" : "номер паспорта потерян"}` };
+}
+// Проверка после переключения: заказы движка с момента переключения — ни одной ошибки, и в журнале шлюза нет откатов новой модели.
+function audit(since) {
+  let orders = []; try { orders = (JSON.parse(fs.readFileSync("/var/www/translate-engine/.translate/orders.json", "utf8")).orders || []).filter((o) => Number(o.createdAt) >= since); } catch (_) {}
+  const errs = orders.filter((o) => o.status === "error" || o.correctStatus === "error");
+  let fb = 0; try { fb = (execSync("grep -ac 'новая модель " + RULES.translate.to + " \\(ответила\\|обрезала\\)' /root/.pm2/logs/voyo-error.log /root/.pm2/logs/voyo-out.log 2>/dev/null || true").toString().match(/:(\d+)/g) || []).reduce((s, x) => s + Number(x.slice(1)), 0); } catch (_) {}
+  return { orders: orders.length, done: orders.filter((o) => o.status === "done").length, errs, fb };
+}
 (async () => {
-  const decided = [];
-  const st = readState();
-  const upgrade = String(process.env.ENGINE_MODEL_UPGRADE || "");
-  for (const [svc, rule] of Object.entries(RULES)) {
-    let fileUp = ""; try { fileUp = String(JSON.parse(fs.readFileSync(path.join(__dirname, "..", ".engineModels.json"), "utf8")).upgrade || ""); } catch (_) {}
-    if (st.done[svc] || (upgrade + "," + fileUp).includes(rule.upgrade.split(",")[0])) { st.done[svc] = st.done[svc] || "switched"; continue; }   // уже решено
-    const list = rows(svc).filter((r) => r.a && r.a.model === rule.from && r.b && r.b.model === rule.to);
-    const ev = svc === "cq" ? evalCq(list) : evalTr(list);
-    console.log(new Date().toISOString(), svc, ev.pass ? "ПРОХОДИТ" : "не проходит", ev.text);
-    if (ev.pass) decided.push({ svc, rule, ev, switched: true });
-    else if (ev.n >= rule.min) decided.push({ svc, rule, ev, switched: false });   // данных хватает, но качество не держится — оставляем старую
-  }
-  const finish = () => {
-    if (DRY) return;
-    fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(STATE, JSON.stringify(st));
-    if (Object.keys(RULES).every((k) => st.done[k])) { try { execSync("crontab -l | grep -v modelswitch-daily | crontab -"); console.log("оба сервиса решены — расписание снято"); } catch (_) {} }
-  };
-  if (!decided.length) {
-    const days = (Date.now() - Date.parse(st.since)) / 864e5;
-    if (days > 21 && !st.lateMail && !DRY) {
-      st.lateMail = 1;
-      await require(path.join(__dirname, "..", "mail.js")).sendMail({ to: "director@visa-sc.ru", subject: "Модели Claude: за 3 недели мало данных для сравнения",
-        html: "<p>Сравнение старой и новой модели: за 3 недели набралось мало живых запросов (" + Object.keys(RULES).filter((k) => !st.done[k]).map((k) => RULES[k].title).join(", ") + "). Сервисы работают на прежней модели, проверка продолжается.</p>" }).catch(() => {});
+  const st = readState(); st.tr = st.tr || {}; st.log = st.log || [];
+  const note = (s) => { const l = new Date().toISOString().slice(0, 16) + " " + s; st.log.push(l); st.log = st.log.slice(-60); console.log(l); };
+  const rule = RULES.translate, fileUp = String(readMF().upgrade || "");
+  const isOn = fileUp.split(",").includes(rule.upgrade);
+  if (!st.done.translate) {
+    const list = rows("translate").filter((r) => r.a && r.a.model === rule.from && r.b && r.b.model === rule.to);
+    const ev = evalTr(list);
+    st.tr.last = ev.text;
+    note("переводы: " + (ev.pass ? "ПРОХОДИТ" : ev.n ? "не проходит" : "мало данных") + " — " + ev.text);
+    if (ev.pass && !DRY) {
+      writeUpgrade((a) => a.filter((x) => x !== rule.upgrade).concat(rule.upgrade));
+      st.done.translate = "switched"; st.tr.switchedAt = Date.now(); st.tr.fbBase = audit(Date.now()).fb;
+      const s = await smoke().catch((e) => ({ ok: false, why: e.message }));
+      if (s.ok) {
+        note("переводы переключены на " + nice(rule.to) + ", живая проверка прошла");
+        toKate("modelswitch-tr-on", `Переводы документов переключены на ${nice(rule.to)} (было ${nice(rule.from)}). Сравнение на живых заказах: ${ev.text}.\n\nПереключает шлюз (/var/www/voyo/.engineModels.json, строка ${rule.upgrade}), в translate-engine ничего не менялось. TRANSLATE_MODEL / TRANSLATE_MODEL_CHECK в .env движка НЕ менять. Мелкие задачи на Haiku не переключались. Если новая модель ответит ошибкой, шлюз сам повторит на прежней. Ближайшие дни каждый заказ проверяется: при ошибках будет автооткат. Откат вручную — убрать эту строку из .engineModels.json, перезапуск не нужен.`);
+      } else {
+        writeUpgrade((a) => a.filter((x) => x !== rule.upgrade)); st.done.translate = "kept"; st.tr.rolledBack = "живая проверка: " + s.why;
+        note("переводы: живая проверка после переключения НЕ прошла (" + s.why + ") — сразу вернул прежнюю модель");
+      }
+    } else if (ev.n && !DRY) { st.done.translate = "kept"; note("переводы: данных хватает, но новая модель не прошла — оставлена прежняя"); }
+  } else if (st.done.translate === "switched" && isOn) {
+    const a = audit(st.tr.switchedAt), fb = a.fb - (st.tr.fbBase || 0);
+    st.tr.audit = { at: new Date().toISOString(), orders: a.orders, done: a.done, errors: a.errs.length, fallbacks: fb };
+    note(`переводы на ${nice(rule.to)}: с переключения заказов ${a.orders}, готово ${a.done}, ошибок ${a.errs.length}, откатов в шлюзе ${fb}`);
+    if ((a.errs.length || fb > 0) && !DRY) {
+      writeUpgrade((x) => x.filter((y) => y !== rule.upgrade)); st.done.translate = "kept"; st.tr.rolledBack = `ошибок в заказах ${a.errs.length} (${a.errs.map((o) => String(o.error || "").slice(0, 80)).join("; ")}), откатов в шлюзе ${fb}`;
+      note("переводы: ОТКАТ на " + nice(rule.from) + " — " + st.tr.rolledBack);
+      toKate("modelswitch-tr-off", `Переводы документов возвращены на ${nice(rule.from)}: после переключения на ${nice(rule.to)} были сбои (${st.tr.rolledBack}). Строка ${rule.upgrade} убрана из /var/www/voyo/.engineModels.json. В translate-engine ничего не менялось.`);
     }
-    finish();
-    return console.log("решений нет (мало данных) — ждём");
   }
-  for (const d of decided) st.done[d.svc] = d.switched ? "switched" : "kept";
-  if (!DRY) {
-    const sw = decided.filter((d) => d.switched);
-    if (sw.length) {
-      // Пишем .engineModels.json — шлюз перечитывает его на лету, voyo НЕ перезапускаем (не оборвать идущий перевод).
-      // Сравнение по переведённому сервису шлюз прекращает сам.
-      const MF = path.join(__dirname, "..", ".engineModels.json");
-      let obj = {}; try { obj = JSON.parse(fs.readFileSync(MF, "utf8")) || {}; } catch (_) {}   // остальные ключи (upgradeIf) сохраняем
-      obj.upgrade = [String(obj.upgrade || "")].concat(sw.map((d) => d.rule.upgrade)).filter(Boolean).join(",");
-      obj.at = new Date().toISOString();
-      fs.writeFileSync(MF, JSON.stringify(obj, null, 1));
-    }
-    const li = decided.map((d) => `<li><b>${d.rule.title}</b>: ${d.switched ? `переведено на ${d.rule.to.replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2")}` : "оставлена прежняя модель — новая расходится со старой, разберу"}. ${d.ev.text}.</li>`).join("");
-    await require(path.join(__dirname, "..", "mail.js")).sendMail({ to: "director@visa-sc.ru", subject: "Модели Claude: итог сравнения на живых запросах",
-      html: `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222"><p><b>Сравнение старой и новой модели на живых запросах:</b></p><ul>${li}</ul><p>Сотрудники ничего не заметят: окна и порядок работы прежние. Откат — одна строка в файле .engineModels.json.</p></div>` }).catch((e) => console.log("письмо:", e.message));
-  }
-  finish();
+  if (!DRY) { fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(STATE, JSON.stringify(st)); }
 })().catch((e) => { console.error("modelSwitch:", e.message); process.exit(1); });

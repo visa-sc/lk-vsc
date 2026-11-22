@@ -3,7 +3,7 @@
 // решение и переход — на её стороне (подробности её Claude — в «Помощниках»).
 //   send   — 23.11 06:00 МСК сообщение в личку Андрей–Катя (метка askTag на сообщении);
 //   nudge  — 10:00 и 14:00 МСК: если Катя не отреагировала — короткое напоминание ответом на сообщение;
-//   report — 10.12 08:00 МСК письмо Андрею: какая модель у оценок в итоге и ответила ли Катя (запуск от root).
+//   report — 10.12 08:00 МСК одно письмо Андрею: оценки (модель, ответ Кати) и переводы (решение tools/modelSwitch.js) (запуск от root).
 // send/nudge — ТОЛЬКО от kateadmin (файлы чата её). --dry — ничего не писать.
 "use strict";
 const mode = process.argv[2], dry = process.argv.includes("--dry");
@@ -73,13 +73,21 @@ const TEXT = "Катя, от Андрея.\n\n" +
     let ans = { how: "" }; try { const C = chat(); ans = answer(history(C._int)); } catch (_) {}
     const nice = (m) => m.replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/-(\d)$/, " $1");
     const switched = /haiku-5-5/.test(def);
+    // Переводы: решение modelSwitch (switch-state.json)
+    let tr = "нет данных"; try {
+      const ss = JSON.parse(fs.readFileSync("/var/lib/engine-shadow/switch-state.json", "utf8")), t = ss.tr || {}, d = (ss.done || {}).translate;
+      const esc = (x) => String(x || "").replace(/</g, "&lt;");
+      tr = d === "switched" ? "переключены на Sonnet 5.5 " + new Date(t.switchedAt).toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow" }) + (t.audit ? ". После переключения: заказов " + t.audit.orders + ", готово " + t.audit.done + ", ошибок " + t.audit.errors + ", откатов " + t.audit.fallbacks : "")
+        : d === "kept" ? "оставлена Sonnet 5" + (t.rolledBack ? " — был откат: " + esc(t.rolledBack) : " — новая модель не прошла сравнение") + ". " + esc(t.last)
+        : "оставлена Sonnet 5 — до 10.12 не набралось заказов для сравнения. " + esc(t.last);
+    } catch (_) {}
     const html = `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">` +
-      `<p><b>Оценки прослушки на 10.12: ${switched ? "Катя перевела на новую модель" : "оставлена старая модель"} (${nice(def)}).</b></p><ul>` +
+      `<p><b>Модели на 10.12</b></p><p><b>Переводы документов:</b> ${tr}.</p><p><b>Оценки прослушки:</b> ${switched ? "Катя перевела на новую модель" : "оставлена старая модель"} (${nice(def)}).</p><ul>` +
       `<li>Запросы прослушки за 7 дней по моделям: ${Object.entries(cnt).map(([m, n]) => nice(m) + " — " + n).join(", ") || "нет данных"}. Чистка расшифровок идёт на Haiku 5.5 с 22.11.</li>` +
       `<li>Ответ Кати на предложение 23.11: ${ans.how ? ans.how + (ans.text ? " — «" + String(ans.text).slice(0, 200).replace(/</g, "&lt;") + "»" : "") : "не ответила"}.</li></ul></div>`;
     if (dry) return console.log(html);
     require("/var/www/voyo/node_modules/dotenv").config({ path: "/var/www/voyo/.env", quiet: true });
-    await require("/var/www/voyo/mail.js").sendMail({ to: "director@visa-sc.ru", subject: "Оценки прослушки: итог по модели на 10.12", html });
+    await require("/var/www/voyo/mail.js").sendMail({ to: "director@visa-sc.ru", subject: "Модели Claude: итог на 10.12 (переводы и оценки)", html });
     return console.log("письмо отправлено");
   }
   console.log("режим: send | nudge | report [--dry]");
