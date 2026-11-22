@@ -372,6 +372,12 @@
   /* статус «Ждёт установки» и т.п. — читаемее на тёмной карте */
   .st.warn{background:rgba(255,214,120,.28);}
   .st.ok{background:rgba(110,214,150,.32);}
+  /* 22.11.2026: кнопки шапки и «Обновить» — по ним легко попасть пальцем (не меньше 36–40 px) */
+  .nav a{min-height:36px;display:inline-flex;align-items:center;}
+  .nav a.out{padding:0 4px;margin:0 -4px 0 0;}
+  .hdr a.shop.my{min-height:36px;}
+  .nav a.tgl{min-height:36px;min-width:36px;justify-content:center;}
+  .refresh{min-height:36px;padding-left:14px;padding-right:14px;}
 </style>
 <script src="/esim_meta.js"></script>
 </head>
@@ -588,6 +594,8 @@
     } else {
       el("term").textContent = activated ? "" : "Пакет активируется при первом подключении в поездке";
     }
+    // приостановлена: объясняем, что делать (22.11.2026)
+    if(!over && u && u.suspended) el("term").textContent = "Оператор приостановил eSIM. Напишите в поддержку, разберёмся.";
     el("pkInfo").textContent = (o.title||"") + (o.operator ? " · " + o.operator : "");
     // Рекомендации по работе в Китае — только для китайских пакетов
     el("cnTips").hidden = !/china/i.test(o.title || "");
@@ -596,6 +604,9 @@
       el("qrPanel").style.display="block";
       if(o.qrDataUrl) el("qrImg").src = o.qrDataUrl; else el("qrImg").style.display="none";
       el("lpaInp").value = o.lpa || o.activationCode || "";
+      // нет строки для ручного ввода (бывает у части поставщиков) — не показываем пустое поле и не ссылаемся на него (22.11.2026)
+      var noLpa = !el("lpaInp").value;
+      if (noLpa) { var lr = document.querySelector(".lparow"); if (lr) lr.style.display = "none"; }
       var installed = u && u.installed;
       // iPhone: установка в один тап по официальной ссылке Apple (долгое нажатие на QR у клиентов не срабатывало, 22.10.2026)
       var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -607,7 +618,8 @@
         if (EMBED) el("instIos").target = "_top";
         el("stH").textContent = "Не получилось? Установите вручную";
       }
-      if (isIOS || /Android/i.test(navigator.userAgent)) el("st2").textContent = "Выберите ввод вручную и вставьте строку из поля под QR-кодом (кнопка «Скопировать») или отсканируйте QR с другого экрана.";
+      if (noLpa) el("st2").textContent = "Отсканируйте этот QR камерой другого телефона или с другого экрана.";
+      else if (isIOS || /Android/i.test(navigator.userAgent)) el("st2").textContent = "Выберите ввод вручную и вставьте строку из поля под QR-кодом (кнопка «Скопировать») или отсканируйте QR с другого экрана.";
       if (isIOS) el("st1").textContent = "Настройки → Сотовая связь → Добавить eSIM.";
       else if (/Android/i.test(navigator.userAgent)) el("st1").textContent = "Настройки → Подключения → Диспетчер SIM-карт → Добавить eSIM.";
       // установлена: вместо плашки «срабатывает один раз» — пояснение, зачем здесь QR

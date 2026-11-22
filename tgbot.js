@@ -268,7 +268,7 @@ async function showDays(chatId, iso, messageId) {
 let _cat = { ts: 0, products: [], byCountry: {}, index: [] };
 const RU = (n) => Math.round(Number(n) || 0).toLocaleString("ru-RU");
 let dn; try { dn = new Intl.DisplayNames(["ru"], { type: "region" }); } catch (_) { dn = null; }
-const SHORT = { US: "США", GB: "Великобритания", AE: "ОАЭ", KR: "Южная Корея", CZ: "Чехия", "US-HI": "Гавайи" };
+const SHORT = { US: "США", GB: "Великобритания", AE: "ОАЭ", KR: "Южная Корея", CZ: "Чехия", "US-HI": "Гавайи", KT: "Северный Кипр" };
 function cname(iso) {
   if (iso === "EU-REGION") return "Европа";
   if (SHORT[iso]) return SHORT[iso];
@@ -276,6 +276,7 @@ function cname(iso) {
 }
 function flag(iso) {
   if (iso === "EU-REGION") return "🇪🇺";
+  if (iso === "KT") return "🇨🇾";   // Северный Кипр в турецких пакетах (22.11.2026: в списке стран был «🇰🇹 KT»)
   if (!/^[A-Z]{2}$/.test(iso)) return "🌍";
   return String.fromCodePoint(0x1F1E6 + iso.charCodeAt(0) - 65, 0x1F1E6 + iso.charCodeAt(1) - 65);
 }
@@ -656,33 +657,19 @@ function blogCodeLetter(rec, refCode) {
   const d = (iso) => iso.split("-").reverse().join(".");
   const tgLink = refCode ? "https://t.me/" + BOT_NAME + "?start=ref_" + refCode : "";
   const siteLink = refCode ? (process.env.ESIM_REF_SITE || "https://voyomobile.ru") + "/esim?ref=" + refCode : "";
+  // 22.11.2026: короче, только главное (Андрей: меньше текста)
   return "<b>Ваш промокод: <code>" + rec.code + "</code></b>\n" +
-    "\n" +
-    "Действует с " + d(rec.from) + " по " + d(rec.to) + ".\n" +
-    "Вводите его при оформлении — цена станет 0 ₽.\n\n" +
+    "Действует " + d(rec.from) + " – " + d(rec.to) + ", цена eSIM по нему 0 ₽.\n\n" +
     "<b>Где оформлять</b>\n" +
-    "• Здесь, в боте: код уже подставлен, просто выберите страну и пакет.\n" +
-    "• На сайте " + (process.env.ESIM_REF_SITE || "https://voyomobile.ru") + "/esim: введите код в поле «У меня есть промокод» и укажите свою почту. " +
-    "Код закрепится за этой почтой — дальше он работает и в боте, и на сайте.\n\n" +
-    "<b>Как это работает</b>\n" +
-    "• код ваш личный: у других он не сработает;\n" +
-    "• пакетов можно брать сколько нужно, но не чаще одного раза в " + blog.COOLDOWN_H + " часа — " +
-    "пауза общая для бота и сайта;\n" +
-    "• после даты возвращения код перестаёт действовать.\n\n" +
-    "<b>Что просим взамен</b>\n" +
-    "Упоминание нас в сторис во время поездки. Укажите в сторис:\n" +
-    "• телеграм-бот @" + BOT_NAME + " — https://t.me/" + BOT_NAME + "\n" +
-    "• сайт " + SITE_SHORT + "\n\n" +
-    (refCode
-      ? "<b>И ещё: ваша реферальная ссылка</b>\n" +
-        "За каждого, кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽.\n\n" +
-        "Ссылка на сайт:\n<b><code>" + siteLink + "</code></b>\n" +
-        "Ссылка на телеграм-бота:\n<b><code>" + tgLink + "</code></b>\n\n" +
-        "Ваши реферальные ссылки всегда доступны в личном кабинете.\n" +
-        "Деньги можно потратить на интернет или вывести — вывод раз в месяц, на ИП или самозанятого."
-      : "<b>И ещё: реферальная ссылка</b>\nЗа каждого, кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽.\n" +
-        "Ваши реферальные ссылки всегда доступны в личном кабинете.\n" +
-        "Деньги можно потратить на интернет или вывести — вывод раз в месяц, на ИП или самозанятого.");
+    "• Здесь, в боте: код уже подставлен, выберите страну и пакет.\n" +
+    "• На сайте " + SITE_SHORT + ": код в поле «У меня есть промокод» и ваша почта.\n\n" +
+    "<b>Правила</b>\n" +
+    "• код личный, у других не сработает;\n" +
+    "• одна eSIM не чаще раза в " + blog.COOLDOWN_H + " часа;\n" +
+    "• после даты возвращения код не действует.\n\n" +
+    "<b>Взамен</b>: упоминание в сторис во время поездки (бот @" + BOT_NAME + " и сайт " + SITE_SHORT + ").\n\n" +
+    "<b>Ваша реферальная ссылка</b>: за каждого, кто купит по ней, " + blog.REF_BONUS_RUB + " ₽. Ссылки ниже кнопками и в личном кабинете, " +
+    "вывод раз в месяц на ИП или самозанятого.";
 }
 async function blogStart(chatId) {
   blog.addClick(chatId);                       // переход по QR с картинки — в панель
@@ -743,11 +730,11 @@ async function blogText(chatId, t, b) {
     console.log("tgbot: код блогера", r.rec.code, "—", r.rec.nick, "(" + r.rec.network + ")");
     const bi = await bonusInfo(chatId).catch(() => null);      // личная реферальная ссылка блогера
     if (bi && bi.refCode) setState(chatId, { blogRef: bi.refCode });
-    return send(chatId, blogCodeLetter(r.rec, bi && bi.refCode) + "\n\nПромокод уже подставлен — можете оформить eSIM прямо здесь.",
+    return send(chatId, blogCodeLetter(r.rec, bi && bi.refCode),
       { reply_markup: { inline_keyboard: [
-        [{ text: "📋 Скопировать промокод", callback_data: "blogcopy" }],
-        [{ text: "🔗 Ссылка на сайт", callback_data: "blogref:site" },
-         { text: "🔗 Ссылка на бота", callback_data: "blogref:tg" }],
+        [{ text: "📋 Скопировать промокод", copy_text: { text: r.rec.code } }],
+        (bi && bi.refCode ? [{ text: "🔗 Ссылка на сайт", copy_text: { text: (process.env.ESIM_REF_SITE || "https://voyomobile.ru") + "/esim?ref=" + bi.refCode } },
+         { text: "🔗 Ссылка на бота", copy_text: { text: "https://t.me/" + BOT_NAME + "?start=ref_" + bi.refCode } }] : [{ text: "🎁 Бонусы и ссылки", callback_data: "bonus" }]),
         [{ text: "Начать", callback_data: "home" }],
         [{ text: "Оформить на сайте", url: BASE_URL + "/esim" }],
         [{ text: "🛟 Написать в поддержку", callback_data: "support" }],
