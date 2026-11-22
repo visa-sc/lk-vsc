@@ -2050,56 +2050,57 @@ function mount(app, opts) {
     // несколько eSIM: сразу видно, какую ставить себе, а какие переслать спутникам
     const seatName = (i) => (i ? "для спутника" : "для вас");
     const list = many
-      ? '<table style="border-collapse:collapse;margin:0 0 18px">' + items.map((it, i) =>
-          '<tr><td style="padding:0 12px 10px 0;font-size:14px;color:#3a4356;white-space:nowrap"><b>eSIM ' + (i + 1) + '</b> · ' + seatName(i) + '</td>' +
-          '<td style="padding:0 0 10px;min-width:220px">' + btn(it.myUrl, "Установить eSIM " + (i + 1)) + '</td></tr>').join("") + '</table>'
-      : '<p style="font-size:14px;color:#3a4356;margin:0 0 10px">Нажмите кнопку, чтобы установить eSIM. На iPhone на открывшейся странице будет кнопка установки в один тап, там же QR-код.</p>' +
-        '<div style="margin:0 0 18px">' + btn(items[0].myUrl, "Установить eSIM") + '</div>';
+      // 22.11.2026: таблицей кнопки вылезали за экран телефона — теперь подпись над кнопкой на всю ширину
+      ? '<div style="margin:0 0 16px">' + items.map((it, i) =>
+          '<p style="font-size:14px;color:#3a4356;margin:' + (i ? "14px" : "0") + ' 0 6px"><b>eSIM ' + (i + 1) + '</b> · ' + seatName(i) + '</p>' +
+          btn(it.myUrl, "Установить eSIM " + (i + 1))).join("") + '</div>'
+      : '<div style="margin:0 0 8px">' + btn(items[0].myUrl, "Установить eSIM") + '</div>' +
+        '<p style="font-size:13px;line-height:1.5;color:#8b93a5;text-align:center;margin:0 0 18px">На странице: установка в один тап на iPhone и QR-код</p>';
+    // 22.11.2026 (Андрей): меньше текста, главное одной плашкой, «на экран телефона» — заметным блоком
+    const P = (s, css) => '<p style="font-size:13.5px;line-height:1.55;margin:0;' + (css || "") + '">' + s + "</p>";
+    const noteHtml = '<div style="margin:0 0 14px;padding:12px 16px;background:#fff6e5;border:1px solid #f3dcae;border-radius:14px;color:#5e4512">' +
+      (many ? P("<b style=\"color:#3f2e08\">Каждая eSIM ставится на свой телефон:</b> eSIM 1 себе, остальные ссылки перешлите спутникам.", "margin:0 0 6px") : "") +
+      P("<b style=\"color:#3f2e08\">QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, лучше дома по Wi-Fi.", "margin:0 0 6px") +
+      P("В поездке включите «Роуминг данных» для линии eSIM.") + "</div>";
     // VOYO mobile на экране телефона: одна строка под устройство, с которого купили (обе, если не знаем)
     const homeIos = "iPhone, Safari: три точки внизу справа → «Поделиться» → «На экран „Домой“» → «Добавить»";
     const homeAnd = "Android, Chrome: три точки справа вверху → «Установить приложение» или «Добавить на гл. экран»";
     const homeLines = order.os === "ios" ? [homeIos] : order.os === "android" ? [homeAnd] : [homeIos, homeAnd];
-    const homeHtml = '<div style="margin:0 0 18px;padding:14px 16px;background:#f4f6fa;border-radius:14px">' +
-      '<p style="font-size:14.5px;font-weight:700;margin:0 0 4px">VOYO mobile на экране телефона</p>' +
-      '<p style="font-size:13px;line-height:1.55;color:#3a4356;margin:0 0 8px">Откройте <a href="' + acc + '" style="color:#3589bd">личный кабинет</a> на телефоне и добавьте его на экран: QR-коды, остаток трафика и продление будут в одно касание.</p>' +
-      homeLines.map((l) => '<p style="font-size:12.5px;line-height:1.5;color:#6b7385;margin:0 0 3px">' + esc(l) + "</p>").join("") + "</div>";
+    const homeHtml = '<div style="margin:0 0 14px;padding:14px 16px;background:#eaf6ef;border:1px solid #c9e8d5;border-radius:14px">' +
+      '<p style="font-size:15px;font-weight:800;margin:0 0 4px;color:#14532d">Добавьте VOYO mobile на экран телефона</p>' +
+      '<p style="font-size:13.5px;line-height:1.55;color:#24412f;margin:0 0 10px">Все eSIM, остаток трафика и продление в одно касание, как приложение.</p>' +
+      '<p style="margin:0 0 10px"><a href="' + acc + '" style="display:inline-block;background:#1f9d55;color:#ffffff;text-decoration:none;' +
+      'font-weight:700;font-size:14.5px;padding:11px 18px;border-radius:12px">Открыть кабинет на телефоне &rarr;</a></p>' +
+      homeLines.map((l) => '<p style="font-size:12.5px;line-height:1.5;color:#3d6b4f;margin:0 0 3px">' + esc(l) + "</p>").join("") + "</div>";
     const refLink = refCode ? REF_SITE + "/?ref=" + refCode : "";
     const refHtml = refCode
-      ? '<div style="margin:6px 0 18px;padding:16px 18px;background:#f2f7fb;border:1px solid #e0e9f2;border-radius:14px">' +
-        '<p style="font-size:15px;font-weight:700;margin:0 0 6px">Путешествуете не один?</p>' +
-        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 10px">Поделитесь своим промокодом с друзьями и близкими: ' +
-        'другу скидка ' + REF_BONUS_RUB + ' ₽ на первую eSIM, а вам ' + REF_BONUS_RUB + ' ₽ на баланс после его оплаты.</p>' +
-        '<p style="margin:0 0 8px"><span style="display:inline-block;font-family:SFMono-Regular,Consolas,monospace;font-size:19px;' +
-        'font-weight:700;letter-spacing:.12em;background:#fff;border:1px solid #e0e9f2;border-radius:10px;padding:8px 16px">' + refCode + '</span></p>' +
-        '<p style="font-size:13px;margin:0;word-break:break-all">Или ссылка: <a href="' + refLink + '" style="color:#3589bd">' + refLink + '</a></p></div>'
+      ? '<div style="margin:0 0 18px;padding:14px 16px;background:#f2f7fb;border:1px solid #e0e9f2;border-radius:14px">' +
+        '<p style="font-size:15px;font-weight:700;margin:0 0 4px">Путешествуете не один?</p>' +
+        '<p style="font-size:13.5px;line-height:1.55;color:#3a4356;margin:0 0 10px">Другу −' + REF_BONUS_RUB + ' ₽ на первую eSIM, вам +' + REF_BONUS_RUB + ' ₽ на баланс после его оплаты.</p>' +
+        '<p style="margin:0 0 6px"><span style="display:inline-block;font-family:SFMono-Regular,Consolas,monospace;font-size:18px;' +
+        'font-weight:700;letter-spacing:.12em;background:#fff;border:1px solid #e0e9f2;border-radius:10px;padding:7px 14px">' + refCode + '</span></p>' +
+        '<p style="font-size:12.5px;margin:0;color:#6b7385;word-break:break-all">или ссылка: <a href="' + refLink + '" style="color:#3589bd">' + refLink.replace(/^https?:\/\//, "") + '</a></p></div>'
       : "";
     return {
       subject: many ? "VOYO mobile: ваши eSIM готовы (" + items.length + " шт.)" : "VOYO mobile: ваша eSIM готова",
       html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
-        '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">' + (many ? "Ваши eSIM готовы" : "Ваша eSIM готова") + '</p>' +
-        '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">' + esc(order.label || "") + (many ? " · " + items.length + " шт." : "") + '</p>' +
+        '<p style="font-size:20px;font-weight:800;letter-spacing:-.02em;margin:0 0 4px">' + (many ? "Ваши eSIM готовы" : "Ваша eSIM готова") + '</p>' +
+        '<p style="color:#8b93a5;font-size:14px;line-height:1.5;margin:0 0 16px">' + esc(order.label || "") + (many ? " · " + items.length + " шт." : "") + '</p>' +
         list +
-        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">' + (many ? "<b>Каждая eSIM ставится на свой телефон.</b> eSIM 1 поставьте себе, ссылки на остальные перешлите спутникам: каждый откроет свою и установит у себя. " : "") +
-        'Установка на iPhone: на странице по кнопке выше нажмите «Установить eSIM на этот iPhone». Или Настройки → Сотовая связь → Добавить eSIM → сканировать QR с другого экрана. ' +
-        'Сделайте это дома по Wi-Fi, до вылета. В поездке включите «Роуминг данных» для линии eSIM.</p>' +
-        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px;padding:10px 14px;' +
-        'background:#fdf6e7;border:1px solid #f0e2c0;border-radius:12px">Обратите внимание: ' +
-        'Перенести eSIM на другой телефон потом нельзя: ставьте её сразу на тот, с которым поедете. Код срабатывает один раз.</p>' +
+        noteHtml +
         (tipsCN ? chinaTipsHtml() : "") +
         homeHtml +
         refHtml +
-        '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Ваш личный кабинет со всеми eSIM: <a href="' + acc + '" style="color:#3589bd">открыть</a><br/>' +
-        'Ссылка постоянная, сохраните это письмо.</p>' +
-        '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · выгодный интернет в 209 странах мира</p></div>',
+        '<p style="font-size:12.5px;line-height:1.6;color:#8b93a5;margin:0">Все ваши eSIM: <a href="' + acc + '" style="color:#3589bd">личный кабинет</a>. Ссылка постоянная, сохраните письмо.</p>' +
+        '<p style="font-size:12px;color:#a6adbd;margin:14px 0 0">VOYO mobile · выгодный интернет в 209 странах мира</p></div>',
       text: (many ? "Ваши eSIM готовы (" + items.length + " шт.): " : "Ваша eSIM готова: ") + (order.label || "") + "\n\n" +
-        items.map((it, i) => (many ? "eSIM " + (i + 1) + " (" + (i ? "для спутника, перешлите ему" : "для вас") + "): " : "QR-код и остаток трафика: ") + it.myUrl).join("\n") +
+        items.map((it, i) => (many ? "eSIM " + (i + 1) + " (" + (i ? "для спутника, перешлите ему" : "для вас") + "): " : "Установить eSIM: ") + it.myUrl).join("\n") +
         (many ? "\n\nКаждая eSIM ставится на свой телефон: eSIM 1 себе, остальные ссылки перешлите спутникам." : "") +
-        "\n\nОбратите внимание: Перенести eSIM на другой телефон потом нельзя: ставьте её сразу на тот, с которым поедете. Код срабатывает один раз." +
+        "\n\nQR срабатывает один раз: ставьте eSIM сразу на телефон, с которым поедете, лучше дома по Wi-Fi. В поездке включите «Роуминг данных» для линии eSIM." +
         (tipsCN ? "\n\n" + CHINA_TIPS_TEXT : "") +
-        "\n\nVOYO mobile на экране телефона: откройте личный кабинет на телефоне и добавьте его на экран.\n" + homeLines.join("\n") +
+        "\n\nДобавьте VOYO mobile на экран телефона: откройте кабинет на телефоне, " + acc + "\n" + homeLines.join("\n") +
         (refCode ? "\n\nПутешествуете не один? Ваш промокод для друзей: " + refCode + " (другу −" + REF_BONUS_RUB + " ₽ на первую eSIM, вам +" +
-          REF_BONUS_RUB + " ₽ на баланс). Ссылка: " + refLink : "") +
-        "\nЛичный кабинет со всеми eSIM: " + acc,
+          REF_BONUS_RUB + " ₽ на баланс). Ссылка: " + refLink : ""),
     };
   }
 
@@ -2555,6 +2556,15 @@ function mount(app, opts) {
   // Образцы письма «eSIM готова» (одна и три штуки) — на director@, только с adm-кодом
   app.get("/esim/api/adm/letter-sample", async (req, res) => {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    // ?o=ЗАКАЗ — настоящее письмо по этому заказу, один раз на director@ (посмотреть, как его видит клиент)
+    if (req.query.o) {
+      const ord = readJson(ORDERS_FILE, []).find((x) => x.id === String(req.query.o) && x.status === "done" && x.myUrl);
+      if (!ord) return res.status(404).json({ success: false, message: "нет такого выданного заказа" });
+      const cu = getCustomer(ord.custKey || ord.email, false);
+      const L1 = readyLetter(ord, [{ myUrl: ord.myUrl }], cu && cu.refCode);
+      const r1 = await opts.sendMail({ to: "director@visa-sc.ru", subject: "[ОБРАЗЕЦ] " + L1.subject, html: L1.html, text: L1.text });
+      return res.json({ success: !!(r1 && r1.ok !== false), subject: L1.subject });
+    }
     const mine = readJson(ORDERS_FILE, []).filter((x) => x.status === "done" && x.myUrl && normEmail(x.email) === OWNER_EMAIL);
     const urls = mine.slice(0, 3).map((x) => x.myUrl);
     while (urls.length < 3) urls.push(urls[0] || REF_SITE);
