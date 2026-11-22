@@ -74,6 +74,10 @@
     text-transform:uppercase;letter-spacing:.04em;}
   .note{font-size:12px;color:var(--mut);margin-top:14px;line-height:1.55;}
   .hide{display:none;}
+  .btn[hidden]{display:none;}
+  .qrnote{background:#fff6e5;border:1px solid #f3dcae;border-radius:14px;padding:11px 14px;margin:0 0 16px;
+    font-size:13px;line-height:1.5;color:#5e4512;text-align:left;}
+  .qrnote b{color:#3f2e08;}
 </style>
 <script src="/esim_meta.js"></script>
 </head>
@@ -94,19 +98,13 @@
       <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="m5 13 4.5 4.5L19 7.5" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
     <h1 id="doneH">eSIM готова</h1>
-    <div class="sub" id="doneSub">Отсканируйте QR-код в настройках телефона. Ссылку и чек отправили вам на почту.</div>
+    <div class="sub" id="doneSub">QR-код и чек отправили вам на почту.</div>
+    <a class="btn" id="instIos" hidden style="margin:0 0 14px">Установить eSIM на этот iPhone</a>
     <img id="qr" class="ym-hide-content" alt="QR-код eSIM" style="width:200px;height:200px;border:1px solid var(--line);border-radius:16px;padding:8px;background:#fff;display:none;margin:0 auto 16px" />
-<div class="tip">
-      <span class="ic">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 11V6.5a1.8 1.8 0 1 1 3.6 0V11m0-1.6a1.7 1.7 0 0 1 3.4 0V12m0-1a1.7 1.7 0 0 1 3.4 0v4.6c0 3.2-2.3 5.9-5.6 5.9-2.2 0-3.6-.9-4.7-2.4l-3-4.3a1.8 1.8 0 0 1 2.7-2.3L9 14.2" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </span>
-      <span class="tx"><b>Проще всего</b>
-        Нажмите на QR-код выше и <b style="display:inline;text-transform:none;letter-spacing:0;font-size:13.5px">удерживайте</b> — снизу появится пункт «Добавить eSIM».</span>
-      </div>
-    <div style="height:16px"></div>
+<div class="qrnote"><b>QR срабатывает один раз:</b> ставьте eSIM сразу на телефон, с которым поедете, лучше дома по Wi-Fi. В поездке включите «Роуминг данных» для линии eSIM.</div>
     <a class="btn" id="goBtn" href="/esim/my">Открыть мою eSIM</a>
-    <div class="note"><b>Перенести eSIM на другой телефон потом нельзя: ставьте её сразу на тот, с которым поедете.</b><br/><br/>Или сканируйте QR с другого телефона: Настройки → Сотовая связь → Добавить eSIM.<br/>Лучше сделать это дома по Wi-Fi, до вылета.<br/><br/>
-      Вернуться сюда позже можно на <a href="/esim/account" style="color:var(--accent);font-weight:600;text-decoration:none">voyotravel.ru/esim/account</a></div>
+    <div class="note">Вручную: в настройках телефона «Добавить eSIM» → отсканируйте QR с другого экрана.<br/><br/>
+      Вернуться позже: <a href="/esim/account" style="color:var(--accent);font-weight:600;text-decoration:none">Мои eSIM</a>, ссылка есть и в письме.</div>
   </div>
 
   <div id="slow" class="hide">
@@ -178,6 +176,16 @@
           if(mj && mj.success && mj.order && mj.order.qrDataUrl){
             var img = document.getElementById("qr");
             img.src = mj.order.qrDataUrl; img.style.display="block";
+          }
+          // iPhone (iOS 17.4+): установка в один тап по официальной ссылке Apple, как в «Мои eSIM» (22.11.2026)
+          var o2 = (mj && mj.order) || {};
+          var lpaStr = o2.lpa || (o2.smdp && o2.activationCode ? "LPA:1$" + o2.smdp + "$" + o2.activationCode : "");
+          var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+          if (isIOS && /^LPA:1\$/.test(lpaStr)) {
+            var ib = document.getElementById("instIos");
+            ib.href = "https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=" + lpaStr; ib.hidden = false;
+            // главная — кнопка установки, «Открыть мою eSIM» становится второстепенной
+            var gb = document.getElementById("goBtn"); gb.style.background = "#eef4f9"; gb.style.color = "var(--accent-d)"; gb.style.boxShadow = "none";
           }
         }catch(e){}
         return;
