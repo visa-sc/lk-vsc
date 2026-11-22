@@ -15,7 +15,7 @@ const { sendMail } = require("../mail.js");
 const DIR = path.join(__dirname, "..", ".esim", "petrov-sync");
 const STATE = path.join(DIR, "watch.json");
 const DEPLOY = "/var/lib/esim-deploy/state.json";
-const FILES = ["esim.html", "esim-pay-ok.html", "esim-partner.html"];
+const FILES = ["esim.html", "esim-pay-ok.html", "esim-partner.html", "esim-my.html"];
 const START = Date.parse("2026-11-30T09:00:00+03:00") - 10 * 60000;   // первое письмо 30.11 в 9:00 МСК
 const PETROV = "ap@spt1.ru", ANDREY = "director@visa-sc.ru";
 const DRY = process.argv.includes("--dry");
@@ -42,7 +42,7 @@ function instruction(files) {
     if (!d) { try { d = fs.readFileSync(path.join(DIR, f + ".diff"), "utf8"); } catch (_) {} }
     return "### " + f + "\n\n```diff\n" + d.trim() + "\n```\n";
   }).join("\n");
-  return `# Правки в файлах витрины eSIM, внесённые 16–19.11.2026 (Андрей Комисаренко)
+  return `# Правки в файлах витрины eSIM, внесённые 16–22.11.2026 (Андрей Комисаренко)
 
 Для Claude Андрея Петрова. В боевые файлы витрины, которые Андрей Петров ведёт через \`esimdeploy\`, были внесены правки напрямую. Их нельзя потерять при следующей выкладке.
 
@@ -56,6 +56,7 @@ function instruction(files) {
 ## Что изменено и зачем
 - **esim.html** — корзина витрины (esim-cart.js): выбранный пакет запоминается, кнопка с тележкой появляется, только если человек ушёл без оплаты и вернулся (вызовы \`voyoCart.add\`, \`voyoCart.paying\`, функции \`window.voyoPackById\`, \`window.voyoOpenPack\`, подключение \`/esim-cart.js\`); «Срок: 1 день / 2 дня / 5 дней» вместо «1 дней»; в шагах установки «QR-код на почту, он же будет в «Мои eSIM»» вместо «в ЛК и на телефон»; 19.11 — кнопка «Мои eSIM» в шапке стала синей с белым текстом (класс \`mine my\` и правило \`.hdr .mine.my\`), клиенты её не замечали.
 - **esim-pay-ok.html** — подключение \`/esim-cart.js\` (после оплаты корзина очищается).
+- **esim-my.html** — 22.11 блок установки eSIM без повторов: «Проще всего» на iPhone — только синяя кнопка, ниже отдельный блок «Или обычным путём» с шагами (на Android и компьютере заголовок «Как установить», путь в настройках под своё устройство; id instTipBox, stH, st1, st2, класс .sth).
 - **esim-partner.html** — кабинет партнёра (агентства): адрес \`/p/<слаг>\`, вход по ссылке из письма (\`#k=пароль\`), блок «Ссылка для клиентов» с кнопкой «Скопировать» и QR-кодом для стойки.
 
 ## Точные изменения (diff: «-» было у вас, «+» стало на боевом)
@@ -74,19 +75,19 @@ ${diffs}`;
     if (early && !w.botSent) return console.log("витрину забрал, письмо про бот — 30.11");
     w.done = Date.now(); fs.mkdirSync(DIR, { recursive: true }); if (!DRY) fs.writeFileSync(STATE, JSON.stringify(w, null, 1));
     return send({ to: ANDREY, subject: "eSIM: Петров забрал правки витрины",
-      text: "Петров сделал esimdeploy pull: наши правки 16–19.11 (корзина, кабинеты агентств, тексты, кнопка «Мои eSIM») у него, затереть их он не сможет." + (w.sent.length ? "\nПисем ему ушло: " + w.sent.length + "." : "") });
+      text: "Петров сделал esimdeploy pull: наши правки 16–22.11 (корзина, кабинеты агентств, тексты, кнопка «Мои eSIM») у него, затереть их он не сможет." + (w.sent.length ? "\nПисем ему ушло: " + w.sent.length + "." : "") });
   }
   if (early) return console.log("до 30.11 молчу, не забраны:", left.join(", "));
   const bot = require("./petrovBotNotice.js").MD;
   const md = (left.length ? instruction(left) + "\n\n---\n\n" : "") + bot;
-  const NAME = "ПРАВКИ-eSIM-витрина-и-бот-16-19.11.md";
+  const NAME = "ПРАВКИ-eSIM-витрина-и-бот-16-22.11.md";
   const file = path.join(DIR, NAME);
   fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(file, md, "utf8");
   const first = !w.sent.length;
   const r = await send({ to: PETROV, replyTo: ANDREY,
-    subject: (first ? "" : "Напоминание: ") + "eSIM: правки витрины и бота за 16–19.11 — отдайте файл своему Claude, чтобы не затереть",
+    subject: (first ? "" : "Напоминание: ") + "eSIM: правки витрины и бота за 16–22.11 — отдайте файл своему Claude, чтобы не затереть",
     text: "Андрей, добрый день!\n\n" +
-      (left.length ? "16–19.11 в ваши файлы витрины внесены правки: корзина, кабинеты агентств для партнёрской рассылки, пара текстов в окне покупки, синяя кнопка «Мои eSIM». Файлы: " + left.join(", ") + ".\n" : "") +
+      (left.length ? "16–22.11 в ваши файлы витрины внесены правки: корзина, кабинеты агентств для партнёрской рассылки, пара текстов в окне покупки, синяя кнопка «Мои eSIM», понятнее инструкция установки на странице eSIM. Файлы: " + left.join(", ") + ".\n" : "") +
       "В боте изменён раздел «Мои eSIM» (купившие на сайте видят свои eSIM после кода с почты) и появились новые тексты.\n\n" +
       "Чтобы ничего не затереть:\n" +
       (left.length ? "1. esimdeploy pull\n2. " : "") +
