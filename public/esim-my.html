@@ -537,6 +537,8 @@
       if (isIOS && /^LPA:1\$/.test(lpaStr) && !installed) {
         el("instIos").href = "https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=" + lpaStr;
         el("instIos").hidden = false; el("instNote").hidden = false; el("instNote2").hidden = false;
+        // внутри ЛК (iframe): ссылку Apple открываем во всём окне, иначе установка не стартует (22.11.2026)
+        if (EMBED) el("instIos").target = "_top";
         el("stH").textContent = "Не получилось? Установите вручную";
       }
       if (isIOS || /Android/i.test(navigator.userAgent)) el("st2").textContent = "Выберите ввод вручную и вставьте строку из поля под QR-кодом (кнопка «Скопировать») или отсканируйте QR с другого экрана.";
