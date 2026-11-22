@@ -16,7 +16,11 @@ const DIR = path.join(__dirname, "..", ".esim", "petrov-sync");
 const STATE = path.join(DIR, "watch.json");
 const DEPLOY = "/var/lib/esim-deploy/state.json";
 const FILES = ["esim.html", "esim-pay-ok.html", "esim-partner.html", "esim-my.html"];
-const START = Date.parse("2026-11-30T09:00:00+03:00") - 10 * 60000;   // первое письмо 30.11 в 9:00 МСК
+// 22.11.2026 (Андрей): 30.11 всё уходит Петрову ОДНИМ письмом — файл eSIM вкладывается разделом в общий пакет
+// /root/look/petrov-bundle.js (30.11 00:55, письмо в 01:00, режим --md-only). Сам сторож с 01.12 в 9:00 только
+// напоминает, пока не сделан pull, и один раз пишет Андрею «забрал».
+const START = Date.parse("2026-12-01T09:00:00+03:00") - 10 * 60000;
+const MD_ONLY = process.argv.includes("--md-only");
 const PETROV = "ap@spt1.ru", ANDREY = "director@visa-sc.ru";
 const DRY = process.argv.includes("--dry");
 const rj = (f, d) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (_) { return d; } };
@@ -67,12 +71,27 @@ function instruction(files) {
 ${diffs}`;
 }
 
+// наш серверный код (Петров его не правит) — для сведения, чтобы его Claude понимал, что видят клиенты
+const SERVER_NOTE = `# Письмо «eSIM готова» и кабинет — что изменилось 22.11.2026 (наш код, для сведения)
+
+- **Письмо «eSIM готова»** (esim.js, readyLetter): короче; кнопка «Установить eSIM», под ней «На странице: установка в один тап на iPhone и QR-код»; жёлтая плашка пунктами (QR срабатывает один раз, дома по Wi-Fi; роуминг данных); зелёный блок «Добавьте VOYO mobile на экран телефона» с кнопкой «Открыть кабинет на телефоне»; «Путешествуете не один?» с промокодом и ссылкой; сверху подпись бренда. Ручной инструкции в письме нет сознательно: она на странице eSIM. Письмо на несколько eSIM: подпись над каждой кнопкой (раньше таблица вылезала за экран телефона).
+- **Дизайн кабинета eSIM** (esim-my.html, esim-account.html): палитра «глубокая лагуна» — блок в конце <style> с комментарием «Дизайн 22.11.2026». Главная карта полночный синий → бирюза с мягким сиянием, жемчужный фон через body::before, шампань для важного, шалфей для «на экран». Не перекрашивать обратно.
+- **API /esim/api/my** отдаёт поле ref {code, bonus, link} — для блока «Путешествуете не один?».
+- **Бот** — см. раздел ниже.
+- Подпись «by VSC» под логотипом убрана на всех страницах (Андрей Комисаренко: «больше не надо, просто VOYO mobile»). Не возвращать.`;
+
 (async () => {
   const w = rj(STATE, { sent: [], done: null });
   if (w.done) return console.log("уже забрал", new Date(w.done).toISOString());
   // 19.11 (Андрей): всё одним письмом — правки витрины и бота в одном файле. Раздел про бота уходит
   // в первом письме 30.11 обязательно, даже если файлы витрины он к тому времени уже забрал.
   const left = pending();
+  if (MD_ONLY) {   // для общего письма 30.11: только собрать файл, ничего не отправлять
+    const md0 = (left.length ? instruction(left) + "\n\n---\n\n" : "") + SERVER_NOTE + "\n\n---\n\n" + require("./petrovBotNotice.js").MD;
+    fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(path.join(DIR, "ПРАВКИ-eSIM-витрина-и-бот-16-22.11.md"), md0, "utf8");
+    if (!DRY) { w.bundledAt = Date.now(); w.botSent = true; fs.writeFileSync(STATE, JSON.stringify(w, null, 1)); }
+    return process.stdout.write(md0);
+  }
   const early = Date.now() < START && !DRY;
   if (!left.length && (w.botSent || early)) {
     if (early && !w.botSent) return console.log("витрину забрал, письмо про бот — 30.11");
@@ -82,11 +101,11 @@ ${diffs}`;
   }
   if (early) return console.log("до 30.11 молчу, не забраны:", left.join(", "));
   const bot = require("./petrovBotNotice.js").MD;
-  const md = (left.length ? instruction(left) + "\n\n---\n\n" : "") + bot;
+  const md = (left.length ? instruction(left) + "\n\n---\n\n" : "") + SERVER_NOTE + "\n\n---\n\n" + bot;
   const NAME = "ПРАВКИ-eSIM-витрина-и-бот-16-22.11.md";
   const file = path.join(DIR, NAME);
   fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(file, md, "utf8");
-  const first = !w.sent.length;
+  const first = !w.sent.length && !w.bundledAt;
   const r = await send({ to: PETROV, replyTo: ANDREY,
     subject: (first ? "" : "Напоминание: ") + "eSIM: правки витрины и бота за 16–22.11 — отдайте файл своему Claude, чтобы не затереть",
     text: "Андрей, добрый день!\n\n" +
