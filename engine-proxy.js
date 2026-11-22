@@ -252,7 +252,8 @@ function mountEarly(app, deps) {
     }
     // Сравнение старой и новой модели: копия запроса ДО перевода на новую модель (только /v1/messages)
     let shadow = null;
-    if (model && /^\/v1\/messages(\?|$)/.test(sub)) {
+    // Фоновые сравнения считаются в суточный лимит: за половиной лимита их не делаем, чтобы не отнять бюджет у настоящих переводов
+    if (model && /^\/v1\/messages(\?|$)/.test(sub) && d.usd < DAILY_USD * 0.5) {
       try { const rule = shadowRule(svcOf(req), model); if (rule) shadow = { rule, from: model, body: JSON.parse(JSON.stringify(body)) }; } catch (_) {}
     }
     // Перевод на новую модель (ENGINE_MODEL_UPGRADE) и поправка настроек под неё

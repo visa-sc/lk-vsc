@@ -24,8 +24,8 @@ const DIR = process.env.MODEL_SHADOW_DIR || "/var/lib/engine-shadow";   // MODEL
 const RULES = {
   cq: { title: "Прослушка звонков (Катя)", from: "claude-haiku-4-5", to: "claude-haiku-5-5", min: 25, upgrade: "cq:claude-haiku-4-5=claude-haiku-5-5" },
   // 22.11: только основная модель перевода. Мелкие задачи движка на Haiku (тип документа, выжимка правок) не сравнивались —
-  // их не трогаем. Минимум 12 пар минимум за 2 разных дня (одна заявка даёт несколько запросов подряд).
-  translate: { title: "Переводы документов", from: "claude-sonnet-5", to: "claude-sonnet-5-5", min: 12, days: 2, upgrade: "translate:claude-sonnet-5=claude-sonnet-5-5" }
+  // их не трогаем. Минимум 8 переводов и 3 проверки минимум за 2 разных дня (одна заявка даёт несколько запросов подряд).
+  translate: { title: "Переводы документов", from: "claude-sonnet-5", to: "claude-sonnet-5-5", min: 8, minCheck: 3, days: 2, upgrade: "translate:claude-sonnet-5=claude-sonnet-5-5" }
 };
 const rows = (svc) => { try { return fs.readFileSync(path.join(DIR, svc + ".jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
 function json(t) {
@@ -58,25 +58,40 @@ function evalCq(list) {
 // Числа в переводе (номера документов, даты, суммы) — главное, что нельзя потерять. Сравниваем как мультимножества:
 // каждое число старого перевода должно быть в новом. Хоть одно расхождение — сам не переключаю, разбираю руками. Ответы в журнале обрезаны на 20 000 знаков — у старого берём начало.
 const nums = (t) => { const m = new Map(); for (const x of String(t || "").match(/\d{2,}/g) || []) m.set(x, (m.get(x) || 0) + 1); return m; };
+// Движок шлёт на Sonnet два вида запросов: сам перевод (HTML) и проверку перевода «редактором-контролёром» (JSON
+// {verdict, issues}). Их сравниваем по-разному: переводы — строго по числам и близости текста, проверки — новая модель
+// должна вернуть правильный JSON и не пропустить критичную ошибку, которую нашла старая (находить больше — можно).
+const chk = (t) => { const j = json(t); return j && typeof j.verdict === "string" ? j : null; };
+const crit = (j) => ((j && j.issues) || []).filter((i) => i && i.severity === "critical").length;
 function evalTr(list) {
-  let ok = 0, close = 0, errs = 0, numOk = 0, numAll = 0, numHit = 0;
+  let ok = 0, close = 0, errs = 0, numOk = 0, numAll = 0, numHit = 0, cN = 0, cValid = 0, cNeed = 0, cCaught = 0, cSame = 0;
   const days = new Set(list.map((r) => String(r.at || "").slice(0, 10)));
   for (const r of list) {
+    if (r.b.status === 429 || r.b.status >= 500) continue;   // перегрузка или сбой канала — не про качество, пропускаем
     if (r.b.error || r.b.status !== 200 || r.b.stop === "max_tokens") { errs++; continue; }
-    ok++;
+    const A = chk(r.a.text);
+    if (A) {                                   // проверка перевода
+      cN++; const B = chk(r.b.text); if (!B) continue; cValid++;
+      if (A.verdict === B.verdict) cSame++;
+      if (crit(A)) { cNeed++; if (crit(B)) cCaught++; }
+      continue;
+    }
+    ok++;                                      // сам перевод
     const na = nums(String(r.a.text).length >= 19990 ? String(r.a.text).slice(0, 18000) : r.a.text), nb = nums(r.b.text);
     let miss = 0; for (const [x, c] of na) { numAll += c; const h = Math.min(c, nb.get(x) || 0); numHit += h; miss += c - h; }
     if (!miss) numOk++;
     const la = String(r.a.text).length, lb = String(r.b.text).length;
-    const A = words(r.a.text), B = words(r.b.text);
-    let inter = 0; for (const w of A) if (B.has(w)) inter++;
-    const jac = A.size + B.size ? inter / (A.size + B.size - inter) : 1;
+    const WA = words(r.a.text), WB = words(r.b.text);
+    let inter = 0; for (const w of WA) if (WB.has(w)) inter++;
+    const jac = WA.size + WB.size ? inter / (WA.size + WB.size - inter) : 1;
     if (la === 0 || (lb / la >= 0.75 && lb / la <= 1.33 && jac >= 0.45)) close++;
   }
-  const n = list.length, enough = n >= RULES.translate.min && days.size >= RULES.translate.days;
+  const R = RULES.translate, n = list.length;
+  const enough = ok >= R.min && cN >= R.minCheck && days.size >= R.days;
   const numRate = numAll ? numHit / numAll : 1;
-  return { n: enough ? n : 0, errs, pass: enough && errs === 0 && close / Math.max(1, ok) >= 0.8 && numOk === ok,
-    text: `${n} запросов перевода за ${days.size} дн.; без ошибок и обрывов ${ok} из ${n}, близки к прежним по объёму и содержанию ${close} из ${ok}, все числа (даты, номера, суммы) совпали в ${numOk} из ${ok}, всего чисел совпало ${Math.round(numRate * 1000) / 10}%` };
+  return { n: enough ? n : 0, errs,
+    pass: enough && errs === 0 && close / Math.max(1, ok) >= 0.8 && numOk === ok && cValid === cN && cCaught === cNeed,
+    text: `за ${days.size} дн.: переводов ${ok}, проверок ${cN}, ошибок и обрывов новой модели ${errs}. Переводы: близки к прежним ${close} из ${ok}, все числа (даты, номера, суммы) совпали в ${numOk} из ${ok} (всего чисел ${Math.round(numRate * 1000) / 10}%). Проверки: правильный ответ ${cValid} из ${cN}, вывод совпал ${cSame} из ${cN}, критичные ошибки, найденные старой, нашла и новая: ${cCaught} из ${cNeed}` };
 }
 const STATE = path.join(DIR, "switch-state.json");
 const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch (_) { return { since: new Date().toISOString(), done: {} }; } };
