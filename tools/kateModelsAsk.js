@@ -71,9 +71,9 @@ const TEXT = "Катя, от Андрея.\n\n" +
     const b = JSON.parse(fs.readFileSync("/var/www/voyo/.engineBudget.json", "utf8")); const cnt = {};
     for (const [, v] of Object.entries(b.days).slice(-7)) for (const [mo, n] of Object.entries(((v.svc || {}).cq || {}).models || {})) cnt[mo] = (cnt[mo] || 0) + n;
     const nice = (m) => m.replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/-(\d)$/, " $1");
-    // Радар /vsc на Opus 5.5 с 21.11: полные прогоны с 22.11 по моделям (Opus 5 = запасная, значит новая давала сбой)
+    // Радар /vsc на Opus 5.5: полные прогоны после починки 22.11 (поток + лимит) по моделям (Opus 5 = запасная, значит новая давала сбой)
     let radar = "нет данных"; try {
-      const u = JSON.parse(fs.readFileSync("/var/www/voyo/.aiUsage.json", "utf8")).filter((x) => x.svc === "vsc_radar" && x.ts > Date.parse("2026-11-22T00:00:00Z") && x.in > 10000);
+      const u = JSON.parse(fs.readFileSync("/var/www/voyo/.aiUsage.json", "utf8")).filter((x) => x.svc === "vsc_radar" && x.ts > Date.parse("2026-11-22T09:05:00Z") && x.in > 10000);
       const by = {}; for (const x of u) by[x.model] = (by[x.model] || 0) + 1;
       radar = u.length ? "прогонов " + u.length + ": " + Object.entries(by).map(([m, n]) => nice(m) + " — " + n).join(", ") + (by["claude-opus-5"] ? " (часть ушла на запасную старую модель)" : ", все на новой") : "полных прогонов не было";
     } catch (_) {}
@@ -82,6 +82,17 @@ const TEXT = "Катя, от Андрея.\n\n" +
       const L = fs.readFileSync("/var/lib/engine-shadow/audit.jsonl", "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
       const bad = L.filter((x) => x.problems && x.problems.length), fx = L.filter((x) => x.fixed && x.fixed.length);
       aud = "ночей " + L.length + ", с неполадками " + bad.length + (bad.length ? " (" + bad.map((x) => x.at.slice(5, 10) + ": " + x.problems.join("; ").slice(0, 160).replace(/</g, "&lt;")).join(" | ") + ")" : "") + (fx.length ? ", исправлено автоматически " + fx.length + " раз" : "") + (bad.length && !fx.length ? ", исправлять автоматически не потребовалось или нечем — Катя получала письма" : "");
+    } catch (_) {}
+    // Переписала ли Катя правила «Исход для клиента» и «Речь» (сравнение с копией 21.11)
+    const B = "/root/look/models-bak-20261121/kateadmin/";
+    const crit = (t, id) => { const i = t.indexOf("id: \"" + id + "\""); if (i < 0) return ""; const j = t.indexOf("{ id: \"", i + 5); return t.slice(i, j < 0 ? i + 3000 : j); };
+    const dept = (t, id) => (t.match(new RegExp(id + ":[\\s\\S]{0,1500}?\",\\n", "g")) || []).join("");
+    let rules = "не проверил"; try {
+      const nowS = fs.readFileSync("/var/www/kateadmin/sverki.js", "utf8"), oldS = fs.readFileSync(B + "sverki.js", "utf8");
+      const nowA = fs.readFileSync("/var/www/kateadmin/cq-api.js", "utf8"), oldA = fs.readFileSync(B + "cq-api.js", "utf8");
+      let saved = ""; try { saved = JSON.stringify((JSON.parse(fs.readFileSync("/var/www/kateadmin/data/cqSettings.json", "utf8")).criteria || []).filter((c) => /c_result|c_speech/.test(c.id))); } catch (_) {}
+      const ch = ["c_result", "c_speech"].filter((id) => crit(nowS, id) !== crit(oldS, id) || dept(nowA, id) !== dept(oldA, id) || saved.indexOf(id) >= 0);
+      rules = ch.length ? "переписаны: " + ch.map((x) => x === "c_result" ? "«Исход для клиента»" : "«Речь»").join(" и ") : "не менялись";
     } catch (_) {}
     let ans = { how: "" }; try { const C = chat(); ans = answer(history(C._int)); } catch (_) {}
     const switched = /haiku-5-5/.test(def);
@@ -94,12 +105,17 @@ const TEXT = "Катя, от Андрея.\n\n" +
         : "оставлена Sonnet 5 — до 10.12 не набралось заказов для сравнения. " + esc(t.last);
     } catch (_) {}
     const html = `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">` +
-      `<p><b>Модели на 10.12</b></p><p><b>Переводы документов:</b> ${tr}.</p><p><b>Ночные проверки:</b> ${aud}.</p><p><b>Радар /vsc (Opus 5.5):</b> ${radar}.</p><p><b>Оценки прослушки:</b> ${switched ? "Катя перевела на новую модель" : "оставлена старая модель"} (${nice(def)}).</p><ul>` +
+      `<p><b>Модели на 10.12</b></p><p><b>Переводы документов:</b> ${tr}.</p><p><b>Ночные проверки:</b> ${aud}.</p><p><b>Радар /vsc (Opus 5.5):</b> ${radar}.</p><p>Прослушка — отдельным письмом.</p></div>`;
+    const html2 = `<div style="font-family:-apple-system,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">` +
+      `<p><b>Оценки прослушки на 10.12: ${switched ? "Катя перевела на новую модель" : "остались на старой модели"} (${nice(def)}).</b></p><ul>` +
+      `<li>Правила, на которых новая модель ошибалась: ${rules}.</li>` +
       `<li>Запросы прослушки за 7 дней по моделям: ${Object.entries(cnt).map(([m, n]) => nice(m) + " — " + n).join(", ") || "нет данных"}. Чистка расшифровок идёт на Haiku 5.5 с 22.11.</li>` +
-      `<li>Ответ Кати на предложение 23.11: ${ans.how ? ans.how + (ans.text ? " — «" + String(ans.text).slice(0, 200).replace(/</g, "&lt;") + "»" : "") : "не ответила"}.</li></ul></div>`;
-    if (dry) return console.log(html);
+      `<li>Её ответ 23.11: ${ans.how ? ans.how + (ans.text ? " — «" + String(ans.text).slice(0, 200).replace(/</g, "&lt;") + "»" : "") : "не ответила"}.</li></ul></div>`;
+    if (dry) return console.log(html + "\n\n" + html2);
     require("/var/www/voyo/node_modules/dotenv").config({ path: "/var/www/voyo/.env", quiet: true });
-    await require("/var/www/voyo/mail.js").sendMail({ to: "director@visa-sc.ru", subject: "Модели Claude: итог на 10.12 (переводы и оценки)", html });
+    const M = require("/var/www/voyo/mail.js");
+    await M.sendMail({ to: "director@visa-sc.ru", subject: "Модели Claude: итог на 10.12", html });
+    await M.sendMail({ to: "director@visa-sc.ru", subject: "Прослушка: что Катя сделала с моделью оценок", html: html2 });
     return console.log("письмо отправлено");
   }
   console.log("режим: send | nudge | report [--dry]");
