@@ -142,6 +142,11 @@
 
   /* таблицы */
   .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  /* Промокодов после рассылки агентствам ~1900 (23.11.2026): таблица была 65 000 px,
+     фрейм в админке переставал расти и панель «залипала». Теперь своя прокрутка
+     внутри раздела, шапка таблицы на месте. */
+  .scroll.tall{max-height:min(640px,70vh);overflow:auto;overscroll-behavior:contain;}
+  .scroll.tall thead th{position:sticky;top:0;background:#fff;z-index:1;padding-top:4px;}
   table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;}
   th{text-align:left;font-size:11px;font-weight:600;color:var(--mut2);padding:0 14px 9px 0;white-space:nowrap;}
   td{padding:9px 14px 9px 0;border-top:1px solid rgba(20,32,64,.055);white-space:nowrap;}
@@ -450,7 +455,7 @@
 
   <section class="sec" data-id="promo">
     <div class="sec-h"><h2>Промокоды</h2><span data-info="promo"></span><span class="sum" id="promoNote"></span><span class="chev">›</span></div>
-    <div class="sec-b"><div class="scroll"><table id="tPromo"></table></div></div>
+    <div class="sec-b"><div class="scroll tall"><table id="tPromo"></table></div></div>
   </section>
 
   <div class="footer-logout"><button id="logoutBtn" type="button" class="logout-btn">Выйти</button></div>
