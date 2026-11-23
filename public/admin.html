@@ -7991,7 +7991,7 @@
               '<div style="font-weight:700;color:#161d45;">' + escapeHtml(w.label) + ' <span style="font-weight:500;color:#8a90a0;font-size:12px;">· по итогам ' + escapeHtml(shortM(w.basis || "").replace(/^итоги\s+/, "")) + daysTag + '</span></div>' +
               '<div style="font-size:11.5px;color:#8a90a0;">ASP ' + ru(wr.asp) + ' · CPL ' + ru(wr.cpl) + ' · CV ' + (Math.round((wr.cv || 0) * 10) / 10) + '% · UPT ' + (Math.round((wr.upt || 0) * 100) / 100) + '</div>' +
               '</div>' +
-              '<div style="margin-top:6px;font-size:13px;color:#3a3f4d;">За период' + (w.partial ? (' (' + w.days + ' дн.)') : '') + ': <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(pp) + '</b> · полный месяц по этим ставкам: <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(w.profitMonth) + '</b></div>';
+              '<div style="margin-top:6px;font-size:13px;color:#3a3f4d;">' + (w.partial ? ('Прогноз на ' + w.days + ' дн.') : 'Прогноз на неделю') + ': <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(pp) + '</b> · полный месяц по этим ставкам: <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(w.profitMonth) + '</b></div>';
             box.appendChild(c);
           });
         }
