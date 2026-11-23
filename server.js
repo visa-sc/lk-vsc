@@ -7996,6 +7996,7 @@ async function vscBuildForecast() {
       const r = cm.calc(w.revenue, ad, ym);
       w.profitMonth = r.profit; w.profitWeek = r.profit / dim * 7; w.periodProfit = r.profit * w.days / dim;
       if (ad) { adW += ad; revW += w.revenue; }
+      if (w.fc && w.fc.revenue) { const r2 = cm.calc(w.fc.revenue, adOf(w.fc), ym); w.fc.profitMonth = r2.profit; w.fc.periodProfit = r2.profit * w.days / dim; }
     });
     const m = d.month;
     const drr = revW > 0 ? adW / revW : null;
@@ -8076,9 +8077,10 @@ async function vscBuildForecastBase() {
   // Проекция месяца по ставкам периода-ОСНОВЫ + фикс. таргет (контакт-план/персонал/смены
   // постоянны на месяц — как у директора). ФОТ берём из рабочих недельных колонок модели
   // (×0.22 — реальные взносы; в устаревшем столбце B директора стоит ×0.12, мы его НЕ берём).
-  const proj = (k) => {
+  // tgt — свой таргет (для факта закрытой недели: её реальные контакты в месячном масштабе).
+  const proj = (k, tgt) => {
     if (!k) return null;
-    const ov = { 24: target, 25: +k.asp || 0, 27: +k.cpl || 0, 28: (k.cv != null ? +k.cv / 100 : 0), 30: +k.upt || 0 };
+    const ov = { 24: tgt != null ? tgt : target, 25: +k.asp || 0, 27: +k.cpl || 0, 28: (k.cv != null ? +k.cv / 100 : 0), 30: +k.upt || 0 };
     if (!(ov[25] && ov[28] && ov[30])) return null; // нет ключевых ставок — период неполный
     const v = vscFcCompute(fc.model, ov);
     return { revenue: v[37], profitMonth: v[38], profitWeek: v[39], contactsMonth: v[34], rates: { asp: ov[25], cpl: ov[27], cv: ov[28] * 100, upt: ov[30] } };
@@ -8145,33 +8147,59 @@ async function vscBuildForecastBase() {
   const pushPending = (w, days, baseLbl, note) => {
     weeks.push({ label: w.label, days: days, partial: days < 7, pending: true, basis: "ждёт итогов " + baseLbl, pendingNote: note });
   };
+  // 23.11.2026 (Андрей): прошедшая неделя — ФАКТ, а не «прогноз задним числом». Закрытая неделя
+  // считается моделью по её собственным ставкам и реальным контактам (выручка/контакты/реклама —
+  // факт, прибыль — модель расходов на факте); прогноз, который на неё был, остаётся рядом (fc) —
+  // видно, насколько попадаем. Идущая неделя — прогноз по прошлой неделе, в который день за днём
+  // подмешиваются закрытые дни этой недели (по МСК; сегодняшний — никогда).
+  const toPeriod = (p, days) => ({ periodProfit: p.profitWeek * days / 7, periodRevenue: (p.revenue || 0) * days / dim,
+    profitWeek: p.profitWeek, profitMonth: p.profitMonth, revenue: p.revenue, contactsMonth: p.contactsMonth, rates: p.rates });
   allW.forEach((w, idx) => {
     const days = wkDays(w.label);
-    let basis, basisLabel;
+    let basis = null, basisLabel = "", pend = null;
     if (idx === 0) { basis = prev.total; basisLabel = "итоги " + prev.name; } // прошлый месяц закрыт всегда
     else if (startStub && idx === 1) {
       // База — «стыковая» неделя (хвост прошлого месяца + стартовый огрызок текущего);
       // закрывается вместе со стартовым огрызком. Если хвоста прошлого месяца в данных
       // нет — базой служит сам закрывшийся огрызок.
-      if (!wkClosed(allW[0].label)) { pushPending(w, days, "стыковой недели " + straddleLbl, "она идёт сейчас"); return; }
-      if (straddle && hasRates(straddle)) { basis = straddle; basisLabel = "стыковая неделя " + straddleLbl; }
+      if (!wkClosed(allW[0].label)) pend = ["стыковой недели " + straddleLbl, "она идёт сейчас"];
+      else if (straddle && hasRates(straddle)) { basis = straddle; basisLabel = "стыковая неделя " + straddleLbl; }
       else if (hasRates(allW[0])) { basis = allW[0]; basisLabel = allW[0].label; }
-      else { pushPending(w, days, "стыковой недели " + straddleLbl, "закрыта, итоги ещё не внесены в таблицу"); return; }
+      else pend = ["стыковой недели " + straddleLbl, "закрыта, итоги ещё не внесены в таблицу"];
     } else {
       const pw = allW[idx - 1];
-      if (!wkClosed(pw.label)) { pushPending(w, days, pw.label, "она ещё не закончилась"); return; }
-      if (hasRates(pw)) { basis = pw; basisLabel = pw.label; }
-      else { pushPending(w, days, pw.label, "закрыта, итоги ещё не внесены в таблицу"); return; }
+      if (!wkClosed(pw.label)) pend = [pw.label, "она ещё не закончилась"];
+      else if (hasRates(pw)) { basis = pw; basisLabel = pw.label; }
+      else pend = [pw.label, "закрыта, итоги ещё не внесены в таблицу"];
     }
-    const p = proj(basis);
-    if (!p) { pushPending(w, days, basisLabel.replace(/^итоги\s+/, ""), "нет ключевых ставок базы"); return; }
-    const f = days / 7;
-    weeks.push({
-      label: w.label, basis: basisLabel, days: days, partial: days < 7,
-      periodProfit: p.profitWeek * f, periodRevenue: (p.revenue || 0) * days / dim,
-      profitWeek: p.profitWeek, profitMonth: p.profitMonth, revenue: p.revenue,
-      contactsMonth: p.contactsMonth, rates: p.rates
-    });
+    const p = basis ? proj(basis) : null;
+    if (basis && !p) pend = [basisLabel.replace(/^итоги\s+/, ""), "нет ключевых ставок базы"];
+    // Закрытая неделя с внесёнными итогами — факт.
+    if (wkClosed(w.label) && hasRates(w) && +w.processed > 0 && persOP > 0 && shifts > 0) {
+      const fp = proj(w, (+w.processed * dim / days) / (persOP * shifts));
+      // Выручка — реальная из таблицы (модель на фактических ставках расходится с ней на 1–3 %);
+      // реклама = контакты × CPL недели — и так факт.
+      if (fp && +w.budget > 0) fp.revenue = +w.budget * dim / days;
+      if (fp) {
+        weeks.push(Object.assign({ label: w.label, kind: "fact", basis: basisLabel, days: days, partial: days < 7 }, toPeriod(fp, days),
+          p ? { fc: toPeriod(p, days) } : {}));
+        return;
+      }
+    }
+    if (!p) { pushPending(w, days, pend[0], pend[1]); return; }
+    // Идущая неделя: ставки прошлой недели + факт её закрытых дней (по доле дней).
+    let pr = p, factDays = 0;
+    const closedDays = (w.days || []).filter((dd) => _dayKey(dd.date) && _dayKey(dd.date) < _todayKey);
+    const agg = closedDays.length ? poolRates(...closedDays) : null;
+    if (agg && closedDays.length < days) {
+      factDays = closedDays.length;
+      const a = factDays / days, b = 1 - a;
+      const mix = { asp: agg.asp * a + (+basis.asp) * b, cv: agg.cv * a + (+basis.cv) * b, upt: agg.upt * a + (+basis.upt) * b,
+        cpl: agg.cpl > 0 ? agg.cpl * a + (+basis.cpl) * b : +basis.cpl };
+      pr = proj(mix) || p;
+      if (pr === p) factDays = 0;
+    }
+    weeks.push(Object.assign({ label: w.label, kind: "forecast", basis: basisLabel, factDays: factDays, days: days, partial: days < 7 }, toPeriod(pr, days)));
   });
   // Headline месяца (ТЗ Андрея 03.07, финал): ПОСЧИТАННЫЕ недели (у которых база закрыта)
   // просто складываем, а ОСТАТОК дней месяца оцениваем по УСРЕДНЁННЫМ (объёмно-взвешенным)

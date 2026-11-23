@@ -7959,8 +7959,8 @@
             ? '<b>Как считается</b><br><b>Выручка</b> — по модели из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»): контакты × конверсия × чек, по вашим формулам. <b>Расходы и прибыль</b> — по факту P&amp;L «Потока» Кати за последние закрытые месяцы (блок «Из чего прибыль» ниже). '
             : '<b>Как считается</b><br>Модель и параметры расходов — из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»), считаются у нас по вашим формулам. ') +
           (d.basisKind === "weekly-chain"
-            ? '<b>Прогноз на месяц</b> = посчитанные недели + оценка остатка. Недели, у которых база закрыта (<b>' + d.weeksDone + ' из ' + d.weeksTotal + '</b>), складываются как есть: каждая прогнозируется по итогам предыдущего ЗАКРЫТОГО периода — первая по итогам ' + escapeHtml(shortM(d.basisMonth)) + ', первая полная по «стыковой» неделе на границе месяцев. ' +
-              (d.month.rest ? '<b>Остаток месяца (' + d.month.rest.days + ' дн.)</b> оценивается по усреднённым (объёмно-взвешенным) ставкам подтверждённых периодов' + (d.month.rest.rates ? ': ASP <b>' + ru(d.month.rest.rates.asp) + '</b>, CPL <b>' + ru(d.month.rest.rates.cpl) + '</b>, CV <b>' + (Math.round((d.month.rest.rates.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((d.month.rest.rates.upt || 0) * 100) / 100) + '</b>' : '') + '. С закрытием каждой недели её итоги попадают и в цепочку, и в пул остатка — прогноз сам уточняется. Ставки идущей (незакрытой) недели в расчёт не входят. '
+            ? '<b>Прогноз на месяц</b> = факт прошедших недель + прогноз текущей + оценка остатка. Прошедшая неделя — по её реальным контактам и ставкам (прибыль — по модели расходов). Текущая — по итогам прошлой недели, закрытые дни этой подмешиваются фактом; сегодняшний день не учитывается. ' +
+              (d.month.rest ? '<b>Остаток месяца (' + d.month.rest.days + ' дн.)</b> — по усреднённым ставкам закрытых периодов' + (d.month.rest.rates ? ': ASP <b>' + ru(d.month.rest.rates.asp) + '</b>, CPL <b>' + ru(d.month.rest.rates.cpl) + '</b>, CV <b>' + (Math.round((d.month.rest.rates.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((d.month.rest.rates.upt || 0) * 100) / 100) + '</b>' : '') + '. '
                 : 'Все недели месяца посчитаны — оценки остатка нет. ')
             : '<b>Прогноз на месяц</b> — по итогам ' + escapeHtml(shortM(d.basisMonth)) + ' (недельных данных текущего месяца ещё нет): ASP <b>' + ru(r.asp) + '</b>, CPL <b>' + ru(r.cpl) + '</b>, CV <b>' + (Math.round((r.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((r.upt || 0) * 100) / 100) + '</b>. ') +
           '<b>Контакт-план ' + ru(d.expectedContacts || d.basisContacts) + '</b>/мес — реально ожидаемый набор; персонал ОП ' + d.persOP + ', смен ' + d.shifts + '. ФОТ ' + (d.fotPct || 22) + '%. Недели ниже — та же цепочка в детализации.';
@@ -7968,7 +7968,7 @@
 
         if (d.weeks && d.weeks.length) {
           const wh = document.createElement("div"); wh.className = "ref-sec-h"; wh.style.marginTop = "20px";
-          wh.textContent = "По неделям — прогноз по итогам предыдущего периода";
+          wh.textContent = "По неделям — факт прошедших, прогноз текущей";
           box.appendChild(wh);
           d.weeks.forEach((w) => {
             const c = document.createElement("div"); c.className = "vsc-chart";
@@ -7985,13 +7985,23 @@
             }
             const pp = (w.periodProfit != null ? w.periodProfit : w.profitWeek);
             const wp = (pp || 0) >= 0; const wr = w.rates || {};
+            const isFact = w.kind === "fact";
+            const col = (v) => ((v || 0) >= 0 ? "#2c7a43" : "#b0263a");
             const daysTag = (w.partial ? (' · ' + w.days + ' дн.') : '') + (w.carried ? ' · перенос ставок' : '');
+            // Прошедшая неделя — факт (рядом серым — каким был прогноз); идущая — прогноз
+            // по прошлой неделе с подмешанными закрытыми днями этой.
+            const sub = isFact ? 'факт' + daysTag
+              : 'прогноз по итогам ' + escapeHtml(shortM(w.basis || "").replace(/^итоги\s+/, "")) + (w.factDays ? ' + факт ' + w.factDays + ' дн.' : '') + daysTag;
+            const line = isFact
+              ? 'Факт' + (w.partial ? (' за ' + w.days + ' дн.') : ' за неделю') + ': <b style="color:' + col(pp) + ';">' + money(pp) + '</b>' +
+                (w.fc && w.fc.periodProfit != null ? ' <span style="color:#9aa0ab;">· прогноз был ' + money(w.fc.periodProfit) + '</span>' : '')
+              : (w.partial ? ('Прогноз на ' + w.days + ' дн.') : 'Прогноз на неделю') + ': <b style="color:' + col(pp) + ';">' + money(pp) + '</b> · полный месяц по этим ставкам: <b style="color:' + col(w.profitMonth) + ';">' + money(w.profitMonth) + '</b>';
             c.innerHTML =
               '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
-              '<div style="font-weight:700;color:#161d45;">' + escapeHtml(w.label) + ' <span style="font-weight:500;color:#8a90a0;font-size:12px;">· по итогам ' + escapeHtml(shortM(w.basis || "").replace(/^итоги\s+/, "")) + daysTag + '</span></div>' +
+              '<div style="font-weight:700;color:#161d45;">' + escapeHtml(w.label) + ' <span style="font-weight:500;color:#8a90a0;font-size:12px;">· ' + sub + '</span></div>' +
               '<div style="font-size:11.5px;color:#8a90a0;">ASP ' + ru(wr.asp) + ' · CPL ' + ru(wr.cpl) + ' · CV ' + (Math.round((wr.cv || 0) * 10) / 10) + '% · UPT ' + (Math.round((wr.upt || 0) * 100) / 100) + '</div>' +
               '</div>' +
-              '<div style="margin-top:6px;font-size:13px;color:#3a3f4d;">' + (w.partial ? ('Прогноз на ' + w.days + ' дн.') : 'Прогноз на неделю') + ': <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(pp) + '</b> · полный месяц по этим ставкам: <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(w.profitMonth) + '</b></div>';
+              '<div style="margin-top:6px;font-size:13px;color:#3a3f4d;">' + line + '</div>';
             box.appendChild(c);
           });
         }
