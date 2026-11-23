@@ -1124,7 +1124,7 @@
     {
       "name": "Прогноз прибыли /vsc",
       "what": "Расчёт цел (итог и недели — конечные числа, ответ свежий, нет ошибок «VSC FC»), журнал точности закрытых недель (прогноз против факта). При сбое /vsc показывает последний удачный расчёт (.vscForecastLastGood.json). Письмо Андрею — только при поломке.",
-      "when": "ежедневно 04:25",
+      "when": "ежедневно 04:35",
       "where": "tools/vscForecastWatch.js → /var/lib/vsc-forecast/accuracy.jsonl, /var/log/vsc-forecast-watch.log"
     }
   ],
