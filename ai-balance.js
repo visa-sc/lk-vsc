@@ -253,7 +253,7 @@ const SVC_SHORT = {
   translate: "Переводы", cq: "Прослушка", scanner: "Сканер паспортов",
   kate_scanner: "Сканер паспортов (work.)", support: "Поддержка eSIM",
   chat: "ИИ-чат", service: "Служебные проверки", vsc_radar: "Радар возможностей /vsc", kate_helper: "Робот «Помощники»",
-  site_alt: "Описания картинок сайтов",
+  site_alt: "Описания картинок сайтов", musor_check: "Проверка «Мусора» в amo",
 };
 function svcTitle(id) { return SVC_SHORT[id] || id; }
 // Единицы для счётчика: у каждого сервиса своя работа, «обращения» ни о чём не говорят.
