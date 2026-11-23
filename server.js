@@ -8154,6 +8154,73 @@ async function vscBuildForecastBase() {
   // подмешиваются закрытые дни этой недели (по МСК; сегодняшний — никогда).
   const toPeriod = (p, days) => ({ periodProfit: p.profitWeek * days / 7, periodRevenue: (p.revenue || 0) * days / dim,
     profitWeek: p.profitWeek, profitMonth: p.profitMonth, revenue: p.revenue, contactsMonth: p.contactsMonth, rates: p.rates });
+  // БАЗА ПРОГНОЗА — 6 ПОСЛЕДНИХ НЕДЕЛЬ (42 закрытых дня по МСК), а не одна прошлая неделя (23.11.2026).
+  // Бэктест на 46 неделях 2026 г. (выручка на контакт): одна прошлая неделя — средняя ошибка 19,8 %,
+  // худшая 57 %; 6 недель — 15,2 % и 32,5 % (с сентября худшая 24,8 % против 56 %). 2/4/8/12 недель,
+  // EWMA и медиана — не лучше по худшему случаю. Пул по дням точный: Σвыручка/Σконтакты =
+  // CV×UPT×ASP пула (CV = Σпродаж/Σконтактов, UPT = Σуслуг/Σпродаж, ASP = Σвыручки/Σуслуг).
+  const BASE_DAYS = 42;
+  const dayList = (() => {
+    const mp = new Map();
+    for (const x of months) for (const ww of (x.m.weeks || [])) for (const dd of (ww.days || [])) { const k = _dayKey(dd.date); if (k && k < _todayKey) mp.set(k, dd); }
+    return [...mp.entries()].sort((a, b) => a[0] - b[0]);
+  })();
+  const poolDays = (list, extra) => {
+    let P = 0, S = 0, U = 0, B = 0, AD = 0, L = 0;
+    for (const dd of list.concat(extra || [])) {
+      const p = +dd.processed || 0; if (p <= 0) continue;
+      const s = p * (+dd.cv || 0) / 100, u = s * (+dd.upt || 0);
+      P += p; S += s; U += u; B += +dd.budget || 0;
+      const ad = +dd.ad || 0, cpl = +dd.cpl || 0; if (ad > 0 && cpl > 0) { AD += ad; L += ad / cpl; }
+    }
+    return (P > 0 && S > 0 && U > 0 && B > 0) ? { asp: B / U, cv: S / P * 100, upt: U / S, cpl: L > 0 ? AD / L : 0, processed: P, budget: B } : null;
+  };
+  const baseBefore = (key) => {
+    const sel = dayList.filter(([k]) => k < key).slice(-BASE_DAYS).map((x) => x[1]);
+    const r = sel.length >= 14 ? poolDays(sel) : null;   // меньше двух недель истории — базой не считаем
+    if (!r || !hasRates(r)) return null;
+    const lbl = (s) => String(s || "").slice(0, 5);
+    return Object.assign(r, { label: "6 нед. " + lbl(sel[0].date) + "–" + lbl(sel[sel.length - 1].date) });
+  };
+  const wkStartKey = (lbl) => { const m = /(\d{1,2})\.(\d{1,2})/.exec(String(lbl || "")); return m ? curYear * 10000 + (+m[2]) * 100 + (+m[1]) : 0; };
+  // ПРОФИЛЬ ДНЯ НЕДЕЛИ (12 закрытых недель). Выходные дают ~4–6 % недельной выручки и ~8 % контактов
+  // против «равных» 14,3 %, поэтому неполные периоды (стыки месяца, остаток месяца, оставшиеся дни
+  // идущей недели) считаем по профилю, а не долей дней: 01.11 (вс) прогноз «по доле» ждал 275 тыс.,
+  // факт — 53 тыс. Ожидаемая выручка периода = выручка на контакт базы × ожидаемые контакты по дням.
+  const dowOf = (k) => new Date(Date.UTC(Math.floor(k / 1e4), Math.floor(k / 100) % 100 - 1, k % 100)).getUTCDay();
+  const prof = (() => {
+    const sel = dayList.slice(-84); if (sel.length < 28) return null;
+    const sb = [0, 0, 0, 0, 0, 0, 0], sp = [0, 0, 0, 0, 0, 0, 0], n = [0, 0, 0, 0, 0, 0, 0];
+    for (const [k, dd] of sel) { const dw = dowOf(k); sb[dw] += +dd.budget || 0; sp[dw] += +dd.processed || 0; n[dw]++; }
+    const tb = sb.reduce((a, b) => a + b, 0), tp = sp.reduce((a, b) => a + b, 0), tn = n.reduce((a, b) => a + b, 0);
+    if (!(tb > 0 && tp > 0) || n.some((x) => !x)) return null;
+    return { r: sb.map((x, i) => (x / n[i]) / (tb / tn)), c: sp.map((x, i) => (x / n[i]) / (tp / tn)) };
+  })();
+  const curYM = (() => { const mm = /([А-Яа-яёЁ]+)\s+(\d{4})/.exec(String(cur.name || "")); const mi = mm ? VSC_RU_MONTH_IDX[mm[1].toLowerCase()] : null; return (mm && mi != null) ? [+mm[2], mi + 1] : null; })();
+  const monthKeys = curYM ? Array.from({ length: dim }, (_, i) => curYM[0] * 1e4 + curYM[1] * 100 + i + 1) : [];
+  const meanW = (t) => (prof && monthKeys.length) ? monthKeys.reduce((a, k) => a + prof[t][dowOf(k)], 0) / monthKeys.length : 1;
+  const meanC = meanW("c"), meanR = meanW("r");
+  // Σ по всем дням месяца: контакты = expectedContacts, выручка = r × expectedContacts — месяц сходится.
+  const expectFor = (keys, r) => {
+    let wc = 0, wr = 0; const cav = expectedContacts / dim;
+    for (const k of keys) { const dw = dowOf(k); wc += prof ? prof.c[dw] / meanC : 1; wr += prof ? prof.r[dw] / meanR : 1; }
+    return { P: cav * wc, B: r * cav * wr };
+  };
+  const baseR = (b) => (+b.budget > 0 && +b.processed > 0) ? (+b.budget / +b.processed) : (+b.cv / 100) * (+b.asp) * (+b.upt);
+  // Прогноз недели: факт закрытых дней (если есть) + база на остальные дни по профилю.
+  const weekForecast = (w, days, basis, p, closed) => {
+    const keys = (w.days || []).map((dd) => _dayKey(dd.date)).filter(Boolean);
+    const cset = new Set(closed.map((dd) => _dayKey(dd.date)));
+    const E = expectFor(keys.filter((k) => !cset.has(k)), baseR(basis));
+    const cP = closed.reduce((a, dd) => a + (+dd.processed || 0), 0), cB = closed.reduce((a, dd) => a + (+dd.budget || 0), 0);
+    const synth = E.P > 0 ? [{ processed: E.P, cv: +basis.cv, upt: +basis.upt, budget: E.B, ad: E.P * (+basis.cpl || 0), cpl: +basis.cpl }] : [];
+    const mix = closed.length ? poolDays(closed, synth) : null;
+    const pm = (mix && hasRates(mix)) ? proj(mix) : null;
+    const pr = Object.assign({}, pm || p);
+    const wP = cP + E.P, wB = cB + E.B;
+    if (keys.length && wP > 0 && wB > 0) { pr.revenue = wB * dim / days; pr.contactsMonth = wP * dim / days; }
+    return { pr, factDays: pm ? closed.length : 0 };
+  };
   allW.forEach((w, idx) => {
     const days = wkDays(w.label);
     let basis = null, basisLabel = "", pend = null;
@@ -8172,6 +8239,10 @@ async function vscBuildForecastBase() {
       else if (hasRates(pw)) { basis = pw; basisLabel = pw.label; }
       else pend = [pw.label, "закрыта, итоги ещё не внесены в таблицу"];
     }
+    // Основная база — 6 недель до начала этой недели; доступна, когда день перед неделей закрыт.
+    // Старая цепочка (прошлая неделя / итоги месяца) — только запасной вариант, если истории мало.
+    const sk = wkStartKey(w.label);
+    if (sk && sk <= _todayKey) { const b6 = baseBefore(sk); if (b6) { basis = b6; basisLabel = b6.label; pend = null; } }
     const p = basis ? proj(basis) : null;
     if (basis && !p) pend = [basisLabel.replace(/^итоги\s+/, ""), "нет ключевых ставок базы"];
     // Закрытая неделя с внесёнными итогами — факт.
@@ -8182,23 +8253,17 @@ async function vscBuildForecastBase() {
       if (fp && +w.budget > 0) fp.revenue = +w.budget * dim / days;
       if (fp) {
         weeks.push(Object.assign({ label: w.label, kind: "fact", basis: basisLabel, days: days, partial: days < 7 }, toPeriod(fp, days),
-          p ? { fc: toPeriod(p, days) } : {}));
+          p ? { fc: toPeriod(weekForecast(w, days, basis, p, []).pr, days) } : {}));
         return;
       }
     }
     if (!p) { pushPending(w, days, pend[0], pend[1]); return; }
-    // Идущая неделя: ставки прошлой недели + факт её закрытых дней (по доле дней).
-    let pr = p, factDays = 0;
+    // Идущая неделя: ФАКТ закрытых дней + база на оставшиеся дни, по контактам (бэктест: после 1 дня
+    // ошибка 15,2 → 13,1 %, после 3 дней → 9,6 %, после 6 → 4,6 %; по контактам точнее, чем по доле дней).
+    // Оставшиеся дни — «синтетический день» со ставками базы и ожидаемыми контактами (темп месяца × профиль дня).
     const closedDays = (w.days || []).filter((dd) => _dayKey(dd.date) && _dayKey(dd.date) < _todayKey);
-    const agg = closedDays.length ? poolRates(...closedDays) : null;
-    if (agg && closedDays.length < days) {
-      factDays = closedDays.length;
-      const a = factDays / days, b = 1 - a;
-      const mix = { asp: agg.asp * a + (+basis.asp) * b, cv: agg.cv * a + (+basis.cv) * b, upt: agg.upt * a + (+basis.upt) * b,
-        cpl: agg.cpl > 0 ? agg.cpl * a + (+basis.cpl) * b : +basis.cpl };
-      pr = proj(mix) || p;
-      if (pr === p) factDays = 0;
-    }
+    const wf = weekForecast(w, days, basis, p, (closedDays.length < days && poolDays(closedDays)) ? closedDays : []);
+    const pr = wf.pr, factDays = wf.factDays;
     weeks.push(Object.assign({ label: w.label, kind: "forecast", basis: basisLabel, factDays: factDays, days: days, partial: days < 7 }, toPeriod(pr, days)));
   });
   // Headline месяца (ТЗ Андрея 03.07, финал): ПОСЧИТАННЫЕ недели (у которых база закрыта)
@@ -8215,9 +8280,14 @@ async function vscBuildForecastBase() {
   const confirmedProfit = wsum("periodProfit"), confirmedRevenue = wsum("periodRevenue");
   let rest = null;
   if (done.length && restDays > 0) {
-    const pooled = poolRates(prev.total, ...allW.filter((x) => wkClosed(x.label) && hasRates(x)));
+    // Остаток месяца — та же база: 6 последних закрытых недель (запасной вариант — прежний пул).
+    const pooled = baseBefore(_todayKey) || poolRates(prev.total, ...allW.filter((x) => wkClosed(x.label) && hasRates(x)));
     const rp = proj(pooled || prev.total);
-    if (rp) rest = { days: restDays, profit: rp.profitWeek * restDays / 7, revenue: (rp.revenue || 0) * restDays / dim, rates: rp.rates };
+    // Выручка остатка — по профилю дня недели (дни ждущих недель), иначе — долей дней.
+    const doneLbl = new Set(done.map((x) => x.label));
+    const restKeys = allW.filter((x) => !doneLbl.has(x.label)).flatMap((x) => (x.days || []).map((dd) => _dayKey(dd.date))).filter(Boolean);
+    const restRev = (restKeys.length === restDays) ? expectFor(restKeys, baseR(pooled || prev.total)).B : null;
+    if (rp) rest = { days: restDays, profit: rp.profitWeek * restDays / 7, revenue: restRev != null ? restRev : (rp.revenue || 0) * restDays / dim, rates: rp.rates };
   }
   const covDays = doneDays + (rest ? restDays : 0);
   const month = done.length ? {
