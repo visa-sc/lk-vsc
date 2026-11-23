@@ -8315,10 +8315,16 @@ function getVscForecast() {
   const now = Date.now();
   if (_vscFcCache && (now - _vscFcAt) < VSC_FC_TTL) return Promise.resolve(_vscFcCache);
   if (_vscFcInflight) return _vscFcInflight;
+  // 23.11.2026: последний удачный расчёт — и на диск. Если расчёт упал или пуст (в т.ч. сразу после
+  // перезапуска), отдаём его, а не пустой блок. Ночная проверка — tools/vscForecastWatch.js.
+  const LG = path.join(__dirname, ".vscForecastLastGood.json");
+  const lastGood = () => { try { return JSON.parse(fs.readFileSync(LG, "utf8")); } catch (_) { return null; } };
+  const ok = (d) => !!(d && d.month && isFinite(+d.month.revenue) && isFinite(+d.month.profitMonth) && Array.isArray(d.weeks));
   _vscFcInflight = vscBuildForecast().then((data) => {
-    if (data && data.month) { _vscFcCache = data; _vscFcAt = Date.now(); }
-    return (data && data.month) ? data : (_vscFcCache || data);
-  }).finally(() => { _vscFcInflight = null; });
+    if (ok(data)) { _vscFcCache = data; _vscFcAt = Date.now(); try { fs.writeFileSync(LG, JSON.stringify(Object.assign({}, data, { savedAt: new Date().toISOString() }))); } catch (_) {} return data; }
+    return _vscFcCache || lastGood() || data;
+  }, (e) => { console.error("VSC FC сбой расчёта:", e && e.message); return _vscFcCache || lastGood() || { success: false, month: null, weeks: [] }; })
+    .finally(() => { _vscFcInflight = null; });
   return _vscFcInflight;
 }
 // Радар возможностей: решения по карточкам и поиск новых идей Claude (vscradar.js, Андрей 19.10.2026).
