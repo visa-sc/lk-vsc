@@ -60,23 +60,41 @@ function mount(deps) {
     if (!TOKEN()) return null;
     let bal;
     try {
-      const r = await fetch("https://api.cloudvps.reg.ru/v1/balance_data", {
-        headers: { Authorization: "Bearer " + TOKEN() },
-        signal: AbortSignal.timeout(30000),
-      });
-      const raw = await r.json().catch(() => null);
-      if (!r.ok) throw new Error("HTTP " + r.status + ": " + JSON.stringify(raw).slice(0, 200));
-      bal = findBalance(raw);
-      if (bal == null) throw new Error("в ответе нет поля баланса: " + JSON.stringify(raw).slice(0, 250));
+      // 24.11.2026: разовый HTTP 500 у Рег.облака дал ложное письмо. Сбой их сервера или сети —
+      // до 3 попыток с паузой 30 с; 401/403 (токен) — сразу, повторять бессмысленно.
+      let lastErr = null;
+      for (let attempt = 1; attempt <= 3 && bal == null; attempt++) {
+        try {
+          const r = await fetch("https://api.cloudvps.reg.ru/v1/balance_data", {
+            headers: { Authorization: "Bearer " + TOKEN() },
+            signal: AbortSignal.timeout(30000),
+          });
+          const raw = await r.json().catch(() => null);
+          if (!r.ok) { const er = new Error("HTTP " + r.status + ": " + JSON.stringify(raw).slice(0, 200)); er.status = r.status; throw er; }
+          bal = findBalance(raw);
+          if (bal == null) throw new Error("в ответе нет поля баланса: " + JSON.stringify(raw).slice(0, 250));
+        } catch (e) {
+          lastErr = e;
+          if (e.status === 401 || e.status === 403 || attempt === 3) throw e;
+          await new Promise((res) => setTimeout(res, 30000));
+        }
+      }
+      if (bal == null) throw lastErr || new Error("нет ответа");
+      const st0 = load(); if (st0.errStreak) { delete st0.errStreak; save(st0); }
     } catch (e) {
       console.error("regru-watch: проверка не удалась: " + e.message);
       const st = load();
+      // Сбой на стороне Рег.облака (5xx, сеть) — письмо, только если не проходит 3 часовые проверки подряд.
+      // Токен (401/403) или непонятный ответ — сразу.
+      st.errStreak = (st.errStreak || 0) + 1; save(st);
+      const transient = !(e.status === 401 || e.status === 403) && !/нет поля баланса/.test(e.message);
+      if (transient && st.errStreak < 3) return null;
       if (st.errDay !== mskDay() && mailOk()) { // об одной и той же проблеме — не чаще раза в сутки
         st.errDay = mskDay(); save(st);
         sendMail({
           to: TO,
           subject: "Сторож баланса Рег.облака: проверка не удалась",
-          text: "Не получилось узнать баланс Рег.облака: " + e.message +
+          text: "Не получилось узнать баланс Рег.облака" + (st.errStreak > 1 ? " (" + st.errStreak + " проверки подряд)" : "") + ": " + e.message +
             "\n\nЕсли токен отозван или истёк — нужен новый (панель cloud.reg.ru → Настройки → API-токены)," +
             " положить в .env как REGRU_CLOUD_TOKEN. Пока сторож слеп, баланс лучше глянуть руками.",
         }).catch(() => {});
