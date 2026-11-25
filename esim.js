@@ -2844,6 +2844,8 @@ function mount(app, opts) {
   // Свои проверочные чаты письмами не беспокоим: 29.09.2026 тестовая переписка
   // с probe@example.com ушла Андрею как «нужен ответ в чате поддержки».
   function isTestChat(chat) {
+    if (chat && ((chat.tgChatId && MUTE_TG.indexOf(String(chat.tgChatId)) >= 0) ||
+      (chat.vid && MUTE_VID.indexOf(String(chat.vid).toLowerCase()) >= 0))) return true;   // спам, см. MUTE_TG
     const c = String((chat && chat.contact) || "").toLowerCase();
     if (!c) return false;
     const digits = c.replace(/\D/g, "");
@@ -5079,6 +5081,12 @@ function mount(app, opts) {
   const TEST_EMAILS = listEnv("ESIM_TEST_EMAILS", [OWNER_EMAIL, "probe@example.com,ap@spt1.ru"].filter(Boolean).join(","));
   const TEST_PHONES = listEnv("ESIM_TEST_PHONES", "79959189058,79826404543");
   const TEST_TG = listEnv("ESIM_TEST_TG", "405697446");
+  // Не клиенты, а предложения «о партнёрстве» и прочее не по сервису (Андрей 25.11.2026:
+  // «это спам, к сервису не относится»): писем «нужен ответ» / «30 минут без ответа» по ним
+  // не шлём, в цифры поддержки не берём. Узнаём по чату в боте и по метке посетителя сайта
+  // (не по IP: мобильный IP общий у многих людей).
+  const MUTE_TG = listEnv("ESIM_SUPPORT_MUTE_TG", "6157337146");
+  const MUTE_VID = listEnv("ESIM_SUPPORT_MUTE_VID", "vehkqn40jw38ofj");
   const digits = (p) => String(p || "").replace(/\D/g, "");
   function isTestOrder(o) {
     return String(o.promoCode || "").toUpperCase() === "OWNER" || (o.promoCode && isTestCode(o.promoCode)) ||
