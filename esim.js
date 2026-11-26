@@ -3314,7 +3314,11 @@ function mount(app, opts) {
   }
   function planMail(subject, text) {
     if (!(opts && opts.sendMail)) return;
-    opts.sendMail({ to: "director@visa-sc.ru", subject, text }).catch((x) => console.error("esim план, письмо:", x.message));
+    // итоги по обращениям — тоже обращения: до 10.12.2026 Кате и Петрову, не Андрею (см. esimchat.js)
+    const kate = support.kateMode();
+    opts.sendMail({ to: kate ? support.supportTo() : "director@visa-sc.ru", subject, text })
+      .then((r) => { if (kate && r && r.ok !== false) support.tellKate({ subject, text }); })
+      .catch((x) => console.error("esim план, письмо:", x.message));
   }
 
   // ── Возврат eSIM Access на баланс: замечаем сами (08.10.2026) ──────────────

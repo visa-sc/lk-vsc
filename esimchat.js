@@ -50,6 +50,32 @@ function mailWindowOpen(ts) {
   return true;
 }
 
+// ── до 10.12.2026 обращения — Кате и Петрову, не Андрею (Андрей 27.11.2026) ──
+// Пока режим включён: письма поддержки уходят на ESIM_SUPPORT_TO без director@, а Кате то же
+// самое пишем в комнату «Помощники Андрей-Катя» и в её личную переписку с Андреем.
+// С 10.12 00:00 МСК всё само возвращается как было: письма снова и Андрею, в чаты Кате не пишем.
+const KATE_UNTIL = Date.parse(process.env.ESIM_SUPPORT_KATE_UNTIL || "2026-12-10T00:00:00+03:00");
+function kateMode() { return Date.now() < KATE_UNTIL; }
+function supportTo() {
+  if (!kateMode()) return TO;
+  const list = TO.split(",").map((s) => s.trim()).filter((s) => s && !/^director@visa-sc\.ru$/i.test(s));
+  return list.length ? list.join(",") : TO;
+}
+function tellKate(m) {
+  const text = ("Катя, от Андрея. Обращение в поддержку eSIM (до 10.12 они идут тебе и Петрову, мне не пишут).\n\n" +
+    String(m.subject || "").replace(/^VOYO eSIM:\s*/, "") + "\n\n" + String(m.text || "")).slice(0, 3900);
+  const key = "esim-sup-" + (m.id || crypto.randomBytes(4).toString("hex"));
+  const run = (args, k) => {
+    try {
+      const p = require("child_process").spawn("runuser", ["-u", "kateadmin", "--", "node"].concat(args, [k]), { stdio: ["pipe", "ignore", "ignore"], timeout: 30000 });
+      p.on("error", (e) => console.error("esim support → Кате:", e.message));
+      p.stdin.end(text);
+    } catch (e) { console.error("esim support → Кате:", e.message); }
+  };
+  run([path.join(__dirname, "tools", "helpersRoomSay.js"), "gmvcc6iz9pmsc", "claude"], key + "-room");
+  run([path.join(__dirname, "tools", "kateDmSay.js")], key + "-dm");
+}
+
 // ── очередь писем: вне окна копим, внутри отправляем ──
 function queueMail(mail) {
   const q = readJson(QUEUE, []);
@@ -98,8 +124,8 @@ async function flushQueue(sendMail) {
   const closed = (m) => m.caseId && help.some((h) => h.id === m.caseId && h.result === "ok");
   for (const m of q) {
     if (closed(m)) { console.log("esim support: письмо по обращению", m.caseId, "не отправлено, человек сам закрыл"); continue; }
-    const r = await sendMail({ to: m.to || TO, subject: m.subject, text: m.text, replyTo: m.replyTo }).catch(() => ({ ok: false }));
-    if (r && r.ok !== false) sent++; else rest.push(m);
+    const r = await sendMail({ to: m.to || supportTo(), subject: m.subject, text: m.text, replyTo: m.replyTo }).catch(() => ({ ok: false }));
+    if (r && r.ok !== false) { sent++; if (!m.to && kateMode()) tellKate(m); } else rest.push(m);
     await new Promise((r2) => setTimeout(r2, 300));
   }
   writeJson(QUEUE, rest);
@@ -266,5 +292,5 @@ async function pollMailbox() {
   return done;
 }
 
-module.exports = { mailWindowOpen, queueMail, attention, flushQueue, loadChats, saveChats, findChat, newChatId,
+module.exports = { kateMode, supportTo, tellKate, mailWindowOpen, queueMail, attention, flushQueue, loadChats, saveChats, findChat, newChatId,
   clientMessage, operatorMessage, botMessage, silentBot, onOperator, stripReply, pollMailbox, esc, mskDay, TO, AUTO_REPLY, BLACKOUT };

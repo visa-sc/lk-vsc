@@ -126,4 +126,14 @@ function api(p) {
     text: "Поставщик вернул деньги на наш кошелёк:\n\n" + lines + "\n\nКошелёк MobiMatter сейчас: $" + wallet.toFixed(2) + ".",
   }).catch((e) => console.log("письмо не ушло:", e.message));
   console.log(now + " письмо отправлено");
+  // Клиенту обещан возврат на карту после денег от поставщика (supplierRefund.clientRefund, с 27.11.2026):
+  // до 10.12 возвраты делает Катя в кассе — пишем ей в комнату «Помощники» и в личку с Андреем.
+  const owed = done.filter((o) => o.supplierRefund && o.supplierRefund.clientRefund);
+  if (owed.length) {
+    let chat = null; try { chat = require("../esimchat.js"); } catch (_) {}
+    const text = "Поставщик вернул деньги, теперь верни клиенту на карту в кассе (Т-Бизнес → Интернет-эквайринг ООО «Эй Кей Групп»):\n\n" +
+      owed.map((o) => "• " + o.supplierRefund.clientRefund.rub + " ₽, платёж " + o.supplierRefund.clientRefund.paymentId + ", " + (o.label || "") + (o.email ? ", " + o.email : "")).join("\n");
+    if (chat && chat.kateMode && chat.kateMode()) chat.tellKate({ id: "mmref-" + owed.map((o) => o.id).join("-"), subject: "возврат клиенту", text });
+    else await mail.sendMail({ to: TO, subject: "VOYO eSIM: верните клиенту деньги на карту", text }).catch(() => {});
+  }
 })();
