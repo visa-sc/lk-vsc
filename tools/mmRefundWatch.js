@@ -133,7 +133,9 @@ function api(p) {
     let chat = null; try { chat = require("../esimchat.js"); } catch (_) {}
     const text = "Поставщик вернул деньги, теперь верни клиенту на карту в кассе (Т-Бизнес → Интернет-эквайринг ООО «Эй Кей Групп»):\n\n" +
       owed.map((o) => "• " + o.supplierRefund.clientRefund.rub + " ₽, платёж " + o.supplierRefund.clientRefund.paymentId + ", " + (o.label || "") + (o.email ? ", " + o.email : "")).join("\n");
-    if (chat && chat.kateMode && chat.kateMode()) chat.tellKate({ id: "mmref-" + owed.map((o) => o.id).join("-"), subject: "возврат клиенту", text });
+    // clientRefund.to = "andrey" — возврат проводит Андрей (или Claude по его «да» в чате), Кате не пишем
+    if (owed.every((o) => o.supplierRefund.clientRefund.to === "andrey")) await mail.sendMail({ to: TO, subject: "VOYO eSIM: поставщик вернул — верните клиенту деньги на карту", text }).catch(() => {});
+    else if (chat && chat.kateMode && chat.kateMode()) chat.tellKate({ id: "mmref-" + owed.map((o) => o.id).join("-"), subject: "возврат клиенту", text });
     else await mail.sendMail({ to: TO, subject: "VOYO eSIM: верните клиенту деньги на карту", text }).catch(() => {});
   }
 })();
