@@ -2,8 +2,8 @@
 /* ─────────────────────────────────────────────────────────────────────────────
  * vscForecastWatch — ночная проверка прогноза прибыли /vsc (Андрей 23.11.2026: «чтобы я этим больше не занимался»).
  * Каждую ночь 04:35 МСК, насовсем:
- *   1) расчёт цел: /admin/api/vsc-forecast отвечает, итог месяца и недели — конечные числа, есть хотя бы одна
- *      посчитанная неделя, ответ свежий (не сохранённая копия старше суток), в журнале voyo нет «VSC FC» ошибок;
+ *   1) расчёт цел (без сессий, по .vscForecastLastGood.json — voyo пишет его каждые 10 мин): файл не старше 1 ч, итог и недели — конечные числа, есть хотя бы одна
+ *      посчитанная неделя, в журнале voyo нет «VSC FC» ошибок;
  *   2) журнал точности: для каждой закрытой недели — прогноз выручки/прибыли против факта
  *      (/var/lib/vsc-forecast/accuracy.jsonl, одна строка на неделю, без повторов).
  * Письмо Андрею — ТОЛЬКО если расчёт сломан. При поломке /vsc сам показывает последний удачный расчёт
@@ -17,14 +17,16 @@ const DIR = "/var/lib/vsc-forecast", ACC = path.join(DIR, "accuracy.jsonl"), CUR
 const ROOT = path.join(__dirname, "..");
 (async () => {
   const problems = [];
+  // 27.11.2026: раньше ходили в /admin/api/vsc-forecast с сессией из входа админа — когда Андрей долго не
+  // заходил (отпуск), сессия истекала и проверка давала ложное «сбой». Теперь — без сессий: voyo сам
+  // пересчитывает прогноз каждые 10 минут (прогрев) и каждый удачный расчёт пишет в .vscForecastLastGood.json.
+  // Файл свежий (не старше 1 ч) и числа в нём вменяемые — значит, расчёт работает.
   let f = null;
   try {
-    const s = JSON.parse(fs.readFileSync(path.join(ROOT, ".lkAdminSessions.json"), "utf8")).filter(([t, e]) => e > Date.now() + 3600e3).sort((x, y) => y[1] - x[1]);
-    if (!s.length) throw new Error("нет действующей служебной сессии для запроса");
-    const r = await fetch("http://127.0.0.1:" + (process.env.PORT || 3000) + "/admin/api/vsc-forecast", { headers: { authorization: "Bearer " + s[0][0] }, signal: AbortSignal.timeout(180000) });
-    if (!r.ok) throw new Error("ответ " + r.status);
-    f = await r.json();
-  } catch (e) { problems.push("прогноз не отвечает: " + e.message); }
+    f = JSON.parse(fs.readFileSync(path.join(ROOT, ".vscForecastLastGood.json"), "utf8"));
+    const age = Date.now() - Date.parse(f.savedAt || 0);
+    if (!(age < 3600e3)) problems.push("прогноз не пересчитывается: последний удачный расчёт " + (f.savedAt || "неизвестно когда") + " (должен обновляться каждые 10 минут)");
+  } catch (e) { problems.push("нет сохранённого расчёта прогноза: " + e.message); }
   if (f) {
     const m = f.month || {};
     if (!isFinite(+m.revenue) || !isFinite(+m.profitMonth) || !(+m.revenue > 0)) problems.push("итог месяца не посчитан (выручка " + m.revenue + ", прибыль " + m.profitMonth + ")");
@@ -32,7 +34,6 @@ const ROOT = path.join(__dirname, "..");
     if (!built.length) problems.push("ни одной посчитанной недели");
     const bad = built.filter((w) => !isFinite(+w.periodProfit) || !isFinite(+w.periodRevenue));
     if (bad.length) problems.push("недели с битыми числами: " + bad.map((w) => w.label).join(", "));
-    if (f.savedAt && Date.now() - Date.parse(f.savedAt) > 26 * 3600e3) problems.push("показывается сохранённая копия от " + f.savedAt + " — свежий расчёт не проходит");
   }
   try {
     const cur = (() => { try { return JSON.parse(fs.readFileSync(CUR, "utf8")); } catch (_) { return {}; } })();
